@@ -1,0 +1,38 @@
+[package]
+name = "uplc-to-llvm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "UPLC to BitVMX-compatible RISC-V compiler"
+
+[dependencies]
+# UPLC dependencies
+uplc = { git = "https://github.com/aiken-lang/aiken.git" }
+pallas-primitives = { version = "^0.32.0" }
+
+# BitVMX integration
+# bitvmx = { git = "https://github.com/bitvmx/bitvmx.git", optional = true }
+
+# Error handling
+thiserror.workspace = true
+
+# Logging
+log.workspace = true
+
+# Temporary file handling
+tempfile = "3.8.1"
+
+[build-dependencies]
+cc = "1.0"
+
+# [features]
+# default = ["bitvmx"]
+# Enable BitVMX-specific optimizations and verification
+# bitvmx = ["dep:bitvmx"]
+
+[package.metadata]
+# Target RISC-V with BitVMX extensions
+riscv-target = "riscv64gc-unknown-none-elf"
+riscv-features = ["bitvmx"]

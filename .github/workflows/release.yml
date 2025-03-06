@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_name: uplc-to-risc-cli
+            asset_name: uplc-to-risc-cli-linux-amd64
+          - os: macos-latest
+            artifact_name: uplc-to-risc-cli
+            asset_name: uplc-to-risc-cli-macos-amd64
+          - os: windows-latest
+            artifact_name: uplc-to-risc-cli.exe
+            asset_name: uplc-to-risc-cli-windows-amd64.exe
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release --verbose --package uplc-to-risc-cli
+    - name: Upload binary to release
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: target/release/${{ matrix.artifact_name }}
+        asset_name: ${{ matrix.asset_name }}
+        tag: ${{ github.ref }}
+        overwrite: true
+
+  build-riscv:
+    name: Build for RISC-V
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+        target: riscv32imac-unknown-none-elf
+    - name: Build for RISC-V
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release --verbose --target riscv32imac-unknown-none-elf --features no_std
+    - name: Upload binary to release
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: target/riscv32imac-unknown-none-elf/release/uplc-to-risc
+        asset_name: uplc-to-risc-riscv32
+        tag: ${{ github.ref }}
+        overwrite: true 

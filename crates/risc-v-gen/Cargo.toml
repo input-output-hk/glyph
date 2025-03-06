@@ -1,0 +1,16 @@
+[package]
+name = "risc-v-gen"
+version = "0.1.0"
+edition = "2021"
+description = "RISC-V code generation utilities"
+license = "Apache-2.0"
+repository = "https://github.com/aiken-lang/aiken-core"
+
+[dependencies]
+# Core dependencies
+log = { workspace = true }
+riscv-decode = "0.2.1"
+thiserror = { workspace = true }
+
+[features]
+default = [] 

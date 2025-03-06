@@ -1,0 +1,30 @@
+[package]
+name = "uplc-to-riscv"
+version = "0.1.0"
+edition = "2021"
+description = "Compiler from Untyped Plutus Core to RISC-V"
+license = "Apache-2.0"
+repository = "https://github.com/aiken-lang/aiken-core"
+
+[dependencies]
+# Core dependencies
+log = { workspace = true }
+thiserror = { workspace = true }
+
+# Internal dependencies
+risc-v-gen = { path = "../risc-v-gen" }
+
+# External dependencies
+uplc = { version = "1.0" }
+num-bigint = "0.4"
+peg = "0.8"
+pallas-primitives = { version = "^0.32.0" }
+
+# BitVMX compatibility dependencies
+sha2 = "0.10.8"
+hex = "0.4.3"
+
+# Optional features can be added later
+
+[features]
+default = [] 

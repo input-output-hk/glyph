@@ -1,0 +1,34 @@
+[workspace]
+members = [
+    "uplc-to-riscv",
+    "risc-v-gen",
+    "uplc-to-llvm",
+    "cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/aiken-lang/aiken-core"
+authors = ["Aiken Contributors"]
+
+[workspace.dependencies]
+log = "0.4"
+thiserror = "1.0"
+clap = { version = "4.4", features = ["derive"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "z"
+strip = true
+
+[profile.dev]
+debug = true
+opt-level = 0
+
+# This is a workspace-level configuration that can be overridden in individual crates
+[workspace.package.metadata.riscv-target]
+target = "riscv64imac-unknown-none-elf"
+features = ["hardware-crypto", "no_std"] 
