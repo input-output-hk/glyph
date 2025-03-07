@@ -1,9 +1,10 @@
 use uplc_to_riscv::Compiler;
 
-/// Test compiling a simple integer constant
+/// Test compiling a simple integer constant in different formats
 #[test]
-fn test_compile_integer_constant() {
+fn test_compile_integer_constants() {
     let compiler = Compiler::new();
+    // Test with multi-line format
     let uplc_code = "(program\n  1.0.0\n  (con integer 42)\n)";
     let result = compiler.compile(uplc_code);
     assert!(result.is_ok());
@@ -12,6 +13,11 @@ fn test_compile_integer_constant() {
     // Check that the assembly contains the expected instructions
     assert!(asm.contains("_start:"));
     assert!(asm.contains("li a0, 42"));
+    
+    // Test with single-line format
+    let uplc_code = "(program 1.0.0 (con integer 42))";
+    let result = compiler.compile(uplc_code);
+    assert!(result.is_ok());
 }
 
 /// Test compiling a builtin function
@@ -26,22 +32,4 @@ fn test_compile_builtin() {
     // Check that the assembly contains the expected instructions
     assert!(asm.contains("_start:"));
     // In a more complete implementation, we would check for specific builtin-related instructions
-}
-
-/// Test compiling with optimization enabled
-#[test]
-fn test_compile_with_optimization() {
-    let compiler = Compiler::new().with_optimization(true);
-    let uplc_code = "(program\n  1.0.0\n  (con integer 42)\n)";
-    let result = compiler.compile(uplc_code);
-    assert!(result.is_ok());
-}
-
-/// Test compiling with optimization disabled
-#[test]
-fn test_compile_without_optimization() {
-    let compiler = Compiler::new().with_optimization(false);
-    let uplc_code = "(program\n  1.0.0\n  (con integer 42)\n)";
-    let result = compiler.compile(uplc_code);
-    assert!(result.is_ok());
 } 

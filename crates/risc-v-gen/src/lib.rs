@@ -4,6 +4,12 @@
 
 use thiserror::Error;
 
+// Import from bitvm-common instead
+use bitvm_common::memory;
+
+// Re-export MemorySegmentType from bitvm-common
+pub use bitvm_common::MemorySegmentType;
+
 /// Errors that can occur during RISC-V code generation
 #[derive(Debug, Error)]
 pub enum CodeGenError {
@@ -747,16 +753,6 @@ impl BitVMXInstruction {
     }
 }
 
-/// BitVMX memory segment type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MemorySegmentType {
-    /// Read-only segment
-    ReadOnly,
-    
-    /// Read-write segment
-    ReadWrite,
-}
-
 /// RISC-V Code Generation Error with additional context
 #[derive(Debug, Error)]
 pub enum BitVMXCodeGenError {
@@ -929,12 +925,9 @@ impl BitVMXCodeGenerator {
     }
 
     /// Check memory alignment for an instruction
-    pub fn check_memory_alignment(&self, instruction: &Instruction, address: u32) -> bool {
-        match instruction {
-            Instruction::Lw(_, _, _) | Instruction::Sw(_, _, _) => address % 4 == 0,
-            Instruction::Lh(_, _, _) | Instruction::Lhu(_, _, _) | Instruction::Sh(_, _, _) => address % 2 == 0,
-            _ => true, // Byte operations don't need alignment
-        }
+    pub fn check_memory_alignment(&self, _instruction: &Instruction, address: u32) -> bool {
+        let alignment = self.get_alignment(address);
+        memory::is_aligned(address, alignment)
     }
 
     /// Get the alignment of an address
@@ -943,44 +936,14 @@ impl BitVMXCodeGenerator {
     }
 
     /// Validate memory access for an instruction
-    pub fn validate_memory_access(&self, instruction: &Instruction, address: u32) -> std::result::Result<(), BitVMXCodeGenError> {
-        // Check if the address is properly aligned for the instruction
+    pub fn validate_memory_access(&self, _instruction: &Instruction, address: u32) -> std::result::Result<(), BitVMXCodeGenError> {
         let alignment = self.get_alignment(address);
         
-        match instruction {
-            Instruction::Lw(_, _, _) | Instruction::Sw(_, _, _) => {
-                if alignment != 0 {
-                    return Err(BitVMXCodeGenError::MemoryAccessViolation(
-                        format!("Unaligned memory access for word operation at address 0x{:08x}", address)
-                    ));
-                }
-            },
-            Instruction::Lh(_, _, _) | Instruction::Lhu(_, _, _) | Instruction::Sh(_, _, _) => {
-                if alignment & 0x1 != 0 {
-                    return Err(BitVMXCodeGenError::MemoryAccessViolation(
-                        format!("Unaligned memory access for halfword operation at address 0x{:08x}", address)
-                    ));
-                }
-            },
-            _ => {}, // Byte operations don't need alignment checks
+        // Use the memory module for validation
+        match memory::is_valid_memory_operation(address, self.segment_type == MemorySegmentType::ReadWrite, alignment) {
+            Ok(_) => Ok(()),
+            Err(msg) => Err(BitVMXCodeGenError::MemoryAccessViolation(msg)),
         }
-        
-        // Check if the memory access is within the appropriate segment
-        match self.segment_type {
-            MemorySegmentType::ReadOnly => {
-                match instruction {
-                    Instruction::Sw(_, _, _) | Instruction::Sh(_, _, _) | Instruction::Sb(_, _, _) => {
-                        return Err(BitVMXCodeGenError::MemoryAccessViolation(
-                            format!("Write operation in read-only segment at address 0x{:08x}", address)
-                        ));
-                    },
-                    _ => {}, // Read operations are allowed in read-only segments
-                }
-            },
-            MemorySegmentType::ReadWrite => {}, // All operations are allowed in read-write segments
-        }
-        
-        Ok(())
     }
 
     /// Add an instruction with memory alignment validation

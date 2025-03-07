@@ -1,0 +1,29 @@
+[package]
+name = "bitvm-common"
+version = "0.1.0"
+edition = "2021"
+description = "Common utilities for BitVMX integration"
+license = "Apache-2.0"
+repository = "https://github.com/aiken-lang/aiken-core"
+
+[dependencies]
+# Core dependencies
+log = { workspace = true }
+thiserror = { workspace = true }
+
+# BitVMX-CPU dependencies
+sha2 = "0.10.8"
+hex = "0.4.3"
+riscv-decode = "0.2.1"
+tempfile = "3.9.0"
+
+# BitVMX-CPU emulator integration
+bitcoin-script-riscv = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "main", package = "bitcoin-script-riscv" }
+emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "main", package = "emulator" }
+
+# Serialization for trace data
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[features]
+default = [] 

@@ -4,10 +4,15 @@
 //! to RISC-V assembly code.
 
 mod ir;
-mod optimize;
-mod bitvm_verification;
+pub mod bitvm_verification;
+pub mod trace_generator;
+pub mod bitvm_emulator;
+extern crate bitvm_common;
+use bitvm_common::memory::MemorySegmentType;
 
-use bitvm_verification::{ExecutionStep, ExecutionTrace};
+// Use ExecutionTrace and ExecutionStep from bitvm-common
+pub use bitvm_common::trace::{ExecutionTrace, ExecutionStep};
+
 use ir::{IRInstr, lower_to_ir};
 use risc_v_gen::{CodeGenerator, Instruction, Register};
 use uplc::ast::{DeBruijn, Name, NamedDeBruijn, Program, Term};
@@ -15,7 +20,6 @@ use uplc::builtins::DefaultFunction;
 use uplc::parser;
 use thiserror::Error;
 
-pub use optimize::OptimizationLevel;
 
 type Result<T> = std::result::Result<T, CompilationError>;
 
@@ -42,6 +46,9 @@ pub enum CompilationError {
 
     #[error("Term conversion error: {0}")]
     TermConversion(String),
+    
+    #[error("BitVMX emulator error: {0}")]
+    BitVMXEmulator(#[from] bitvm_emulator::BitVMXEmulatorError),
 }
 
 /// Compilation mode
@@ -68,8 +75,6 @@ pub enum CompilationMode {
 /// assert!(result.is_ok());
 /// ```
 pub struct Compiler {
-    // Configuration options
-    optimize_level: OptimizationLevel,
 }
 
 impl Compiler {
@@ -86,61 +91,6 @@ impl Compiler {
     /// ```
     pub fn new() -> Self {
         Self {
-            optimize_level: OptimizationLevel::None,
-        }
-    }
-    
-    /// Set the optimization level
-    ///
-    /// This method allows you to specify the optimization level to use
-    /// during compilation.
-    ///
-    /// # Arguments
-    ///
-    /// * `level` - The optimization level to use
-    ///
-    /// # Returns
-    ///
-    /// A new compiler instance with the specified optimization level
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use uplc_to_riscv::{Compiler, OptimizationLevel};
-    ///
-    /// let compiler = Compiler::new().with_optimization_level(OptimizationLevel::Default);
-    /// ```
-    pub fn with_optimization_level(mut self, level: OptimizationLevel) -> Self {
-        self.optimize_level = level;
-        self
-    }
-    
-    /// Enable or disable optimization
-    ///
-    /// This is a convenience method that sets the optimization level to
-    /// `OptimizationLevel::Default` if `optimize` is `true`, or
-    /// `OptimizationLevel::None` if `optimize` is `false`.
-    ///
-    /// # Arguments
-    ///
-    /// * `optimize` - Whether to enable optimization
-    ///
-    /// # Returns
-    ///
-    /// A new compiler instance with the specified optimization setting
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use uplc_to_riscv::Compiler;
-    ///
-    /// let compiler = Compiler::new().with_optimization(true);
-    /// ```
-    pub fn with_optimization(self, optimize: bool) -> Self {
-        if optimize {
-            self.with_optimization_level(OptimizationLevel::Default)
-        } else {
-            self.with_optimization_level(OptimizationLevel::None)
         }
     }
     
@@ -175,6 +125,15 @@ impl Compiler {
         
         // Compile with BitVMX compatibility
         self.compile_bitvm(&program)
+    }
+    
+    /// Compile UPLC code to RISC-V assembly with execution trace
+    pub fn compile_with_trace(&self, uplc_code: &str) -> Result<(String, ExecutionTrace)> {
+        // Parse the UPLC code
+        let program = self.parse_uplc(uplc_code)?;
+        
+        // Compile with BitVMX compatibility
+        self.compile_bitvm_with_trace(&program)
     }
     
     /// Compile with BitVMX compatibility
@@ -221,6 +180,49 @@ impl Compiler {
         );
         
         Ok(result)
+    }
+    
+    /// Compile a UPLC program to RISC-V assembly with BitVMX compatibility and return the execution trace
+    fn compile_bitvm_with_trace(&self, program: &Program<Name>) -> Result<(String, ExecutionTrace)> {
+        // Convert Term<Name> to Term<DeBruijn>
+        let debruijn_program = Program {
+            version: program.version.clone(),
+            term: TryInto::<Term<NamedDeBruijn>>::try_into(program.term.clone())
+                .map_err(|e| CompilationError::TermConversion(e.to_string()))?
+        };
+        
+        // Lower to IR
+        let debruijn_term: Term<DeBruijn> = debruijn_program.term.into();
+        let ir_instructions = lower_to_ir(&debruijn_term);
+        
+        // Create a BitVMX code generator
+        let mut bitvm_generator = risc_v_gen::BitVMXCodeGenerator::new();
+        
+        // Create an execution trace
+        let mut execution_trace = ExecutionTrace::new();
+        
+        // Generate program setup (data segment, entry point, etc.)
+        self.generate_bitvm_program_setup(&mut bitvm_generator, program)?;
+        
+        // Compile the optimized IR to RISC-V instructions
+        self.compile_bitvm_ir(&mut bitvm_generator, &ir_instructions, &mut execution_trace)?;
+        
+        // Generate program teardown (return, etc.)
+        self.generate_bitvm_program_teardown(&mut bitvm_generator)?;
+        
+        // Generate both standard assembly and BitVMX trace
+        let assembly = bitvm_generator.generate_assembly();
+        let bitvm_trace = bitvm_generator.generate_bitvm_trace();
+        
+        // Combine both outputs
+        let result = format!(
+            "# Standard RISC-V Assembly\n\n{}\n\n# BitVMX Trace\n\n{}\n\n# Execution Trace\n\n# ---------------\n\n# {} steps\n",
+            assembly,
+            bitvm_trace,
+            execution_trace.len()
+        );
+        
+        Ok((result, execution_trace))
     }
     
     /// Compile a UPLC builtin function to RISC-V code
@@ -535,6 +537,90 @@ impl Compiler {
                 generator.add_instruction(Instruction::Addi(Register::Sp, Register::Sp, 4)); // Pop one value
                 generator.add_instruction(Instruction::Sw(Register::A0, 0, Register::Sp)); // Store result
             }
+            DefaultFunction::IfThenElse => {
+                // Check if condition (A0) is a boolean (type = 0)
+                let _ = generator.add_instruction(Instruction::Lw(Register::T0, 0, Register::A0));
+                
+                // Check if type is boolean (0)
+                let _ = generator.add_instruction(Instruction::Li(Register::T1, 0));
+                let _ = generator.add_instruction(Instruction::Bne(Register::T0, Register::T1, "if_error_call".to_string()));
+                
+                // Load the boolean value (true = 1, false = 0)
+                let _ = generator.add_instruction(Instruction::Lw(Register::T0, 4, Register::A0));
+                
+                // Branch based on condition
+                let _ = generator.add_instruction(Instruction::Beq(Register::T0, Register::Zero, "if_false_call".to_string()));
+                
+                // If true, use then-branch (A1)
+                let _ = generator.add_instruction(Instruction::Mv(Register::A0, Register::A1));
+                let _ = generator.add_instruction(Instruction::Jal(Register::Zero, "if_done_call".to_string()));
+                
+                // If false, use else-branch (already in A0)
+                let _ = generator.add_instruction(Instruction::Label("if_false_call".to_string()));
+                
+                // End of if-then-else
+                let _ = generator.add_instruction(Instruction::Label("if_done_call".to_string()));
+                
+                // Error handling for non-boolean condition
+                let _ = generator.add_instruction(Instruction::Label("if_error_call".to_string()));
+                
+                // Default to false branch for now
+                // A0 already contains the else-branch
+            }
+            DefaultFunction::MkPairData => {
+                // Allocate memory for the pair (8 bytes)
+                generator.add_instruction(Instruction::Addi(Register::Sp, Register::Sp, -8));
+                
+                // A0 contains the first element, A1 contains the second element
+                // Store the first element at offset 0
+                generator.add_instruction(Instruction::Sw(Register::A0, 0, Register::Sp));
+                
+                // Store the second element at offset 4
+                generator.add_instruction(Instruction::Sw(Register::A1, 4, Register::Sp));
+                
+                // Return the pointer to the pair (stack pointer)
+                generator.add_instruction(Instruction::Mv(Register::A0, Register::Sp));
+            }
+            DefaultFunction::FstPair => {
+                // A0 contains the pair pointer
+                // Check if the pair pointer is null
+                generator.add_instruction(Instruction::Beq(Register::A0, Register::Zero, "fst_pair_error".to_string()));
+                
+                // Load the first element from the pair (first 4 bytes)
+                generator.add_instruction(Instruction::Lw(Register::A0, 0, Register::A0));
+                
+                // Jump to end of function
+                generator.add_instruction(Instruction::Jal(Register::Zero, "fst_pair_end".to_string()));
+                
+                // Error handling for null pair
+                generator.add_instruction(Instruction::Label("fst_pair_error".to_string()));
+                
+                // Load error code for null pair
+                generator.add_instruction(Instruction::Li(Register::A0, -1)); // Error code for null pair
+                
+                // End of function
+                generator.add_instruction(Instruction::Label("fst_pair_end".to_string()));
+            }
+            DefaultFunction::SndPair => {
+                // A0 contains the pair pointer
+                // Check if the pair pointer is null
+                generator.add_instruction(Instruction::Beq(Register::A0, Register::Zero, "snd_pair_error".to_string()));
+                
+                // Load the second element from the pair (second 4 bytes)
+                generator.add_instruction(Instruction::Lw(Register::A0, 4, Register::A0));
+                
+                // Jump to end of function
+                generator.add_instruction(Instruction::Jal(Register::Zero, "snd_pair_end".to_string()));
+                
+                // Error handling for null pair
+                generator.add_instruction(Instruction::Label("snd_pair_error".to_string()));
+                
+                // Load error code for null pair
+                generator.add_instruction(Instruction::Li(Register::A0, -1)); // Error code for null pair
+                
+                // End of function
+                generator.add_instruction(Instruction::Label("snd_pair_end".to_string()));
+            }
             _ => {
                 return Err(CompilationError::UnsupportedFeature(format!(
                     "Unsupported builtin function: {:?}",
@@ -745,7 +831,235 @@ impl Compiler {
                                 .with_read2(0x1004, 0x2004, 0); // Placeholder register read (A1)
                             execution_trace.add_step(step);
                         }
-                        // Add other builtin operations similarly...
+                        DefaultFunction::SubtractInteger => {
+                            let sub_instr = risc_v_gen::Instruction::Sub(risc_v_gen::Register::A0, risc_v_gen::Register::A1, risc_v_gen::Register::A0);
+                            generator.add_instruction(sub_instr.clone())
+                                .map_err(|e| CompilationError::BitVMXCodeGen(e))?;
+                            
+                            // Create execution step for subtract operation
+                            let pc = generator.current_pc();
+                            let step = ExecutionStep::new(pc, pc, 0x12345678, pc + 4, execution_trace.current_step)
+                                .with_read1(0x1000, 0x2000, 0) // Placeholder register read (A1)
+                                .with_read2(0x1004, 0x2004, 0); // Placeholder register read (A0)
+                            execution_trace.add_step(step);
+                        }
+                        DefaultFunction::MultiplyInteger => {
+                            let mul_instr = risc_v_gen::Instruction::Mul(risc_v_gen::Register::A0, risc_v_gen::Register::A0, risc_v_gen::Register::A1);
+                            generator.add_instruction(mul_instr.clone())
+                                .map_err(|e| CompilationError::BitVMXCodeGen(e))?;
+                            
+                            // Create execution step for multiply operation
+                            let pc = generator.current_pc();
+                            let step = ExecutionStep::new(pc, pc, 0x12345678, pc + 4, execution_trace.current_step)
+                                .with_read1(0x1000, 0x2000, 0) // Placeholder register read (A0)
+                                .with_read2(0x1004, 0x2004, 0); // Placeholder register read (A1)
+                            execution_trace.add_step(step);
+                        }
+                        DefaultFunction::EqualsInteger => {
+                            // Subtract the two values and check if the result is zero
+                            let sub_instr = risc_v_gen::Instruction::Sub(risc_v_gen::Register::A0, risc_v_gen::Register::A0, risc_v_gen::Register::A1);
+                            generator.add_instruction(sub_instr.clone())
+                                .map_err(|e| CompilationError::BitVMXCodeGen(e))?;
+                            
+                            // Create execution step for subtract operation
+                            let pc = generator.current_pc();
+                            let step = ExecutionStep::new(pc, pc, 0x12345678, pc + 4, execution_trace.current_step)
+                                .with_read1(0x1000, 0x2000, 0) // Placeholder register read (A0)
+                                .with_read2(0x1004, 0x2004, 0); // Placeholder register read (A1)
+                            execution_trace.add_step(step);
+                            
+                            // Check if result is zero (set to 1 if zero, 0 otherwise)
+                            let seqz_instr = risc_v_gen::Instruction::Seqz(risc_v_gen::Register::A0, risc_v_gen::Register::A0);
+                            generator.add_instruction(seqz_instr.clone())
+                                .map_err(|e| CompilationError::BitVMXCodeGen(e))?;
+                            
+                            // Create execution step for seqz operation
+                            let pc = generator.current_pc();
+                            let step = ExecutionStep::new(pc, pc, 0x12345678, pc + 4, execution_trace.current_step)
+                                .with_read1(0x1000, 0x2000, 0); // Placeholder register read (A0)
+                            execution_trace.add_step(step);
+                        }
+                        DefaultFunction::LessThanInteger => {
+                            // Set A0 to 1 if A0 < A1, 0 otherwise
+                            let slt_instr = risc_v_gen::Instruction::Slt(risc_v_gen::Register::A0, risc_v_gen::Register::A0, risc_v_gen::Register::A1);
+                            generator.add_instruction(slt_instr.clone())
+                                .map_err(|e| CompilationError::BitVMXCodeGen(e))?;
+                            
+                            // Create execution step for slt operation
+                            let pc = generator.current_pc();
+                            let step = ExecutionStep::new(pc, pc, 0x12345678, pc + 4, execution_trace.current_step)
+                                .with_read1(0x1000, 0x2000, 0) // Placeholder register read (A0)
+                                .with_read2(0x1004, 0x2004, 0); // Placeholder register read (A1)
+                            execution_trace.add_step(step);
+                        }
+                        DefaultFunction::LessThanEqualsInteger => {
+                            // Set A0 to 1 if A1 < A0, 0 otherwise
+                            let slt_instr = risc_v_gen::Instruction::Slt(risc_v_gen::Register::A0, risc_v_gen::Register::A1, risc_v_gen::Register::A0);
+                            generator.add_instruction(slt_instr.clone())
+                                .map_err(|e| CompilationError::BitVMXCodeGen(e))?;
+                            
+                            // Create execution step for slt operation
+                            let pc = generator.current_pc();
+                            let step = ExecutionStep::new(pc, pc, 0x12345678, pc + 4, execution_trace.current_step)
+                                .with_read1(0x1000, 0x2000, 0) // Placeholder register read (A1)
+                                .with_read2(0x1004, 0x2004, 0); // Placeholder register read (A0)
+                            execution_trace.add_step(step);
+                            
+                            // Invert the result (1 if A0 <= A1, 0 otherwise)
+                            let xori_instr = risc_v_gen::Instruction::Xori(risc_v_gen::Register::A0, risc_v_gen::Register::A0, 1);
+                            generator.add_instruction(xori_instr.clone())
+                                .map_err(|e| CompilationError::BitVMXCodeGen(e))?;
+                            
+                            // Create execution step for xori operation
+                            let pc = generator.current_pc();
+                            let step = ExecutionStep::new(pc, pc, 0x12345678, pc + 4, execution_trace.current_step)
+                                .with_read1(0x1000, 0x2000, 0); // Placeholder register read (A0)
+                            execution_trace.add_step(step);
+                        }
+                        DefaultFunction::IfThenElse => {
+                            // Check if condition (A0) is a boolean (type = 0)
+                            let _ = generator.add_instruction(Instruction::Lw(Register::T0, 0, Register::A0));
+                            
+                            // Check if type is boolean (0)
+                            let _ = generator.add_instruction(Instruction::Li(Register::T1, 0));
+                            let _ = generator.add_instruction(Instruction::Bne(Register::T0, Register::T1, "if_error_call".to_string()));
+                            
+                            // Load the boolean value (true = 1, false = 0)
+                            let _ = generator.add_instruction(Instruction::Lw(Register::T0, 4, Register::A0));
+                            
+                            // Branch based on condition
+                            let _ = generator.add_instruction(Instruction::Beq(Register::T0, Register::Zero, "if_false_call".to_string()));
+                            
+                            // If true, use then-branch (A1)
+                            let _ = generator.add_instruction(Instruction::Mv(Register::A0, Register::A1));
+                            let _ = generator.add_instruction(Instruction::Jal(Register::Zero, "if_done_call".to_string()));
+                            
+                            // If false, use else-branch (already in A0)
+                            let _ = generator.add_instruction(Instruction::Label("if_false_call".to_string()));
+                            
+                            // End of if-then-else
+                            let _ = generator.add_instruction(Instruction::Label("if_done_call".to_string()));
+                            
+                            // Error handling for non-boolean condition
+                            let _ = generator.add_instruction(Instruction::Label("if_error_call".to_string()));
+                            
+                            // Default to false branch for now
+                            // A0 already contains the else-branch
+                        }
+                        DefaultFunction::MkCons => {
+                            // Create a new cons cell
+                            // A0 = head, A1 = tail
+                            let _ = generator.add_instruction(Instruction::Mv(Register::T0, Register::A0));
+                            
+                            // Allocate memory for the cons cell (8 bytes)
+                            let _ = generator.add_instruction(Instruction::Li(Register::A0, 8));
+                            let _ = generator.add_instruction(Instruction::Jal(Register::Ra, "malloc".to_string()));
+                            
+                            // Store head in the first 4 bytes
+                            let _ = generator.add_instruction(Instruction::Sw(Register::T0, 0, Register::A0));
+                            
+                            // Store tail in the second 4 bytes
+                            let _ = generator.add_instruction(Instruction::Sw(Register::A1, 4, Register::A0));
+                        }
+                        DefaultFunction::HeadList => {
+                            // A0 contains the list pointer
+                            // Check if the list pointer is null
+                            let _ = generator.add_instruction(Instruction::Beq(Register::A0, Register::Zero, "head_list_error".to_string()));
+                            
+                            // Load the head element from the list (first 4 bytes)
+                            let _ = generator.add_instruction(Instruction::Lw(Register::A0, 0, Register::A0));
+                            
+                            // Jump to end of function
+                            let _ = generator.add_instruction(Instruction::Jal(Register::Zero, "head_list_end".to_string()));
+                            
+                            // Error handling for null list
+                            let _ = generator.add_instruction(Instruction::Label("head_list_error".to_string()));
+                            
+                            // Load error code for empty list
+                            let _ = generator.add_instruction(Instruction::Li(Register::A0, -1)); // Error code for empty list
+                            
+                            // End of function
+                            let _ = generator.add_instruction(Instruction::Label("head_list_end".to_string()));
+                        }
+                        DefaultFunction::TailList => {
+                            // A0 contains the list pointer
+                            // Check if the list pointer is null
+                            let _ = generator.add_instruction(Instruction::Beq(Register::A0, Register::Zero, "tail_list_error".to_string()));
+                            
+                            // Load the tail element from the list (second 4 bytes)
+                            let _ = generator.add_instruction(Instruction::Lw(Register::A0, 4, Register::A0));
+                            
+                            // Jump to end of function
+                            let _ = generator.add_instruction(Instruction::Jal(Register::Zero, "tail_list_end".to_string()));
+                            
+                            // Error handling for null list
+                            let _ = generator.add_instruction(Instruction::Label("tail_list_error".to_string()));
+                            
+                            // Load error code for empty list
+                            let _ = generator.add_instruction(Instruction::Li(Register::A0, -1)); // Error code for empty list
+                            
+                            // End of function
+                            let _ = generator.add_instruction(Instruction::Label("tail_list_end".to_string()));
+                        }
+                        DefaultFunction::NullList => {
+                            // A0 contains the list pointer
+                            // Check if the list pointer is null (0 = true, 1 = false)
+                            let _ = generator.add_instruction(Instruction::Seqz(Register::A0, Register::A0));
+                        }
+                        DefaultFunction::MkPairData => {
+                            // Create a new pair
+                            // A0 = first element, A1 = second element
+                            let _ = generator.add_instruction(Instruction::Addi(Register::Sp, Register::Sp, -8));
+                            
+                            // Store the elements on the stack
+                            let _ = generator.add_instruction(Instruction::Sw(Register::A0, 0, Register::Sp));
+                            
+                            // Store the second element
+                            let _ = generator.add_instruction(Instruction::Sw(Register::A1, 4, Register::Sp));
+                            
+                            // Return the stack pointer as the pair pointer
+                            let _ = generator.add_instruction(Instruction::Mv(Register::A0, Register::Sp));
+                        }
+                        DefaultFunction::FstPair => {
+                            // A0 contains the pair pointer
+                            // Check if the pair pointer is null
+                            let _ = generator.add_instruction(Instruction::Beq(Register::A0, Register::Zero, "fst_pair_error".to_string()));
+                            
+                            // Load the first element from the pair (first 4 bytes)
+                            let _ = generator.add_instruction(Instruction::Lw(Register::A0, 0, Register::A0));
+                            
+                            // Jump to end of function
+                            let _ = generator.add_instruction(Instruction::Jal(Register::Zero, "fst_pair_end".to_string()));
+                            
+                            // Error handling for null pair
+                            let _ = generator.add_instruction(Instruction::Label("fst_pair_error".to_string()));
+                            
+                            // Load error code for null pair
+                            let _ = generator.add_instruction(Instruction::Li(Register::A0, -1)); // Error code for null pair
+                            
+                            // End of function
+                            let _ = generator.add_instruction(Instruction::Label("fst_pair_end".to_string()));
+                        }
+                        DefaultFunction::SndPair => {
+                            // A0 contains the pair pointer
+                            // Check if the pair pointer is null
+                            let _ = generator.add_instruction(Instruction::Beq(Register::A0, Register::Zero, "snd_pair_error".to_string()));
+                            
+                            // Load the second element from the pair (second 4 bytes)
+                            let _ = generator.add_instruction(Instruction::Lw(Register::A0, 4, Register::A0));
+                            
+                            // Jump to end of function
+                            let _ = generator.add_instruction(Instruction::Jal(Register::Zero, "snd_pair_end".to_string()));
+                            
+                            // Error handling for null pair
+                            let _ = generator.add_instruction(Instruction::Label("snd_pair_error".to_string()));
+                            
+                            // Load error code for null pair
+                            let _ = generator.add_instruction(Instruction::Li(Register::A0, -1)); // Error code for null pair
+                            
+                            // End of function
+                            let _ = generator.add_instruction(Instruction::Label("snd_pair_end".to_string()));
+                        }
                         _ => {
                             return Err(CompilationError::UnsupportedFeature(format!(
                                 "Unsupported builtin function: {:?}",
@@ -1215,18 +1529,48 @@ impl Compiler {
                     execution_trace.add_step(step);
                 }
                 IRInstr::CaseEnd => {
-                    generator.add_instruction(risc_v_gen::Instruction::Comment("End of case expression".to_string()))
-                        .map_err(|e| CompilationError::BitVMXCodeGen(e))?;
-                    
-                    // Add a label for the end of the case expression
-                    let label_instr = risc_v_gen::Instruction::Label("case_end".to_string());
-                    generator.add_instruction(label_instr.clone())
-                        .map_err(|e| CompilationError::BitVMXCodeGen(e))?;
+                    // End of case expression
+                    // Nothing to do
+                },
+                _ => {
+                    // Unsupported instruction
+                    return Err(CompilationError::UnsupportedFeature(format!(
+                        "Unsupported IR instruction: {:?}",
+                        instruction
+                    )));
                 }
             }
         }
         
         Ok(())
+    }
+
+    /// Compile UPLC code to RISC-V assembly and execute it using the BitVMX-CPU emulator directly
+    ///
+    /// This method compiles the UPLC code to RISC-V assembly and then executes it
+    /// using the BitVMX-CPU emulator directly, without spawning a subprocess.
+    ///
+    /// # Arguments
+    ///
+    /// * `uplc_code` - The UPLC code to compile and execute
+    ///
+    /// # Returns
+    ///
+    /// The execution trace of the program
+    pub fn compile_and_execute_direct(&self, input: &str) -> Result<ExecutionTrace> {
+        let assembly = self.compile(input)?;
+        
+        // Execute the assembly using the BitVMX emulator
+        let trace = bitvm_emulator::execute_assembly(&assembly)?;
+        
+        Ok(trace)
+    }
+
+    /// Save the execution trace to a CSV file
+    pub fn save_execution_trace(&self, trace: &ExecutionTrace, file_path: &std::path::Path) -> Result<()> {
+        // Save the trace to a CSV file
+        bitvm_emulator::save_trace_to_csv(trace, file_path)
+            .map_err(|e| CompilationError::BitVMXEmulator(e))
     }
 }
 
@@ -1260,8 +1604,8 @@ mod tests {
     }
     
     #[test]
-    fn test_compile_with_optimization() {
-        let compiler = Compiler::new().with_optimization(true);
+    fn test_compile_single_line_format() {
+        let compiler = Compiler::new();
         let uplc_code = "(program 1.0.0 (con integer 42))";
         let result = compiler.compile(uplc_code);
         assert!(result.is_ok());

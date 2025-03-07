@@ -1,0 +1,50 @@
+name: BitVMX Compatibility Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
+
+    - name: Install RISC-V toolchain
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-riscv64-unknown-elf
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+
+    - name: Build BitVMX-CPU emulator
+      run: |
+        cd reference_files/BitVMX-CPU
+        cargo build --release -p emulator
+
+    - name: Build uplc-to-riscv
+      run: |
+        cargo build --release -p uplc-to-riscv
+
+    - name: Run BitVMX compatibility tests
+      run: |
+        cargo test --release -p uplc-to-riscv --test bitvm_compatibility_tests -- --nocapture
+
+    - name: Run BitVMX verification tests
+      run: |
+        cargo test --release -p uplc-to-riscv --lib bitvm_verification -- --nocapture
+
+    - name: Run BitVMX emulator integration tests
+      run: |
+        cargo test --release -p uplc-to-riscv --lib bitvm_emulator -- --nocapture 

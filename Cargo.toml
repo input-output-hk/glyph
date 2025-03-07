@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/risc-v-gen",
     "crates/uplc-to-riscv",
+    "crates/risc-v-gen",
     "crates/cli",
     "crates/uplc-to-llvm",
 ]
@@ -15,9 +15,8 @@ repository = "https://github.com/input-output/riscy"
 authors = ["IOG"]
 
 [workspace.dependencies]
-thiserror = "1.0"
-nom = "7.1"
 log = "0.4"
+thiserror = "1.0"
 
 [profile.release]
 opt-level = 3

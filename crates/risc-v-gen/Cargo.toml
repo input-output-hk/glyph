@@ -12,5 +12,13 @@ log = { workspace = true }
 riscv-decode = "0.2.1"
 thiserror = { workspace = true }
 
+# BitVMX dependencies
+bitvm-common = { path = "../bitvm-common" }
+
+# BitVMX-CPU dependencies
+bitcoin-script-riscv = { path = "../../reference_files/BitVMX-CPU/bitcoin-script-riscv" }
+sha2 = "0.10.8"
+hex = "0.4.3"
+
 [features]
 default = [] 

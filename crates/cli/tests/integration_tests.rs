@@ -15,9 +15,8 @@ fn test_cli_compile() {
     // Run the CLI command
     let status = Command::new(env!("CARGO_BIN_EXE_uplc-to-risc-cli"))
         .args([
-            "compile",
-            "--input", input_path.to_str().unwrap(),
-            "--output", output_path.to_str().unwrap(),
+            input_path.to_str().unwrap(),
+            output_path.to_str().unwrap(),
         ])
         .status()
         .unwrap();
@@ -35,22 +34,20 @@ fn test_cli_compile() {
 }
 
 #[test]
-fn test_cli_compile_with_optimization() {
+fn test_cli_compile_builtin_function() {
     // Create a temporary directory for our test files
     let temp_dir = tempdir().unwrap();
     let input_path = temp_dir.path().join("input.uplc");
     let output_path = temp_dir.path().join("output.s");
     
-    // Write a simple UPLC program to the input file
+    // Write a UPLC program with built-in function to the input file
     fs::write(&input_path, "(program\n  1.0.0\n  [(builtin addInteger) (con integer 1) (con integer 2)]\n)").unwrap();
     
-    // Run the CLI command with optimization
+    // Run the CLI command without optimization
     let status = Command::new(env!("CARGO_BIN_EXE_uplc-to-risc-cli"))
         .args([
-            "compile",
-            "--input", input_path.to_str().unwrap(),
-            "--output", output_path.to_str().unwrap(),
-            "--optimize", "aggressive",
+            input_path.to_str().unwrap(),
+            output_path.to_str().unwrap(),
         ])
         .status()
         .unwrap();

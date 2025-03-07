@@ -13,6 +13,7 @@ thiserror = { workspace = true }
 
 # Internal dependencies
 risc-v-gen = { path = "../risc-v-gen" }
+bitvm-common = { path = "../bitvm-common" }
 
 # External dependencies
 uplc = { version = "1.0" }
@@ -23,8 +24,25 @@ pallas-primitives = { version = "^0.32.0" }
 # BitVMX compatibility dependencies
 sha2 = "0.10.8"
 hex = "0.4.3"
+riscv-decode = "0.2.1"
+tempfile = "3.8.1"
+
+# BitVMX-CPU dependencies
+bitcoin-script-riscv = { path = "../../reference_files/BitVMX-CPU/bitcoin-script-riscv" }
+emulator = { path = "../../reference_files/BitVMX-CPU/emulator" }
+
+# Serialization dependencies for BitVMX integration
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 # Optional features can be added later
 
 [features]
-default = [] 
+default = []
+
+[dev-dependencies]
+tempfile = "3.8.1"
+
+[[example]]
+name = "bitvm_verification_example"
+path = "examples/bitvm_verification_example.rs" 

@@ -57,6 +57,15 @@ pub enum IRInstr {
     
     /// Case end - end of a case expression
     CaseEnd,
+    
+    /// Error
+    Error(()),
+    
+    /// Constructor
+    Constr((), ()), // (tag, number of fields)
+    
+    /// Constructor field
+    ConstrField(()), // field index
 }
 
 fn debruijn_to_string(db: &DeBruijn) -> String {
@@ -120,7 +129,19 @@ fn lower_term(term: &Term<DeBruijn>, instructions: &mut Vec<IRInstr>) {
             // End the case expression
             instructions.push(IRInstr::CaseEnd);
         },
-        _ => panic!("Unsupported term type"),
+        Term::Error => {
+            instructions.push(IRInstr::Error(()));
+        },
+        Term::Constr { tag: _tag, fields } => {
+            // Push the constructor tag
+            instructions.push(IRInstr::Constr((), ()));
+            
+            // Push each field
+            for (_i, field) in fields.iter().enumerate() {
+                instructions.push(IRInstr::ConstrField(()));
+                lower_term(field, instructions);
+            }
+        },
     }
 }
 
