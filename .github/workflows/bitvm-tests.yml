@@ -28,10 +28,11 @@ jobs:
         toolchain: stable
         override: true
 
-    - name: Build BitVMX-CPU emulator
+    - name: Set Cargo configuration for Git fetching
       run: |
-        cd reference_files/BitVMX-CPU
-        cargo build --release -p emulator
+        mkdir -p ~/.cargo
+        echo "[net]" > ~/.cargo/config.toml
+        echo "git-fetch-with-cli = true" >> ~/.cargo/config.toml
 
     - name: Build uplc-to-riscv
       run: |
@@ -47,4 +48,4 @@ jobs:
 
     - name: Run BitVMX emulator integration tests
       run: |
-        cargo test --release -p uplc-to-riscv --lib bitvm_emulator -- --nocapture 
+        cargo test --release -p uplc-to-riscv --lib bitvm_emulator -- --nocapture

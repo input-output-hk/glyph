@@ -1,7 +1,7 @@
 /// Compliance tests for BitVMX compatibility
 ///
 /// This file contains tests to ensure that our code is compatible with BitVMX.
-/// The original compliance test in reference_files/BitVMX-CPU/emulator/tests/compliance.rs
+/// The original compliance test at https://github.com/FairgateLabs/BitVMX-CPU/emulator/tests/compliance.rs
 /// was looking for a directory that doesn't exist in our codebase (../docker-riscv32/compliance/build),
 /// so we've created this simplified version that tests the same functionality without
 /// the external dependencies.
