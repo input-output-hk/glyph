@@ -7,6 +7,10 @@ on:
     branches: [ main ]
 
 env:
+  # Force Git to use HTTPS instead of SSH for GitHub repositories
+  GIT_CONFIG_COUNT: 1
+  GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
+  GIT_CONFIG_VALUE_0: git@github.com:
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -30,9 +34,18 @@ jobs:
 
     - name: Set Cargo configuration for Git fetching
       run: |
+        # Set up project-level configuration
+        mkdir -p .cargo
+        echo '[net]' > .cargo/config.toml
+        echo 'git-fetch-with-cli = true' >> .cargo/config.toml
+        
+        # Also set user-level configuration as backup
         mkdir -p ~/.cargo
         echo "[net]" > ~/.cargo/config.toml
         echo "git-fetch-with-cli = true" >> ~/.cargo/config.toml
+        
+        # Configure Git to use HTTPS instead of SSH
+        git config --global url.https://github.com/.insteadOf git@github.com:
 
     - name: Build uplc-to-riscv
       run: |
