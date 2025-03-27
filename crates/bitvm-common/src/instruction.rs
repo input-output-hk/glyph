@@ -10,26 +10,38 @@ use riscv_decode::Instruction as RiscVInstruction;
 pub struct BitVMXInstruction {
     /// The underlying RISC-V instruction
     pub instruction: RiscVInstruction,
-    
+
     /// Program counter for this instruction
     pub pc: u32,
-    
+
     /// First memory read address (if any)
     pub read_addr1: Option<u32>,
-    
+
     /// Second memory read address (if any)
     pub read_addr2: Option<u32>,
-    
+
     /// Memory write address (if any)
     pub write_addr: Option<u32>,
-    
+
     /// Next program counter
     pub next_pc: u32,
-    
+
     /// Micro-instruction step (for multi-step instructions)
     pub micro: u8,
 }
 
+// [fun_x fun_x] recursive so ignore this scenario and jump to fun_x as normal
+// [(lam func ...) (lom x ..)] is a function so label appropriately
+
+// objects
+//
+// u8 - type
+// u32 - size in words
+// bytes - data
+//
+// integer - 0
+// size - 2
+// bytes - 8
 impl BitVMXInstruction {
     /// Create a new BitVMX instruction
     pub fn new(instruction: RiscVInstruction, pc: u32) -> Self {
@@ -43,37 +55,37 @@ impl BitVMXInstruction {
             micro: 0,
         }
     }
-    
+
     /// Set the first memory read address
     pub fn with_read1(mut self, addr: u32) -> Self {
         self.read_addr1 = Some(addr);
         self
     }
-    
+
     /// Set the second memory read address
     pub fn with_read2(mut self, addr: u32) -> Self {
         self.read_addr2 = Some(addr);
         self
     }
-    
+
     /// Set the memory write address
     pub fn with_write(mut self, addr: u32) -> Self {
         self.write_addr = Some(addr);
         self
     }
-    
+
     /// Set the next program counter
     pub fn with_next_pc(mut self, next_pc: u32) -> Self {
         self.next_pc = next_pc;
         self
     }
-    
+
     /// Set the micro-instruction step
     pub fn with_micro(mut self, micro: u8) -> Self {
         self.micro = micro;
         self
     }
-    
+
     /// Check if this is a jump instruction
     pub fn is_jump(&self) -> bool {
         matches!(
@@ -81,33 +93,37 @@ impl BitVMXInstruction {
             RiscVInstruction::Jal(_) | RiscVInstruction::Jalr(_)
         )
     }
-    
+
     /// Check if this is a branch instruction
     pub fn is_branch(&self) -> bool {
         matches!(
             self.instruction,
-            RiscVInstruction::Beq(_) | RiscVInstruction::Bne(_) |
-            RiscVInstruction::Blt(_) | RiscVInstruction::Bge(_) |
-            RiscVInstruction::Bltu(_) | RiscVInstruction::Bgeu(_)
+            RiscVInstruction::Beq(_)
+                | RiscVInstruction::Bne(_)
+                | RiscVInstruction::Blt(_)
+                | RiscVInstruction::Bge(_)
+                | RiscVInstruction::Bltu(_)
+                | RiscVInstruction::Bgeu(_)
         )
     }
-    
+
     /// Check if this is a memory load instruction
     pub fn is_load(&self) -> bool {
         matches!(
             self.instruction,
-            RiscVInstruction::Lb(_) | RiscVInstruction::Lh(_) |
-            RiscVInstruction::Lw(_) | RiscVInstruction::Lbu(_) |
-            RiscVInstruction::Lhu(_)
+            RiscVInstruction::Lb(_)
+                | RiscVInstruction::Lh(_)
+                | RiscVInstruction::Lw(_)
+                | RiscVInstruction::Lbu(_)
+                | RiscVInstruction::Lhu(_)
         )
     }
-    
+
     /// Check if this is a memory store instruction
     pub fn is_store(&self) -> bool {
         matches!(
             self.instruction,
-            RiscVInstruction::Sb(_) | RiscVInstruction::Sh(_) |
-            RiscVInstruction::Sw(_)
+            RiscVInstruction::Sb(_) | RiscVInstruction::Sh(_) | RiscVInstruction::Sw(_)
         )
     }
 }
@@ -155,19 +171,22 @@ pub fn parse_register_name(reg_str: &str) -> Result<u32, String> {
 pub fn parse_immediate(imm_str: &str) -> Result<u32, String> {
     if imm_str.starts_with("0x") {
         // Hexadecimal
-        u32::from_str_radix(&imm_str[2..], 16).map_err(|e| format!("Invalid hexadecimal immediate: {}", e))
+        u32::from_str_radix(&imm_str[2..], 16)
+            .map_err(|e| format!("Invalid hexadecimal immediate: {}", e))
     } else {
         // Decimal
-        imm_str.parse::<u32>().map_err(|e| format!("Invalid decimal immediate: {}", e))
+        imm_str
+            .parse::<u32>()
+            .map_err(|e| format!("Invalid decimal immediate: {}", e))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use riscv_decode::types::{BType, IType, JType, SType};
     use riscv_decode::Instruction::*;
-    use riscv_decode::types::{JType, BType, IType, SType};
-    
+
     #[test]
     fn test_parse_register_name() {
         assert_eq!(parse_register_name("x0").unwrap(), 0);
@@ -179,14 +198,14 @@ mod tests {
         assert_eq!(parse_register_name("t6").unwrap(), 31);
         assert!(parse_register_name("invalid").is_err());
     }
-    
+
     #[test]
     fn test_parse_immediate() {
         assert_eq!(parse_immediate("42").unwrap(), 42);
         assert_eq!(parse_immediate("0x2A").unwrap(), 42);
         assert!(parse_immediate("invalid").is_err());
     }
-    
+
     #[test]
     fn test_bitvm_instruction() {
         // Test jump instruction detection
@@ -195,21 +214,21 @@ mod tests {
         assert!(!jal_instr.is_branch());
         assert!(!jal_instr.is_load());
         assert!(!jal_instr.is_store());
-        
+
         // Test branch instruction detection
         let beq_instr = BitVMXInstruction::new(Beq(BType(1)), 0x1000);
         assert!(!beq_instr.is_jump());
         assert!(beq_instr.is_branch());
         assert!(!beq_instr.is_load());
         assert!(!beq_instr.is_store());
-        
+
         // Test load instruction detection
         let lw_instr = BitVMXInstruction::new(Lw(IType(1)), 0x1000);
         assert!(!lw_instr.is_jump());
         assert!(!lw_instr.is_branch());
         assert!(lw_instr.is_load());
         assert!(!lw_instr.is_store());
-        
+
         // Test store instruction detection
         let sw_instr = BitVMXInstruction::new(Sw(SType(1)), 0x1000);
         assert!(!sw_instr.is_jump());
@@ -217,4 +236,4 @@ mod tests {
         assert!(!sw_instr.is_load());
         assert!(sw_instr.is_store());
     }
-} 
+}
