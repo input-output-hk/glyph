@@ -50,11 +50,11 @@ impl Cek {
 
         self.generator.push(Instruction::Li(
             Register::S2,
-            0x00100000, // start at 1 MB
+            0x01000000, // start at 1 MB
         ));
 
         self.generator
-            .push(Instruction::Li(Register::S0, 0x01000000));
+            .push(Instruction::Li(Register::S0, 0x00100000));
 
         // 1 byte for NoFrame allocation
         self.generator
@@ -406,6 +406,103 @@ impl Cek {
             .push(Instruction::Jal(Register::T0, "halt".to_string()));
     }
 
+    pub fn handle_constr(&mut self) {
+        self.generator
+            .push(Instruction::Label("handle_constr".to_string()));
+
+        // Load the tag of the constr into T0
+        self.generator
+            .push(Instruction::Lw(Register::T0, 1, Register::A0));
+
+        // Load the length of the constr fields into T1
+        self.generator
+            .push(Instruction::Lw(Register::T1, 5, Register::A0));
+
+        self.generator.push(Instruction::Beq(
+            Register::T1,
+            Register::Zero,
+            "handle_constr_empty".to_string(),
+        ));
+
+        self.generator
+            .push(Instruction::Addi(Register::T1, Register::T1, -1));
+
+        // Minimum size for FrameConstr is 16 bytes
+        self.generator.push(Instruction::Li(Register::T2, -16));
+
+        self.generator.push(Instruction::Li(Register::T3, 2));
+
+        self.generator
+            .push(Instruction::Sll(Register::T4, Register::T1, Register::T3));
+
+        self.generator
+            .push(Instruction::Sub(Register::T2, Register::T2, Register::T4));
+
+        // Allocate 17 + 4 * constr fields length + 4 * values length
+        // where values length is 0 and fields length is fields in constr - 1
+        // frame tag 1 byte + constr tag 4 bytes + environment 4 bytes
+        // + fields length 4 bytes + 4 * fields length in bytes
+        // + values length 4 bytes + 4 * values length in bytes
+        // Remember this is subtracting the above value
+        self.generator
+            .push(Instruction::Add(Register::S0, Register::S0, Register::T2));
+
+        self.generator
+            .push(Instruction::Mv(Register::T3, Register::S0));
+
+        self.generator.push(Instruction::Li(Register::T4, 4));
+
+        // store frame tag
+        self.generator
+            .push(Instruction::Sb(Register::T4, 0, Register::T3));
+
+        // move up 1 byte
+        self.generator
+            .push(Instruction::Addi(Register::T3, Register::T3, 1));
+
+        //  store constr tag
+        self.generator
+            .push(Instruction::Sw(Register::T0, 0, Register::T3));
+        // move up 4 bytes
+        self.generator
+            .push(Instruction::Addi(Register::T3, Register::T3, 4));
+
+        //store environment
+        self.generator
+            .push(Instruction::Sw(Register::S1, 0, Register::T3));
+
+        // move up 4 bytes
+        self.generator
+            .push(Instruction::Addi(Register::T3, Register::T3, 4));
+
+        //store fields length -1
+        self.generator
+            .push(Instruction::Sw(Register::T1, 0, Register::T3));
+
+        // move up 4 bytes
+        self.generator
+            .push(Instruction::Addi(Register::T3, Register::T3, 4));
+
+        self.generator
+            .push(Instruction::Mv(Register::A1, Register::T3));
+
+        // TODO Loop Field values
+        //
+        // Return back to here
+        self.generator
+            .push(Instruction::Mv(Register::T3, Register::A1));
+
+        // Store 0 for values length
+        self.generator
+            .push(Instruction::Sw(Register::Zero, 0, Register::T3));
+
+        // Things
+
+        // Empty fields
+        self.generator
+            .push(Instruction::Label("handle_constr_empty".to_string()));
+    }
+
     pub fn handle_frame_await_arg(&mut self) {
         self.generator
             .push(Instruction::Label("handle_frame_await_arg".to_string()));
@@ -419,7 +516,10 @@ impl Cek {
             .push(Instruction::Addi(Register::S0, Register::S0, 5));
 
         self.generator
-            .push(Instruction::Mv(Register::A1, Register::T0));
+            .push(Instruction::Mv(Register::A1, Register::A0));
+
+        self.generator
+            .push(Instruction::Mv(Register::A0, Register::T0));
 
         self.generator
             .push(Instruction::Jal(Register::T0, "apply_evaluate".to_string()));
@@ -506,11 +606,11 @@ impl Cek {
             "force_evaluate_builtin".to_string(),
         ));
 
-        // load body pointer from stack
+        // load body pointer from a0 which is Value
         self.generator
             .push(Instruction::Lw(Register::T0, 1, Register::A0));
 
-        // load environment from stack
+        // load environment from a0 which is Value
         self.generator
             .push(Instruction::Lw(Register::T1, 5, Register::A0));
 
@@ -523,7 +623,7 @@ impl Cek {
         self.generator
             .push(Instruction::Jal(Register::T0, "compute".to_string()));
 
-        // Builtin
+        // Builtin TODO
         self.generator
             .push(Instruction::Label("force_evaluate_builtin".to_string()));
 
@@ -535,8 +635,77 @@ impl Cek {
             "force_evaluate_error".to_string(),
         ));
 
-        // Error
+        // Error TODO
         self.generator
             .push(Instruction::Label("force_evaluate_error".to_string()));
+    }
+
+    pub fn apply_evaluate(&mut self) {
+        self.generator
+            .push(Instruction::Label("apply_evaluate".to_string()));
+
+        //Value address should be in A0
+        // Load function value tag
+        self.generator
+            .push(Instruction::Lb(Register::T0, 0, Register::A0));
+
+        // Lambda
+        self.generator.push(Instruction::Li(Register::T1, 2));
+
+        self.generator.push(Instruction::Bne(
+            Register::T0,
+            Register::T1,
+            "apply_evaluate_builtin".to_string(),
+        ));
+
+        // load body pointer from a0 which is function Value
+        self.generator
+            .push(Instruction::Lw(Register::T0, 1, Register::A0));
+
+        // load environment from a0 which is function Value
+        self.generator
+            .push(Instruction::Lw(Register::T1, 5, Register::A0));
+
+        self.generator
+            .push(Instruction::Mv(Register::S1, Register::T1));
+
+        // Important this is the only place we modify E
+        // Allocate 8 bytes on the heap
+        self.generator
+            .push(Instruction::Addi(Register::S2, Register::S2, 8));
+
+        // pointer to argument value
+        self.generator
+            .push(Instruction::Sw(Register::A1, -8, Register::S2));
+
+        // pointer to previous environment
+        self.generator
+            .push(Instruction::Sw(Register::S1, -4, Register::S2));
+
+        // Save allocated heap location in environment pointer
+        self.generator
+            .push(Instruction::Addi(Register::S1, Register::S2, -8));
+
+        self.generator
+            .push(Instruction::Mv(Register::A0, Register::T0));
+
+        self.generator
+            .push(Instruction::Jal(Register::T0, "compute".to_string()));
+
+        // Builtin TODO
+        self.generator
+            .push(Instruction::Label("apply_evaluate_builtin".to_string()));
+
+        self.generator.push(Instruction::Li(Register::T1, 3));
+
+        self.generator.push(Instruction::Bne(
+            Register::T0,
+            Register::T1,
+            "apply_evaluate_error".to_string(),
+        ));
+
+        // Error TODO
+        self.generator
+            .push(Instruction::Label("apply_evaluate_error".to_string()));
     }
 }
