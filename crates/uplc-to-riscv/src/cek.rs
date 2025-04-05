@@ -249,13 +249,9 @@ impl Cek {
         self.generator
             .push(Instruction::Lw(Register::T0, 1, Register::A0));
 
-        // Put environment into A1
+        // Put debruijn index into A1
         self.generator
-            .push(Instruction::Mv(Register::A1, Register::S1));
-
-        // Put debruijn index into A2
-        self.generator
-            .push(Instruction::Mv(Register::A2, Register::T0));
+            .push(Instruction::Mv(Register::A1, Register::T0));
 
         self.generator
             .push(Instruction::Jal(Register::T0, "lookup".to_string()));
@@ -424,6 +420,8 @@ impl Cek {
             "handle_constr_empty".to_string(),
         ));
 
+        // -- Fields is not empty --
+
         self.generator
             .push(Instruction::Addi(Register::T1, Register::T1, -1));
 
@@ -489,6 +487,9 @@ impl Cek {
         // TODO Loop Field values
         //
         // Return back to here
+
+        // todo!();
+
         self.generator
             .push(Instruction::Mv(Register::T3, Register::A1));
 
@@ -497,10 +498,48 @@ impl Cek {
             .push(Instruction::Sw(Register::Zero, 0, Register::T3));
 
         // Things
+        // Load the pointer to the first field into T1
+        self.generator
+            .push(Instruction::Lw(Register::T0, 9, Register::A0));
 
-        // Empty fields
+        self.generator
+            .push(Instruction::Lw(Register::A0, 0, Register::T0));
+
+        self.generator
+            .push(Instruction::Jal(Register::T0, "compute".to_string()));
+
+        // -- Empty fields --
         self.generator
             .push(Instruction::Label("handle_constr_empty".to_string()));
+
+        // 9 bytes allocated on heap
+        // 1 byte value tag + 4 bytes constr tag + 4 bytes constr fields length which is 0
+        self.generator
+            .push(Instruction::Addi(Register::S2, Register::S2, 9));
+
+        self.generator.push(Instruction::Li(Register::T2, 4));
+
+        self.generator
+            .push(Instruction::Sb(Register::T2, -9, Register::S2));
+
+        self.generator
+            .push(Instruction::Sw(Register::T0, -8, Register::S2));
+
+        self.generator
+            .push(Instruction::Sw(Register::T1, -4, Register::S2));
+
+        self.generator
+            .push(Instruction::Addi(Register::A0, Register::S2, -9));
+
+        self.generator
+            .push(Instruction::Jal(Register::T0, "return".to_string()));
+    }
+
+    pub fn handle_case(&mut self) {
+        self.generator
+            .push(Instruction::Label("handle_case".to_string()));
+
+        todo!()
     }
 
     pub fn handle_frame_await_arg(&mut self) {
@@ -634,10 +673,13 @@ impl Cek {
             Register::T1,
             "force_evaluate_error".to_string(),
         ));
+        // todo!();
 
         // Error TODO
         self.generator
             .push(Instruction::Label("force_evaluate_error".to_string()));
+
+        todo!();
     }
 
     pub fn apply_evaluate(&mut self) {
@@ -704,8 +746,51 @@ impl Cek {
             "apply_evaluate_error".to_string(),
         ));
 
+        // todo!();
+
         // Error TODO
         self.generator
             .push(Instruction::Label("apply_evaluate_error".to_string()));
+
+        todo!();
+    }
+
+    pub fn lookup(&mut self) {
+        self.generator
+            .push(Instruction::Label("lookup".to_string()));
+
+        self.generator
+            .push(Instruction::Mv(Register::T0, Register::A2));
+
+        self.generator
+            .push(Instruction::Addi(Register::T0, Register::T0, -1));
+
+        self.generator.push(Instruction::Beq(
+            Register::T0,
+            Register::Zero,
+            "lookup_return".to_string(),
+        ));
+
+        // pointer to next environment node
+        self.generator
+            .push(Instruction::Lw(Register::T1, 4, Register::S1));
+
+        self.generator
+            .push(Instruction::Mv(Register::S1, Register::T1));
+
+        self.generator
+            .push(Instruction::Mv(Register::A1, Register::T0));
+
+        self.generator
+            .push(Instruction::Jal(Register::T0, "lookup".to_string()));
+
+        self.generator
+            .push(Instruction::Label("lookup_return".to_string()));
+
+        self.generator
+            .push(Instruction::Lw(Register::A0, 0, Register::S0));
+
+        self.generator
+            .push(Instruction::Jal(Register::T0, "return".to_string()));
     }
 }
