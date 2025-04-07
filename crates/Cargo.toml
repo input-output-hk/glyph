@@ -5,6 +5,7 @@ members = [
     "uplc-to-llvm",
     "cli",
     "bitvm-common",
+    "uplc-serializer",
 ]
 
 [workspace.package]
