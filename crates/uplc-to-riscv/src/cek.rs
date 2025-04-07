@@ -1,4 +1,4 @@
-use risc_v_gen::{BitVMXCodeGenerator, Instruction, Register};
+use risc_v_gen::{CodeGenerator, Instruction, Register};
 
 // pub enum Value {
 //     Con(Rc<Constant>),
@@ -39,7 +39,7 @@ struct Cek {
 }
 
 impl Cek {
-    pub fn new(generator: BitVMXCodeGenerator) -> Self {
+    pub fn new() -> Self {
         Self {
             generator: Vec::new(),
         }

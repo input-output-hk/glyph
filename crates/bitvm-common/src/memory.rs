@@ -10,7 +10,7 @@ use crate::constants::*;
 pub enum MemorySegmentType {
     /// Read-only segment (code and data)
     ReadOnly,
-    
+
     /// Read-write segment (heap and stack)
     ReadWrite,
 }
@@ -27,7 +27,7 @@ pub enum MemorySegmentType {
 /// `true` if the address is properly aligned, `false` otherwise
 pub fn is_aligned(addr: u32, alignment: u32) -> bool {
     match alignment {
-        1 => (addr & ALIGNMENT_MASK_1) == 0,
+        1 => true,
         2 => (addr & ALIGNMENT_MASK_2) == 0,
         4 => (addr & ALIGNMENT_MASK_4) == 0,
         8 => (addr & ALIGNMENT_MASK_8) == 0,
@@ -103,25 +103,34 @@ pub fn get_segment_type(addr: u32) -> Option<MemorySegmentType> {
 pub fn is_valid_memory_operation(addr: u32, is_write: bool, alignment: u32) -> Result<(), String> {
     // Check alignment
     if !is_aligned(addr, alignment) {
-        return Err(format!("Unaligned memory access at address 0x{:08x} with alignment {}", addr, alignment));
+        return Err(format!(
+            "Unaligned memory access at address 0x{:08x} with alignment {}",
+            addr, alignment
+        ));
     }
-    
+
     // Check segment permissions
     if is_in_code_segment(addr) || is_in_data_segment(addr) {
         if is_write {
-            return Err(format!("Write to read-only memory at address 0x{:08x}", addr));
+            return Err(format!(
+                "Write to read-only memory at address 0x{:08x}",
+                addr
+            ));
         }
     } else if !is_in_heap_segment(addr) && !is_in_stack_segment(addr) {
-        return Err(format!("Memory access outside valid segments at address 0x{:08x}", addr));
+        return Err(format!(
+            "Memory access outside valid segments at address 0x{:08x}",
+            addr
+        ));
     }
-    
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_is_aligned() {
         assert!(is_aligned(0x00000000, 4));
@@ -129,73 +138,85 @@ mod tests {
         assert!(!is_aligned(0x00000001, 4));
         assert!(!is_aligned(0x00000002, 4));
         assert!(!is_aligned(0x00000003, 4));
-        
+
         assert!(is_aligned(0x00000000, 2));
         assert!(is_aligned(0x00000002, 2));
         assert!(!is_aligned(0x00000001, 2));
-        
+
         assert!(is_aligned(0x00000000, 1));
         assert!(is_aligned(0x00000001, 1));
     }
-    
+
     #[test]
     fn test_is_in_segment() {
         assert!(is_in_code_segment(0x00000000));
         assert!(is_in_code_segment(0x000FFFFF));
         assert!(!is_in_code_segment(0x00100000));
-        
+
         assert!(is_in_data_segment(0x00100000));
         assert!(is_in_data_segment(0x001FFFFF));
         assert!(!is_in_data_segment(0x00200000));
-        
+
         assert!(is_in_heap_segment(0x00200000));
         assert!(is_in_heap_segment(0x002FFFFF));
         assert!(!is_in_heap_segment(0x00300000));
-        
+
         assert!(is_in_stack_segment(0x00300000));
         assert!(is_in_stack_segment(0x003FFFFF));
         assert!(!is_in_stack_segment(0x00400000));
     }
-    
+
     #[test]
     fn test_get_segment_type() {
-        assert_eq!(get_segment_type(0x00000000), Some(MemorySegmentType::ReadOnly));
-        assert_eq!(get_segment_type(0x00100000), Some(MemorySegmentType::ReadOnly));
-        assert_eq!(get_segment_type(0x00200000), Some(MemorySegmentType::ReadWrite));
-        assert_eq!(get_segment_type(0x00300000), Some(MemorySegmentType::ReadWrite));
+        assert_eq!(
+            get_segment_type(0x00000000),
+            Some(MemorySegmentType::ReadOnly)
+        );
+        assert_eq!(
+            get_segment_type(0x00100000),
+            Some(MemorySegmentType::ReadOnly)
+        );
+        assert_eq!(
+            get_segment_type(0x00200000),
+            Some(MemorySegmentType::ReadWrite)
+        );
+        assert_eq!(
+            get_segment_type(0x00300000),
+            Some(MemorySegmentType::ReadWrite)
+        );
         assert_eq!(get_segment_type(0x00400000), None);
     }
-    
+
     #[test]
     fn test_is_valid_memory_operation() {
         // Valid read from code segment
         assert!(is_valid_memory_operation(0x00000000, false, 4).is_ok());
-        
+
         // Invalid write to code segment
         assert!(is_valid_memory_operation(0x00000000, true, 4).is_err());
-        
+
         // Valid read from data segment
         assert!(is_valid_memory_operation(0x00100000, false, 4).is_ok());
-        
+
         // Invalid write to data segment
         assert!(is_valid_memory_operation(0x00100000, true, 4).is_err());
-        
+
         // Valid read from heap segment
         assert!(is_valid_memory_operation(0x00200000, false, 4).is_ok());
-        
+
         // Valid write to heap segment
         assert!(is_valid_memory_operation(0x00200000, true, 4).is_ok());
-        
+
         // Valid read from stack segment
         assert!(is_valid_memory_operation(0x00300000, false, 4).is_ok());
-        
+
         // Valid write to stack segment
         assert!(is_valid_memory_operation(0x00300000, true, 4).is_ok());
-        
+
         // Invalid unaligned access
         assert!(is_valid_memory_operation(0x00000001, false, 4).is_err());
-        
+
         // Invalid access outside segments
         assert!(is_valid_memory_operation(0x00400000, false, 4).is_err());
     }
-} 
+}
