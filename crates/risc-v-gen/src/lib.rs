@@ -27,8 +27,9 @@ pub enum CodeGenError {
 pub type Result<T> = std::result::Result<T, CodeGenError>;
 
 /// RISC-V register
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Register {
+    #[default]
     Zero,
     Ra,
     Sp,
@@ -234,6 +235,7 @@ pub enum Instruction {
 }
 
 /// Code generator for RISC-V assembly
+#[derive(Debug, Default)]
 pub struct CodeGenerator {
     instructions: Vec<Instruction>,
 }
