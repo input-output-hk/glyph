@@ -3,15 +3,14 @@ resolver = "2"
 members = [
     "crates/uplc-to-riscv",
     "crates/risc-v-gen",
-    "crates/cli",
-    "crates/uplc-to-llvm",
+    "crates/uplc-serializer",
 ]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/input-output/riscy"
+repository = "https://github.com/input-output-hk/uplc-risc"
 authors = ["IOG"]
 
 [workspace.dependencies]
@@ -27,4 +26,4 @@ strip = true
 
 [profile.dev]
 opt-level = 0
-debug = true 
+debug = true

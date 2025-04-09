@@ -1,10 +1,10 @@
 [package]
 name = "risc-v-gen"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "RISC-V code generation utilities"
 license = "Apache-2.0"
-repository = "https://github.com/aiken-lang/aiken-core"
+repository = "https://github.com/input-output-hk/uplc-risc"
 
 [dependencies]
 # Core dependencies
@@ -12,11 +12,9 @@ log = { workspace = true }
 riscv-decode = "0.2.1"
 thiserror = { workspace = true }
 
-# BitVMX dependencies
-bitvm-common = { path = "../bitvm-common" }
-
 # BitVMX-CPU dependencies
 bitcoin-script-riscv = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "main", package = "bitcoin-script-riscv" }
+emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "main", package = "emulator" }
 sha2 = "0.10.8"
 hex = "0.4.3"
 

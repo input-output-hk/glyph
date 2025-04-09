@@ -1,10 +1,10 @@
 [package]
 name = "uplc-to-riscv"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Compiler from Untyped Plutus Core to RISC-V"
 license = "Apache-2.0"
-repository = "https://github.com/aiken-lang/aiken-core"
+repository = "https://github.com/input-output-hk/uplc-risc"
 
 [dependencies]
 # Core dependencies
@@ -13,7 +13,6 @@ thiserror = { workspace = true }
 
 # Internal dependencies
 risc-v-gen = { path = "../risc-v-gen" }
-bitvm-common = { path = "../bitvm-common" }
 
 # External dependencies
 uplc = { version = "1.0" }
