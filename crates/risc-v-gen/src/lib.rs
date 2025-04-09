@@ -1,10 +1,14 @@
-//! RISC-V Code Generation
+//! RISC-V Code gene.ration
 //!
-//! This crate provides utilities for generating RISC-V assembly code.
+//! This crate provides utilities for gene.rating RISC-V assembly code.
+
+use std::{fs::File, io::Write};
 
 use thiserror::Error;
 
-/// Errors that can occur during RISC-V code generation
+mod emulator;
+
+/// Errors that can occur during RISC-V code gene.ration
 #[derive(Debug, Error)]
 pub enum CodeGenError {
     #[error("Invalid instruction: {0}")]
@@ -17,7 +21,7 @@ pub enum CodeGenError {
     InvalidImmediate(i32),
 }
 
-/// Result type for code generation operations
+/// Result type for code gene.ration operations
 pub type Result<T> = std::result::Result<T, CodeGenError>;
 
 /// RISC-V register
@@ -229,26 +233,26 @@ pub enum Instruction {
     Ecall,
 }
 
-/// Code generator for RISC-V assembly
+/// Code gene.rator for RISC-V assembly
 #[derive(Debug, Default)]
-pub struct CodeGenerator {
+pub struct Codegenerator {
     instructions: Vec<Instruction>,
 }
 
-impl CodeGenerator {
-    /// Create a new code generator
+impl Codegenerator {
+    /// Create a new code gene.rator
     pub fn new() -> Self {
         Self {
             instructions: Vec::new(),
         }
     }
 
-    /// Add an instruction to the code generator
+    /// Add an instruction to the code gene.rator
     pub fn add_instruction(&mut self, instruction: Instruction) {
         self.instructions.push(instruction);
     }
 
-    /// Generate assembly code
+    /// gene.rate assembly code
     pub fn generate(&self) -> String {
         let mut result = String::new();
 
@@ -485,14 +489,14 @@ mod tests {
 
     #[test]
     fn test_code_generation() {
-        let mut gen = CodeGenerator::new();
+        let mut gene = Codegenerator::new();
 
-        gen.add_instruction(Instruction::Label("main".to_string()));
-        gen.add_instruction(Instruction::Li(Register::A0, 42));
-        gen.add_instruction(Instruction::Li(Register::A1, 58));
-        gen.add_instruction(Instruction::Add(Register::A2, Register::A0, Register::A1));
+        gene.add_instruction(Instruction::Label("main".to_string()));
+        gene.add_instruction(Instruction::Li(Register::A0, 42));
+        gene.add_instruction(Instruction::Li(Register::A1, 58));
+        gene.add_instruction(Instruction::Add(Register::A2, Register::A0, Register::A1));
 
-        let asm = gen.generate();
+        let asm = gene.generate();
         assert!(asm.contains("main:"));
         assert!(asm.contains("li a0, 42"));
         assert!(asm.contains("li a1, 58"));
@@ -501,13 +505,13 @@ mod tests {
 
     #[test]
     fn test_memory_instructions() {
-        let mut gen = CodeGenerator::new();
+        let mut gene = Codegenerator::new();
 
-        gen.add_instruction(Instruction::Li(Register::A0, 42));
-        gen.add_instruction(Instruction::Sw(Register::A0, 0, Register::Sp));
-        gen.add_instruction(Instruction::Lw(Register::A1, 0, Register::Sp));
+        gene.add_instruction(Instruction::Li(Register::A0, 42));
+        gene.add_instruction(Instruction::Sw(Register::A0, 0, Register::Sp));
+        gene.add_instruction(Instruction::Lw(Register::A1, 0, Register::Sp));
 
-        let asm = gen.generate();
+        let asm = gene.generate();
         assert!(asm.contains("li a0, 42"));
         assert!(asm.contains("sw a0, 0(sp)"));
         assert!(asm.contains("lw a1, 0(sp)"));
@@ -515,18 +519,18 @@ mod tests {
 
     #[test]
     fn test_branch_instructions() {
-        let mut gen = CodeGenerator::new();
+        let mut gene = Codegenerator::new();
 
-        gen.add_instruction(Instruction::Li(Register::A0, 42));
-        gen.add_instruction(Instruction::Li(Register::A1, 58));
-        gen.add_instruction(Instruction::Blt(
+        gene.add_instruction(Instruction::Li(Register::A0, 42));
+        gene.add_instruction(Instruction::Li(Register::A1, 58));
+        gene.add_instruction(Instruction::Blt(
             Register::A0,
             Register::A1,
             "label".to_string(),
         ));
-        gen.add_instruction(Instruction::Label("label".to_string()));
+        gene.add_instruction(Instruction::Label("label".to_string()));
 
-        let asm = gen.generate();
+        let asm = gene.generate();
         assert!(asm.contains("li a0, 42"));
         assert!(asm.contains("li a1, 58"));
         assert!(asm.contains("blt a0, a1, label"));
@@ -535,17 +539,33 @@ mod tests {
 
     #[test]
     fn test_directives() {
-        let mut gen = CodeGenerator::new();
+        let mut gene = Codegenerator::new();
 
-        gen.add_instruction(Instruction::Section(".text".to_string()));
-        gen.add_instruction(Instruction::Global("main".to_string()));
-        gen.add_instruction(Instruction::Label("main".to_string()));
-        gen.add_instruction(Instruction::Comment("This is a comment".to_string()));
+        gene.add_instruction(Instruction::Section("text".to_string()));
+        gene.add_instruction(Instruction::Global("main".to_string()));
+        gene.add_instruction(Instruction::Label("main".to_string()));
+        gene.add_instruction(Instruction::Comment("This is a comment".to_string()));
 
-        let asm = gen.generate();
+        let asm = gene.generate();
         assert!(asm.contains(".text"));
         assert!(asm.contains(".global main"));
         assert!(asm.contains("main:"));
         assert!(asm.contains("# This is a comment"));
+    }
+
+    #[test]
+    fn test_directives2() {
+        let mut gene = Codegenerator::new();
+
+        gene.add_instruction(Instruction::Section("text".to_string()));
+        gene.add_instruction(Instruction::Global("_start".to_string()));
+        gene.add_instruction(Instruction::Label("_start".to_string()));
+        gene.add_instruction(Instruction::Comment("This is a comment".to_string()));
+
+        gene.add_instruction(Instruction::Addi(Register::A0, Register::A1, 43));
+        gene.add_instruction(Instruction::Li(Register::A7, 93));
+        gene.add_instruction(Instruction::Ecall);
+
+        let asm = gene.save_to_file("test.s");
     }
 }

@@ -1,7 +1,7 @@
 [package]
 name = "risc-v-gen"
 version = "0.1.0"
-edition = "2025"
+edition = "2024"
 description = "RISC-V code generation utilities"
 license = "Apache-2.0"
 repository = "https://github.com/input-output-hk/uplc-risc"
@@ -14,6 +14,7 @@ thiserror = { workspace = true }
 
 # BitVMX-CPU dependencies
 bitcoin-script-riscv = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "main", package = "bitcoin-script-riscv" }
+emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "main", package = "emulator" }
 sha2 = "0.10.8"
 hex = "0.4.3"
 

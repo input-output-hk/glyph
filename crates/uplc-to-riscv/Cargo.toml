@@ -1,7 +1,7 @@
 [package]
 name = "uplc-to-riscv"
 version = "0.1.0"
-edition = "2025"
+edition = "2024"
 description = "Compiler from Untyped Plutus Core to RISC-V"
 license = "Apache-2.0"
 repository = "https://github.com/input-output-hk/uplc-risc"

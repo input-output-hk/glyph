@@ -1,13 +1,13 @@
 /// Term type tags (1 byte)
 pub mod term_tag {
     pub const VARIABLE: u8 = 0x00;
-    pub const DELAY: u8 = 0x01;
-    pub const LAMBDA: u8 = 0x02;
-    pub const APPLY: u8 = 0x03;
-    pub const CONSTANT: u8 = 0x04;
-    pub const FORCE: u8 = 0x05;
-    pub const ERROR: u8 = 0x06;
-    pub const BUILTIN: u8 = 0x07;
+    pub const LAMBDA: u8 = 0x01;
+    pub const APPLY: u8 = 0x02;
+    pub const FORCE: u8 = 0x03;
+    pub const DELAY: u8 = 0x04;
+    pub const CONSTANT: u8 = 0x05;
+    pub const BUILTIN: u8 = 0x06;
+    pub const ERROR: u8 = 0x07;
     pub const CONSTRUCTOR: u8 = 0x08;
     pub const CASE: u8 = 0x09;
 }
