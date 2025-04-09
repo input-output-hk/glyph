@@ -199,6 +199,7 @@ pub enum Instruction {
     Jal(Register, String),
 
     // Pseudo-instructions
+    J(String),
     Li(Register, i32),
     La(Register, String),
     Mv(Register, Register),
@@ -263,7 +264,7 @@ impl CodeGenerator {
                     result.push_str(&format!("    .global {}\n", symbol));
                 },
                 Instruction::Section(section) => {
-                    result.push_str(&format!("    .section {}\n", section));
+                    result.push_str(&format!(".{}\n", section));
                 },
                 Instruction::Align(align) => {
                     result.push_str(&format!("    .align {}\n", align));
@@ -452,6 +453,9 @@ impl CodeGenerator {
             },
             Instruction::Snez(rd, rs) => {
                 format!("snez {}, {}", rd.name(), rs.name())
+            },
+            Instruction::J(imm) => {
+                format!("j {}", imm)
             },
             Instruction::Nop => "nop".to_string(),
             Instruction::Label(_) => unreachable!("Labels are handled separately"),

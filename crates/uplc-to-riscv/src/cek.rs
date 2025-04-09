@@ -119,7 +119,7 @@ impl Cek {
         ));
 
         self.generator
-            .add_instruction(Instruction::Jal(self.discard, "compute".to_string()));
+            .add_instruction(Instruction::J("compute".to_string()));
 
         ret
     }
@@ -152,7 +152,7 @@ impl Cek {
         let term_tag = Register::T0;
 
         self.generator
-            .add_instruction(Instruction::Lb(term_tag, 0, term));
+            .add_instruction(Instruction::Lbu(term_tag, 0, term));
 
         self.generator
             .add_instruction(Instruction::Comment("Var".to_string()));
@@ -274,6 +274,7 @@ impl Cek {
 
         self.generator
             .add_instruction(Instruction::Comment("Load Frame from S0".to_string()));
+
         self.generator.add_instruction(Instruction::Comment(
             "Frame tag is first byte of frame".to_string(),
         ));
@@ -281,10 +282,11 @@ impl Cek {
         let frame_tag = Register::T0;
 
         self.generator
-            .add_instruction(Instruction::Lb(frame_tag, 0, self.frames));
+            .add_instruction(Instruction::Lbu(frame_tag, 0, self.frames));
 
         self.generator
             .add_instruction(Instruction::Comment("FrameAwaitArg".to_string()));
+
         self.generator.add_instruction(Instruction::Beq(
             frame_tag,
             Register::Zero,
@@ -307,6 +309,7 @@ impl Cek {
 
         self.generator
             .add_instruction(Instruction::Comment("FrameAwaitFunValue".to_string()));
+
         self.generator
             .add_instruction(Instruction::Li(match_tag, 2));
 
@@ -318,6 +321,7 @@ impl Cek {
 
         self.generator
             .add_instruction(Instruction::Comment("FrameForce".to_string()));
+
         self.generator
             .add_instruction(Instruction::Li(match_tag, 3));
 
@@ -332,6 +336,7 @@ impl Cek {
 
         self.generator
             .add_instruction(Instruction::Comment("NoFrame".to_string()));
+
         self.generator
             .add_instruction(Instruction::Li(match_tag, 6));
 
@@ -342,7 +347,8 @@ impl Cek {
         ));
     }
 
-    pub fn handle_var(&mut self, var_term: Register) {
+    pub fn handle_var(&mut self, ret: Register) -> Register {
+        let var = ret;
         self.generator
             .add_instruction(Instruction::Label("handle_var".to_string()));
 
@@ -353,7 +359,7 @@ impl Cek {
         let var_index = Register::T0;
 
         self.generator
-            .add_instruction(Instruction::Lw(var_index, 1, var_term));
+            .add_instruction(Instruction::Lw(var_index, 1, var));
 
         self.generator.add_instruction(Instruction::Comment(
             "Put debruijn index into A1".to_string(),
@@ -365,7 +371,9 @@ impl Cek {
             .add_instruction(Instruction::Mv(lookup_index, var_index));
 
         self.generator
-            .add_instruction(Instruction::Jal(self.discard, "lookup".to_string()));
+            .add_instruction(Instruction::J("lookup".to_string()));
+
+        lookup_index
     }
 
     pub fn handle_delay(&mut self, ret: Register) {
@@ -397,24 +405,30 @@ impl Cek {
 
         self.generator
             .add_instruction(Instruction::Comment("first byte is tag".to_string()));
+
         self.generator
             .add_instruction(Instruction::Sb(vdelay_tag, -9, self.heap));
+
         self.generator
             .add_instruction(Instruction::Comment("Store body pointer".to_string()));
+
         self.generator
             .add_instruction(Instruction::Sw(body, -8, self.heap));
+
         self.generator
             .add_instruction(Instruction::Comment("Store environment".to_string()));
+
         self.generator
             .add_instruction(Instruction::Sw(self.env, -4, self.heap));
 
         self.generator
             .add_instruction(Instruction::Comment("Put return value into A0".to_string()));
+
         self.generator
             .add_instruction(Instruction::Addi(ret, self.heap, -9));
 
         self.generator
-            .add_instruction(Instruction::Jal(self.discard, "return".to_string()));
+            .add_instruction(Instruction::J("return".to_string()));
     }
 
     pub fn handle_lambda(&mut self, ret: Register) {
@@ -448,24 +462,30 @@ impl Cek {
 
         self.generator
             .add_instruction(Instruction::Comment("first byte is tag".to_string()));
+
         self.generator
             .add_instruction(Instruction::Sb(vlambda_tag, -9, self.heap));
+
         self.generator
             .add_instruction(Instruction::Comment("Store body".to_string()));
+
         self.generator
             .add_instruction(Instruction::Sw(body, -8, self.heap));
+
         self.generator
             .add_instruction(Instruction::Comment("Store environment".to_string()));
+
         self.generator
             .add_instruction(Instruction::Sw(self.env, -4, self.heap));
 
         self.generator
             .add_instruction(Instruction::Comment("Put return value into A0".to_string()));
+
         self.generator
             .add_instruction(Instruction::Addi(ret, self.heap, -9));
 
         self.generator
-            .add_instruction(Instruction::Jal(self.discard, "return".to_string()));
+            .add_instruction(Instruction::J("return".to_string()));
     }
 
     pub fn handle_apply(&mut self, ret: Register) {
@@ -508,28 +528,32 @@ impl Cek {
 
         self.generator
             .add_instruction(Instruction::Comment("Push tag onto stack".to_string()));
+
         self.generator
             .add_instruction(Instruction::Sb(frame_tag, 0, self.frames));
 
         self.generator
             .add_instruction(Instruction::Comment("Push argument onto stack".to_string()));
+
         self.generator
             .add_instruction(Instruction::Sw(argument, 1, self.frames));
 
         self.generator.add_instruction(Instruction::Comment(
             "Push environment onto stack".to_string(),
         ));
+
         self.generator
             .add_instruction(Instruction::Sw(self.env, 5, self.frames));
 
         self.generator.add_instruction(Instruction::Comment(
             "Put function address into A0".to_string(),
         ));
+
         self.generator
             .add_instruction(Instruction::Mv(ret, function));
 
         self.generator
-            .add_instruction(Instruction::Jal(self.discard, "compute".to_string()));
+            .add_instruction(Instruction::J("compute".to_string()));
     }
 
     pub fn handle_force(&mut self, ret: Register) {
@@ -570,24 +594,23 @@ impl Cek {
         self.generator.add_instruction(Instruction::Mv(ret, body));
 
         self.generator
-            .add_instruction(Instruction::Jal(self.discard, "compute".to_string()));
+            .add_instruction(Instruction::J("compute".to_string()));
     }
 
     pub fn handle_error(&mut self, ret: Register) {
-        let error = ret;
         self.generator
             .add_instruction(Instruction::Label("handle_error".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Comment("Load error tag into A0".to_string()));
-        self.generator
-            .add_instruction(Instruction::Lb(ret, 0, error));
+            .add_instruction(Instruction::Comment("Load -1 into A0".to_string()));
+
+        self.generator.add_instruction(Instruction::Li(ret, -1));
 
         self.generator
-            .add_instruction(Instruction::Jal(self.discard, "halt".to_string()));
+            .add_instruction(Instruction::J("halt".to_string()));
     }
 
-    pub fn handle_constr(&mut self, ret: Register) {
+    pub fn handle_constr(&mut self, ret: Register) -> (Register, Register, Register, Register) {
         let constr = ret;
 
         self.generator
@@ -598,6 +621,7 @@ impl Cek {
         ));
 
         let constr_tag = Register::T0;
+
         self.generator
             .add_instruction(Instruction::Lw(constr_tag, 1, constr));
 
@@ -788,7 +812,7 @@ impl Cek {
             .add_instruction(Instruction::Mv(ret, first_field));
 
         self.generator
-            .add_instruction(Instruction::Jal(self.discard, "compute".to_string()));
+            .add_instruction(Instruction::J("compute".to_string()));
 
         self.generator
             .add_instruction(Instruction::Comment("-- Empty fields --".to_string()));
@@ -824,7 +848,9 @@ impl Cek {
             .add_instruction(Instruction::Addi(ret, self.heap, -9));
 
         self.generator
-            .add_instruction(Instruction::Jal(self.discard, "return".to_string()));
+            .add_instruction(Instruction::J("return".to_string()));
+
+        (second_field, frames_arg, size, callback)
     }
 
     pub fn handle_case(&mut self, ret: Register) -> (Register, Register, Register, Register) {
@@ -913,6 +939,12 @@ impl Cek {
             .add_instruction(Instruction::Addi(frames, frames, 1));
 
         self.generator
+            .add_instruction(Instruction::Sw(self.env, 0, frames));
+
+        self.generator
+            .add_instruction(Instruction::Addi(frames, frames, 4));
+
+        self.generator
             .add_instruction(Instruction::Sw(size, 0, frames));
 
         self.generator
@@ -945,39 +977,50 @@ impl Cek {
         self.generator.add_instruction(Instruction::Mv(ret, constr));
 
         self.generator
-            .add_instruction(Instruction::Jal(self.discard, "compute".to_string()));
+            .add_instruction(Instruction::J("compute".to_string()));
 
         (branches, frames_arg, list_size, callback)
     }
 
-    pub fn handle_frame_await_arg(&mut self) {
+    pub fn handle_frame_await_arg(&mut self, ret: Register) -> (Register, Register) {
+        let arg = Register::A1;
+
         self.generator
             .add_instruction(Instruction::Label("handle_frame_await_arg".to_string()));
 
         self.generator.add_instruction(Instruction::Comment(
             "load function value pointer from stack".to_string(),
         ));
+
+        let function = Register::T0;
         self.generator
-            .add_instruction(Instruction::Lw(Register::T0, 1, Register::S0));
+            .add_instruction(Instruction::Lw(function, 1, self.frames));
 
         self.generator.add_instruction(Instruction::Comment(
             "reset stack Kontinuation pointer".to_string(),
         ));
-        self.generator
-            .add_instruction(Instruction::Addi(Register::S0, Register::S0, 5));
 
         self.generator
-            .add_instruction(Instruction::Mv(Register::A1, Register::A0));
+            .add_instruction(Instruction::Addi(self.frames, self.frames, 5));
+
+        let argument = Register::A1;
 
         self.generator
-            .add_instruction(Instruction::Mv(Register::A0, Register::T0));
+            .add_instruction(Instruction::Mv(argument, arg));
 
         self.generator
-            .add_instruction(Instruction::Jal(Register::T0, "apply_evaluate".to_string()));
+            .add_instruction(Instruction::Mv(ret, function));
+
+        self.generator
+            .add_instruction(Instruction::J("apply_evaluate".to_string()));
+
+        (ret, argument)
     }
 
     // Takes in a0 and passes it to apply_evaluate
-    pub fn handle_frame_await_fun_term(&mut self) {
+    pub fn handle_frame_await_fun_term(&mut self, ret: Register) {
+        let function = ret;
+
         self.generator.add_instruction(Instruction::Label(
             "handle_frame_await_fun_term".to_string(),
         ));
@@ -985,55 +1028,64 @@ impl Cek {
         self.generator.add_instruction(Instruction::Comment(
             "load argument pointer from stack".to_string(),
         ));
+
+        let argument = Register::T0;
         self.generator
-            .add_instruction(Instruction::Lw(Register::T0, 1, Register::S0));
+            .add_instruction(Instruction::Lw(argument, 1, self.frames));
 
         self.generator.add_instruction(Instruction::Comment(
             "load environment from stack".to_string(),
         ));
+
+        let environment = Register::T1;
         self.generator
-            .add_instruction(Instruction::Lw(Register::T1, 5, Register::S0));
+            .add_instruction(Instruction::Lw(environment, 5, self.frames));
 
         self.generator.add_instruction(Instruction::Comment(
             "reset stack Kontinuation pointer".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(Register::S0, Register::S0, 9));
+            .add_instruction(Instruction::Addi(self.frames, self.frames, 9));
 
         self.generator.add_instruction(Instruction::Comment(
             "5 bytes for FrameAwaitArg allocation".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(Register::S0, Register::S0, -5));
+            .add_instruction(Instruction::Addi(self.frames, self.frames, -5));
 
         self.generator.add_instruction(Instruction::Comment(
             "Tag is 0 for FrameAwaitArg".to_string(),
         ));
+
+        let frame_tag = Register::T2;
         self.generator
-            .add_instruction(Instruction::Li(Register::T2, 0));
+            .add_instruction(Instruction::Li(frame_tag, 0));
 
         self.generator
             .add_instruction(Instruction::Comment("Push tag onto stack".to_string()));
+
         self.generator
-            .add_instruction(Instruction::Sb(Register::T2, 0, Register::S0));
+            .add_instruction(Instruction::Sb(frame_tag, 0, self.frames));
 
         self.generator.add_instruction(Instruction::Comment(
             "Push function value pointer onto stack".to_string(),
         ));
+
         self.generator
-            .add_instruction(Instruction::Sw(Register::A0, 1, Register::S0));
+            .add_instruction(Instruction::Sw(function, 1, self.frames));
 
         self.generator.add_instruction(Instruction::Comment(
             "Set new environment pointer".to_string(),
         ));
-        self.generator
-            .add_instruction(Instruction::Mv(Register::S1, Register::T1));
 
         self.generator
-            .add_instruction(Instruction::Mv(Register::A0, Register::T0));
+            .add_instruction(Instruction::Mv(self.env, environment));
 
         self.generator
-            .add_instruction(Instruction::Jal(Register::T0, "compute".to_string()));
+            .add_instruction(Instruction::Mv(ret, argument));
+
+        self.generator
+            .add_instruction(Instruction::J("compute".to_string()));
     }
 
     // Takes in a0 and passes it to force_evaluate
@@ -1045,10 +1097,120 @@ impl Cek {
             "reset stack Kontinuation pointer".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(Register::S0, Register::S0, 1));
+            .add_instruction(Instruction::Addi(self.frames, self.frames, 1));
 
         self.generator
-            .add_instruction(Instruction::Jal(Register::T0, "force_evaluate".to_string()));
+            .add_instruction(Instruction::J("force_evaluate".to_string()));
+    }
+
+    pub fn handle_frame_constr(&mut self, ret: Register) {
+        let computed_value = ret;
+        let frame = self.frames;
+        self.generator
+            .add_instruction(Instruction::Label("handle_frame_constr".to_string()));
+
+        let constr_tag = Register::T0;
+
+        // Load the constructor tag from the frame
+        self.generator
+            .add_instruction(Instruction::Lw(constr_tag, 1, frame));
+
+        let environment = Register::T1;
+
+        // Load the environment from the frame
+        self.generator
+            .add_instruction(Instruction::Lw(environment, 5, frame));
+
+        let fields_len = Register::T2;
+
+        self.generator
+            .add_instruction(Instruction::Lw(fields_len, 9, frame));
+
+        // bytes offset from frame to values len based on fields len
+        let bytes_offset = Register::T3;
+
+        self.generator
+            .add_instruction(Instruction::Mv(bytes_offset, fields_len));
+
+        self.generator
+            .add_instruction(Instruction::Slli(bytes_offset, bytes_offset, 2));
+
+        self.generator
+            .add_instruction(Instruction::Addi(bytes_offset, bytes_offset, 13));
+
+        self.generator
+            .add_instruction(Instruction::Add(bytes_offset, bytes_offset, frame));
+
+        let values_len = Register::T4;
+
+        self.generator
+            .add_instruction(Instruction::Lw(values_len, 0, bytes_offset));
+
+        self.generator
+            .add_instruction(Instruction::Addi(values_len, values_len, 1));
+
+        self.generator
+            .add_instruction(Instruction::Sw(values_len, 0, bytes_offset));
+
+        self.generator.add_instruction(Instruction::Beq(
+            fields_len,
+            Register::Zero,
+            "handle_frame_constr_empty".to_string(),
+        ));
+
+        let first_field = Register::A5;
+        self.generator
+            .add_instruction(Instruction::Lw(first_field, 13, frame));
+
+        let current_field_len = fields_len;
+
+        self.generator
+            .add_instruction(Instruction::Addi(current_field_len, current_field_len, -1));
+
+        let new_value = Register::A4;
+
+        self.generator
+            .add_instruction(Instruction::Mv(new_value, computed_value));
+
+        let length_arg = Register::A2;
+
+        self.generator
+            .add_instruction(Instruction::Mv(length_arg, current_field_len));
+
+        self.generator
+            .add_instruction(Instruction::Add(length_arg, length_arg, values_len));
+
+        let new_list = Register::A1;
+
+        self.generator
+            .add_instruction(Instruction::Addi(new_list, frame, 13));
+
+        let src_list = ret;
+
+        self.generator
+            .add_instruction(Instruction::Addi(src_list, frame, 17));
+
+        let callback = Register::A3;
+
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "clone_list".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Sw(new_value, 0, new_list));
+
+        self.generator
+            .add_instruction(Instruction::Mv(self.env, environment));
+
+        self.generator
+            .add_instruction(Instruction::Mv(ret, first_field));
+
+        self.generator
+            .add_instruction(Instruction::J("compute".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Label("handle_frame_constr_empty".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
     }
 
     pub fn halt(&mut self) {
@@ -1058,7 +1220,8 @@ impl Cek {
         self.generator.add_instruction(Instruction::Ecall);
     }
 
-    pub fn force_evaluate(&mut self) {
+    pub fn force_evaluate(&mut self, ret: Register) {
+        let value = ret;
         self.generator
             .add_instruction(Instruction::Label("force_evaluate".to_string()));
 
@@ -1067,135 +1230,156 @@ impl Cek {
         ));
         self.generator
             .add_instruction(Instruction::Comment("Load value tag".to_string()));
+
+        let tag = Register::T0;
         self.generator
-            .add_instruction(Instruction::Lb(Register::T0, 0, Register::A0));
+            .add_instruction(Instruction::Lbu(tag, 0, value));
 
         self.generator
             .add_instruction(Instruction::Comment("Delay".to_string()));
+
+        let delay_value_tag = Register::T1;
         self.generator
-            .add_instruction(Instruction::Li(Register::T1, 1));
+            .add_instruction(Instruction::Li(delay_value_tag, 1));
 
         self.generator.add_instruction(Instruction::Bne(
-            Register::T0,
-            Register::T1,
+            tag,
+            delay_value_tag,
             "force_evaluate_builtin".to_string(),
         ));
 
         self.generator.add_instruction(Instruction::Comment(
             "load body pointer from a0 which is Value".to_string(),
         ));
+
+        // We can overwrite T0 here since we can't reach the other tag cases at this point
+        let body = Register::T0;
         self.generator
-            .add_instruction(Instruction::Lw(Register::T0, 1, Register::A0));
+            .add_instruction(Instruction::Lw(body, 1, value));
 
         self.generator.add_instruction(Instruction::Comment(
             "load environment from a0 which is Value".to_string(),
         ));
+
+        let environment = Register::T1;
         self.generator
-            .add_instruction(Instruction::Lw(Register::T1, 5, Register::A0));
+            .add_instruction(Instruction::Lw(environment, 5, value));
 
         self.generator
-            .add_instruction(Instruction::Mv(Register::S1, Register::T1));
+            .add_instruction(Instruction::Mv(self.env, environment));
+
+        self.generator.add_instruction(Instruction::Mv(ret, body));
 
         self.generator
-            .add_instruction(Instruction::Mv(Register::A0, Register::T0));
+            .add_instruction(Instruction::J("compute".to_string()));
 
-        self.generator
-            .add_instruction(Instruction::Jal(Register::T0, "compute".to_string()));
-
-        self.generator
-            .add_instruction(Instruction::Comment("Builtin TODO".to_string()));
         self.generator
             .add_instruction(Instruction::Label("force_evaluate_builtin".to_string()));
 
+        // T0 is still tag here
+        let builtin_value_tag = Register::T1;
         self.generator
-            .add_instruction(Instruction::Li(Register::T1, 3));
+            .add_instruction(Instruction::Li(builtin_value_tag, 3));
 
         self.generator.add_instruction(Instruction::Bne(
-            Register::T0,
-            Register::T1,
+            tag,
+            builtin_value_tag,
             "force_evaluate_error".to_string(),
         ));
-        // todo!();
 
         self.generator
-            .add_instruction(Instruction::Comment("Error TODO".to_string()));
+            .add_instruction(Instruction::Comment("Builtin TODO".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+
         self.generator
             .add_instruction(Instruction::Label("force_evaluate_error".to_string()));
 
-        // todo!();
+        self.generator
+            .add_instruction(Instruction::J("handle_error".to_string()));
     }
 
-    pub fn apply_evaluate(&mut self) {
+    pub fn apply_evaluate(&mut self, ret: Register, function: Register, argument: Register) {
         self.generator
             .add_instruction(Instruction::Label("apply_evaluate".to_string()));
 
         //Value address should be in A0
         self.generator
             .add_instruction(Instruction::Comment("Load function value tag".to_string()));
+
+        let function_tag = Register::T0;
         self.generator
-            .add_instruction(Instruction::Lb(Register::T0, 0, Register::A0));
+            .add_instruction(Instruction::Lbu(function_tag, 0, function));
 
         self.generator
             .add_instruction(Instruction::Comment("Lambda".to_string()));
+
+        let lambda_value_tag = Register::T1;
+
         self.generator
-            .add_instruction(Instruction::Li(Register::T1, 2));
+            .add_instruction(Instruction::Li(lambda_value_tag, 2));
 
         self.generator.add_instruction(Instruction::Bne(
-            Register::T0,
-            Register::T1,
+            function_tag,
+            lambda_value_tag,
             "apply_evaluate_builtin".to_string(),
         ));
 
         self.generator.add_instruction(Instruction::Comment(
             "load body pointer from a0 which is function Value".to_string(),
         ));
+
+        let body = Register::T0;
+
         self.generator
-            .add_instruction(Instruction::Lw(Register::T0, 1, Register::A0));
+            .add_instruction(Instruction::Lw(body, 1, function));
 
         self.generator.add_instruction(Instruction::Comment(
             "load environment from a0 which is function Value".to_string(),
         ));
-        self.generator
-            .add_instruction(Instruction::Lw(Register::T1, 5, Register::A0));
+
+        let environment = Register::T1;
 
         self.generator
-            .add_instruction(Instruction::Mv(Register::S1, Register::T1));
+            .add_instruction(Instruction::Lw(environment, 5, function));
+
+        self.generator
+            .add_instruction(Instruction::Mv(self.env, environment));
 
         self.generator.add_instruction(Instruction::Comment(
-            "Important this is the only place we modify E".to_string(),
+            "Important this is the only place we modify environment".to_string(),
         ));
+
         self.generator.add_instruction(Instruction::Comment(
             "Allocate 8 bytes on the heap".to_string(),
         ));
+
         self.generator
-            .add_instruction(Instruction::Addi(Register::S2, Register::S2, 8));
+            .add_instruction(Instruction::Addi(self.heap, self.heap, 8));
 
         self.generator.add_instruction(Instruction::Comment(
             "pointer to argument value".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Sw(Register::A1, -8, Register::S2));
+            .add_instruction(Instruction::Sw(argument, -8, self.heap));
 
         self.generator.add_instruction(Instruction::Comment(
             "pointer to previous environment".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Sw(Register::S1, -4, Register::S2));
+            .add_instruction(Instruction::Sw(self.env, -4, self.heap));
 
         self.generator.add_instruction(Instruction::Comment(
             "Save allocated heap location in environment pointer".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(Register::S1, Register::S2, -8));
+            .add_instruction(Instruction::Addi(self.env, self.heap, -8));
+
+        self.generator.add_instruction(Instruction::Mv(ret, body));
 
         self.generator
-            .add_instruction(Instruction::Mv(Register::A0, Register::T0));
+            .add_instruction(Instruction::J("compute".to_string()));
 
-        self.generator
-            .add_instruction(Instruction::Jal(Register::T0, "compute".to_string()));
-
-        self.generator
-            .add_instruction(Instruction::Comment("Builtin TODO".to_string()));
         self.generator
             .add_instruction(Instruction::Label("apply_evaluate_builtin".to_string()));
 
@@ -1203,33 +1387,37 @@ impl Cek {
             .add_instruction(Instruction::Li(Register::T1, 3));
 
         self.generator.add_instruction(Instruction::Bne(
-            Register::T0,
+            function_tag,
             Register::T1,
             "apply_evaluate_error".to_string(),
         ));
 
-        // todo!();
-
         self.generator
-            .add_instruction(Instruction::Comment("Error TODO".to_string()));
+            .add_instruction(Instruction::Comment("Builtin TODO".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+
         self.generator
             .add_instruction(Instruction::Label("apply_evaluate_error".to_string()));
 
-        // todo!();
+        self.generator
+            .add_instruction(Instruction::J("handle_error".to_string()));
     }
 
-    pub fn lookup(&mut self) {
+    pub fn lookup(&mut self, ret: Register, index: Register) {
         self.generator
             .add_instruction(Instruction::Label("lookup".to_string()));
 
-        self.generator
-            .add_instruction(Instruction::Mv(Register::T0, Register::A2));
+        let current_index = Register::T0;
 
         self.generator
-            .add_instruction(Instruction::Addi(Register::T0, Register::T0, -1));
+            .add_instruction(Instruction::Mv(current_index, index));
+
+        self.generator
+            .add_instruction(Instruction::Addi(current_index, current_index, -1));
 
         self.generator.add_instruction(Instruction::Beq(
-            Register::T0,
+            current_index,
             Register::Zero,
             "lookup_return".to_string(),
         ));
@@ -1237,26 +1425,28 @@ impl Cek {
         self.generator.add_instruction(Instruction::Comment(
             "pointer to next environment node".to_string(),
         ));
+
+        let current_env = Register::T1;
         self.generator
-            .add_instruction(Instruction::Lw(Register::T1, 4, Register::S1));
+            .add_instruction(Instruction::Lw(current_env, 4, self.env));
 
         self.generator
-            .add_instruction(Instruction::Mv(Register::S1, Register::T1));
+            .add_instruction(Instruction::Mv(self.env, current_env));
 
         self.generator
-            .add_instruction(Instruction::Mv(Register::A1, Register::T0));
+            .add_instruction(Instruction::Mv(index, current_index));
 
         self.generator
-            .add_instruction(Instruction::Jal(Register::T0, "lookup".to_string()));
+            .add_instruction(Instruction::J("lookup".to_string()));
 
         self.generator
             .add_instruction(Instruction::Label("lookup_return".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Lw(Register::A0, 0, Register::S0));
+            .add_instruction(Instruction::Lw(ret, 0, self.env));
 
         self.generator
-            .add_instruction(Instruction::Jal(Register::T0, "return".to_string()));
+            .add_instruction(Instruction::J("return".to_string()));
     }
 
     // A0 pointer to terms array
@@ -1302,7 +1492,7 @@ impl Cek {
             .add_instruction(Instruction::Addi(length, length, -1));
 
         self.generator
-            .add_instruction(Instruction::Jal(self.discard, "clone_list".to_string()));
+            .add_instruction(Instruction::J("clone_list".to_string()));
 
         self.generator
             .add_instruction(Instruction::Label("clone_list_return".to_string()));
@@ -1329,21 +1519,28 @@ mod tests {
         let ret = cek.init();
         cek.compute(ret);
         cek.return_compute();
-        cek.handle_var(ret);
+        let index = cek.handle_var(ret);
         cek.handle_delay(ret);
         cek.handle_lambda(ret);
         cek.handle_apply(ret);
         cek.handle_force(ret);
         cek.handle_error(ret);
-        cek.handle_constr(ret);
+        let (second_field, frames_arg, size, callback1) = cek.handle_constr(ret);
         let (list, list_dest, length, callback) = cek.handle_case(ret);
-        cek.handle_frame_await_arg();
-        cek.handle_frame_await_fun_term();
+
+        assert!(
+            second_field == list
+                && list_dest == frames_arg
+                && size == length
+                && callback1 == callback
+        );
+        let (function, argument) = cek.handle_frame_await_arg(ret);
+        cek.handle_frame_await_fun_term(ret);
         cek.handle_frame_force();
         cek.halt();
-        cek.force_evaluate();
-        cek.apply_evaluate();
-        cek.lookup();
+        cek.force_evaluate(ret);
+        cek.apply_evaluate(ret, function, argument);
+        cek.lookup(ret, index);
         cek.clone_list(list, list_dest, length, callback);
 
         // println!("CEK Debug printed is {:#?}", cek);
@@ -1351,7 +1548,5 @@ mod tests {
         let code_gen = cek.generator;
 
         println!("{}", code_gen.generate());
-
-        todo!()
     }
 }
