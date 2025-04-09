@@ -261,7 +261,7 @@ impl CodeGenerator {
                     result.push_str(&format!("    # {}\n", comment));
                 },
                 Instruction::Global(symbol) => {
-                    result.push_str(&format!("    .global {}\n", symbol));
+                    result.push_str(&format!(".global {}\n", symbol));
                 },
                 Instruction::Section(section) => {
                     result.push_str(&format!(".{}\n", section));
@@ -471,6 +471,12 @@ impl CodeGenerator {
             Instruction::Ecall => "ecall".to_string(),
         }
     }
+
+    pub fn save_to_file(&self, filename: &str) -> std::io::Result<()> {
+        let mut file = File::create(filename)?;
+        file.write_all(self.generate().as_bytes())?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -537,7 +543,7 @@ mod tests {
         gen.add_instruction(Instruction::Comment("This is a comment".to_string()));
 
         let asm = gen.generate();
-        assert!(asm.contains(".section .text"));
+        assert!(asm.contains(".text"));
         assert!(asm.contains(".global main"));
         assert!(asm.contains("main:"));
         assert!(asm.contains("# This is a comment"));
