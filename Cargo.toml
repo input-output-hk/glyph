@@ -8,9 +8,9 @@ members = [
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
+edition = "2025"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/input-output/riscy"
+repository = "https://github.com/input-output-hk/uplc-risc"
 authors = ["IOG"]
 
 [workspace.dependencies]

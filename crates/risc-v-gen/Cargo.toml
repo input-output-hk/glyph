@@ -1,10 +1,10 @@
 [package]
 name = "risc-v-gen"
 version = "0.1.0"
-edition = "2021"
+edition = "2025"
 description = "RISC-V code generation utilities"
 license = "Apache-2.0"
-repository = "https://github.com/aiken-lang/aiken-core"
+repository = "https://github.com/input-output-hk/uplc-risc"
 
 [dependencies]
 # Core dependencies
