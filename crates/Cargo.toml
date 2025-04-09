@@ -4,7 +4,6 @@ members = [
     "risc-v-gen",
     "uplc-to-llvm",
     "cli",
-    "bitvm-common",
     "uplc-serializer",
 ]
 
