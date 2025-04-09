@@ -2,7 +2,6 @@
 members = [
     "uplc-to-riscv",
     "risc-v-gen",
-    "uplc-to-llvm",
     "cli",
     "uplc-serializer",
 ]
