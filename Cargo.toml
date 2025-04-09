@@ -5,6 +5,7 @@ members = [
     "crates/risc-v-gen",
     "crates/cli",
     "crates/uplc-to-llvm",
+    "crates/uplc-serializer",
 ]
 
 [workspace.package]
@@ -27,4 +28,4 @@ strip = true
 
 [profile.dev]
 opt-level = 0
-debug = true 
+debug = true

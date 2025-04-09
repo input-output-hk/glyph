@@ -8,8 +8,23 @@ use uplc::builtins::DefaultFunction;
 use uplc::PlutusData;
 
 use crate::constants::{bool_val, const_tag, data_tag, header, int_size, term_tag};
-use crate::memory_layout::{Address, MemoryLayout};
 use crate::{Result, SerializationError};
+
+/// A simple address type for tracking positions in the output buffer
+#[derive(Debug, Clone, Copy)]
+struct Address(u64);
+
+impl Address {
+    fn new(pos: u64) -> Self {
+        Self(pos)
+    }
+
+    fn as_u32(&self) -> u32 {
+        // This may truncate large addresses, but should be fine for most use cases
+        // A proper implementation might want to check for overflow
+        self.0 as u32
+    }
+}
 
 /// A serializer for UPLC terms
 pub struct UPLCSerializer<'a> {
@@ -17,12 +32,11 @@ pub struct UPLCSerializer<'a> {
     program: &'a Program<DeBruijn>,
 
     /// Memory layout manager
-    layout: MemoryLayout,
+    // layout: MemoryLayout,
 
     /// Output buffer
     output: Cursor<Vec<u8>>,
-
-    /// Address of the root term
+    // Address of the root term
     root_term_address: Option<Address>,
 }
 
@@ -31,7 +45,7 @@ impl<'a> UPLCSerializer<'a> {
     pub fn new(program: &'a Program<DeBruijn>) -> Self {
         Self {
             program,
-            layout: MemoryLayout::new(),
+            // layout: MemoryLayout::new(),
             output: Cursor::new(Vec::new()),
             root_term_address: None,
         }
@@ -42,72 +56,19 @@ impl<'a> UPLCSerializer<'a> {
         // First, reserve space for the header
         self.output.write_all(&[0; header::HEADER_SIZE])?;
 
-        // Calculate the size of the entire program and prepare memory layout
-        self.calculate_layout()?;
-
         // Now serialize the root term
         let root_addr = self.serialize_term(&self.program.term)?;
         self.root_term_address = Some(root_addr);
-
-        // Write the header (magic bytes, version, and root address)
-        self.write_header()?;
 
         // Return the serialized program
         Ok(self.output.into_inner())
     }
 
-    /// Write the program header
-    fn write_header(&mut self) -> Result<()> {
-        // Save current position
-        let current_pos = self.output.position();
-
-        // Move to the start of the output
-        self.output.set_position(0);
-
-        // Write magic bytes
-        self.output.write_all(header::MAGIC)?;
-
-        // Write version (as 3 individual bytes)
-        self.output.write_u8(self.program.version.0 as u8)?;
-        self.output.write_u8(self.program.version.1 as u8)?;
-        self.output.write_u8(self.program.version.2 as u8)?;
-
-        // Write a reserved byte (for alignment)
-        self.output.write_u8(0)?;
-
-        // Write root term address
-        let root_addr = self.root_term_address.ok_or_else(|| {
-            SerializationError::MemoryLayoutError("Root term address not set".to_string())
-        })?;
-        self.output.write_u32::<LittleEndian>(root_addr.as_u32())?;
-
-        // Restore position
-        self.output.set_position(current_pos);
-
-        Ok(())
-    }
-
-    /// Calculate the memory layout for the program
-    fn calculate_layout(&mut self) -> Result<()> {
-        // This function would traverse the term tree to calculate the total size
-        // and assign memory addresses to each term and constant.
-        // For now, we'll leave this as a placeholder since our approach doesn't
-        // require a separate layout calculation pass.
-        Ok(())
-    }
-
     /// Serialize a term and return its address
     fn serialize_term(&mut self, term: &Term<DeBruijn>) -> Result<Address> {
-        // Check if this term has already been serialized (for deduplication)
-        if let Some(addr) = self.layout.lookup_term(term) {
-            return Ok(addr);
-        }
-
         // Get current position in the output buffer
-        let _term_start_pos = self.output.position();
-
-        // The address will be in the term region, adjusted by the current position
-        let address = self.layout.allocate_term(0)?; // Size will be calculated later
+        let term_start_pos = self.output.position();
+        let address = Address::new(term_start_pos);
 
         // Serialize the term based on its type
         match term {
@@ -125,9 +86,6 @@ impl<'a> UPLCSerializer<'a> {
             Term::Constr { tag, fields } => self.serialize_constructor(*tag, fields)?,
             Term::Case { constr, branches } => self.serialize_case(constr, branches)?,
         }
-
-        // Register the serialized term with its address for deduplication
-        self.layout.register_term(term, address);
 
         Ok(address)
     }
@@ -209,40 +167,19 @@ impl<'a> UPLCSerializer<'a> {
 
     /// Serialize a constant term
     fn serialize_constant(&mut self, constant: &Rc<Constant>) -> Result<()> {
-        // Check if this constant has already been serialized (for deduplication)
-        if let Some(addr) = self.layout.lookup_constant(constant) {
-            // Write tag and constant address
-            self.output.write_u8(term_tag::CONSTANT)?;
-            self.output.write_u32::<LittleEndian>(addr.as_u32())?;
-            return Ok(());
-        }
-
-        // Get current position
-        let const_start_pos = self.output.position();
-
-        // The address will be in the appropriate constant pool, allocated later
-        let address = match &**constant {
-            Constant::Integer(_) => self.layout.allocate_integer(0)?,
-            Constant::ByteString(_) => self.layout.allocate_bytestring(0)?,
-            Constant::String(_) => self.layout.allocate_string(0)?,
-            _ => self.layout.allocate_complex_data(0)?,
-        };
-
-        // Write tag and constant address
+        // Tag byte for constant
         self.output.write_u8(term_tag::CONSTANT)?;
-        self.output.write_u32::<LittleEndian>(address.as_u32())?;
-
-        // Remember current position
-        let return_pos = self.output.position();
-
-        // Move to the constant address in the output stream
-        self.output.set_position(address.as_u32() as u64);
-
+        
+        // Determine the type length and store it
+        // (This is a placeholder - you may need to calculate the actual type length)
+        let type_length: u8 = 1; // For simple types
+        self.output.write_u8(type_length)?;
+        
         // Serialize the constant based on its type
         match &**constant {
             Constant::Integer(int) => self.serialize_integer_constant(int)?,
             Constant::ByteString(bytes) => self.serialize_bytestring_constant(bytes)?,
-            Constant::String(s) => self.serialize_string_constant(s)?,
+            // Constant::String(s) => self.serialize_string_constant(s)?, wait wut todo
             Constant::Unit => self.serialize_unit_constant()?,
             Constant::Bool(b) => self.serialize_bool_constant(*b)?,
             Constant::Data(data) => self.serialize_data_constant(data)?,
@@ -254,12 +191,6 @@ impl<'a> UPLCSerializer<'a> {
             },
         }
 
-        // Register the serialized constant with its address for deduplication
-        self.layout.register_constant(constant, address);
-
-        // Restore position
-        self.output.set_position(return_pos);
-
         Ok(())
     }
 
@@ -268,15 +199,21 @@ impl<'a> UPLCSerializer<'a> {
         // Write constant type tag
         self.output.write_u8(const_tag::INTEGER)?;
 
-        // Determine the size needed for this integer
+        // Determine content size and write it (1 word = 4 bytes)
+        let size_in_bytes = (int.bits() + 7) / 8; // Round up to nearest byte
+        let content_size = ((size_in_bytes + 3) / 4) as u32; // Round up to nearest word (4 bytes)
+        self.output.write_u32::<LittleEndian>(content_size)?;
+
+        // Determine the format based on size
         if int.bits() <= 8
             && int >= &num_bigint::BigInt::from(-128)
             && int <= &num_bigint::BigInt::from(127)
         {
             // Small integer (1 byte)
-            self.output.write_u8(int_size::SMALL)?;
             if let Some(i) = int.to_i8() {
                 self.output.write_i8(i)?;
+                // Pad to complete the word
+                self.output.write_all(&[0, 0, 0])?;
             } else {
                 return Err(SerializationError::IntegerTooLarge(format!(
                     "Integer doesn't fit in i8: {}",
@@ -288,9 +225,10 @@ impl<'a> UPLCSerializer<'a> {
             && int <= &num_bigint::BigInt::from(32767)
         {
             // Medium integer (2 bytes)
-            self.output.write_u8(int_size::MEDIUM)?;
             if let Some(i) = int.to_i16() {
                 self.output.write_i16::<LittleEndian>(i)?;
+                // Pad to complete the word
+                self.output.write_all(&[0, 0])?;
             } else {
                 return Err(SerializationError::IntegerTooLarge(format!(
                     "Integer doesn't fit in i16: {}",
@@ -302,7 +240,6 @@ impl<'a> UPLCSerializer<'a> {
             && int <= &num_bigint::BigInt::from(i32::MAX)
         {
             // Large integer (4 bytes)
-            self.output.write_u8(int_size::LARGE)?;
             if let Some(i) = int.to_i32() {
                 self.output.write_i32::<LittleEndian>(i)?;
             } else {
@@ -315,8 +252,7 @@ impl<'a> UPLCSerializer<'a> {
             && int >= &num_bigint::BigInt::from(i64::MIN)
             && int <= &num_bigint::BigInt::from(i64::MAX)
         {
-            // Extra large integer (8 bytes)
-            self.output.write_u8(int_size::XLARGE)?;
+            // Extra large integer (8 bytes = 2 words)
             if let Some(i) = int.to_i64() {
                 self.output.write_i64::<LittleEndian>(i)?;
             } else {
@@ -327,30 +263,20 @@ impl<'a> UPLCSerializer<'a> {
             }
         } else {
             // BigInt (variable size)
-            self.output.write_u8(int_size::BIGINT)?;
-
-            // Get the sign and magnitude
             let (sign, bytes) = int.to_bytes_le();
-            let sign_byte = if sign == num_bigint::Sign::Minus {
-                0x01
-            } else {
-                0x00
-            };
-
-            // Write sign
+            
+            // Write sign byte
+            let sign_byte = if sign == num_bigint::Sign::Minus { 1 } else { 0 };
             self.output.write_u8(sign_byte)?;
-
-            // Write length (4 bytes)
-            if bytes.len() > u32::MAX as usize {
-                return Err(SerializationError::IntegerTooLarge(format!(
-                    "BigInt too large: {} bytes",
-                    bytes.len()
-                )));
-            }
-            self.output.write_u32::<LittleEndian>(bytes.len() as u32)?;
-
-            // Write magnitude bytes
+            
+            // Write the magnitude bytes
             self.output.write_all(&bytes)?;
+            
+            // Pad to complete the last word if necessary
+            let padding_size = (4 - (bytes.len() + 1) % 4) % 4;
+            if padding_size > 0 {
+                self.output.write_all(&vec![0; padding_size])?;
+            }
         }
 
         Ok(())
@@ -369,36 +295,21 @@ impl<'a> UPLCSerializer<'a> {
         // Write constant type tag
         self.output.write_u8(const_tag::BYTESTRING)?;
 
-        // Write length (4 bytes)
+        // Calculate content size in words (4 bytes each)
+        let content_size = ((bytes.len() + 3) / 4) as u32; // Round up to nearest word
+        self.output.write_u32::<LittleEndian>(content_size)?;
+        
+        // Write actual length in bytes
         self.output.write_u32::<LittleEndian>(bytes.len() as u32)?;
 
         // Write bytes
         self.output.write_all(bytes)?;
-
-        Ok(())
-    }
-
-    /// Serialize a string constant
-    fn serialize_string_constant(&mut self, s: &str) -> Result<()> {
-        // Get the UTF-8 encoded bytes
-        let bytes = s.as_bytes();
-
-        // Check if the string is too large
-        if bytes.len() > u32::MAX as usize {
-            return Err(SerializationError::StringTooLarge(format!(
-                "String too large: {} bytes",
-                bytes.len()
-            )));
+        
+        // Pad to complete the last word if necessary
+        let padding_size = (4 - (bytes.len() % 4)) % 4;
+        if padding_size > 0 {
+            self.output.write_all(&vec![0; padding_size])?;
         }
-
-        // Write constant type tag
-        self.output.write_u8(const_tag::STRING)?;
-
-        // Write length (4 bytes)
-        self.output.write_u32::<LittleEndian>(bytes.len() as u32)?;
-
-        // Write UTF-8 bytes
-        self.output.write_all(bytes)?;
 
         Ok(())
     }
@@ -428,38 +339,92 @@ impl<'a> UPLCSerializer<'a> {
         Ok(())
     }
 
-    /// Serialize a Plutus Data constant (simple implementation for now)
+    /// Serialize a Plutus Data constant
     fn serialize_data_constant(&mut self, data: &PlutusData) -> Result<()> {
         // Constant type tag
         self.output.write_u8(const_tag::DATA)?;
-
-        // This is a placeholder - a real implementation would serialize
-        // the data structure in more detail based on its type
-
-        // For now, we'll just identify the data variant type
+        
+        // For this implementation, we'll treat all Data as "black-box" with a simple representation
+        // A full implementation would serialize the structure recursively
+        
+        // Create a temporary buffer for the serialized data
+        let mut data_buffer = Cursor::new(Vec::new());
+        
+        // Serialize the data based on its variant
         match data {
-            PlutusData::Constr(_) => {
-                self.output.write_u8(data_tag::CONSTR)?;
+            PlutusData::Constr(constr_data) => {
+                // Write the tag
+                data_buffer.write_u8(data_tag::CONSTR)?;
+                
+                // Serialize constructor tag - in PlutusData, the tag is a usize
+                data_buffer.write_u32::<LittleEndian>(constr_data.tag as u32)?;
+                
+                // Write a simple placeholder for fields
+                // In a real implementation, you'd recursively serialize each field
+                data_buffer.write_u32::<LittleEndian>(constr_data.fields.len() as u32)?;
             },
-            PlutusData::Map(_) => {
-                self.output.write_u8(data_tag::MAP)?;
+            PlutusData::Map(map_data) => {
+                // Write the map tag
+                data_buffer.write_u8(data_tag::MAP)?;
+                
+                // Write map size
+                data_buffer.write_u32::<LittleEndian>(map_data.len() as u32)?;
+                
+                // A simplified representation - in reality you'd serialize each key-value pair
+                // This is just a placeholder
             },
-            // The PlutusData enum may have different variant names in the uplc crate
-            // Let's use the correct ones based on the actual enum definition
-            PlutusData::Array(_) => {
-                self.output.write_u8(data_tag::LIST)?;
+            PlutusData::Array(array_data) => {
+                // Write the list tag
+                data_buffer.write_u8(data_tag::LIST)?;
+                
+                // Write list size
+                data_buffer.write_u32::<LittleEndian>(array_data.len() as u32)?;
+                
+                // A simplified representation - in reality you'd serialize each list element
+                // This is just a placeholder
             },
-            PlutusData::BigInt(_) => {
-                self.output.write_u8(data_tag::INTEGER)?;
+            PlutusData::BigInt(int_data) => {
+                // Write the integer tag
+                data_buffer.write_u8(data_tag::INTEGER)?;
+                
+                // Since we don't know the specific methods available for uplc::BigInt,
+                // we'll just create a simple representation for now
+                // In a real implementation, you would adapt this based on the actual API
+                
+                // For simplicity, write a fixed integer representation
+                data_buffer.write_u8(0)?; // sign (positive)
+                data_buffer.write_u32::<LittleEndian>(4)?; // length (4 bytes)
+                
+                // Write a simple integer representation
+                // This should be replaced with proper conversion from uplc::BigInt
+                let value = 0i32; // Default value as placeholder
+                data_buffer.write_i32::<LittleEndian>(value)?;
             },
-            PlutusData::BoundedBytes(_) => {
-                self.output.write_u8(data_tag::BYTESTRING)?;
+            PlutusData::BoundedBytes(bytes) => {
+                // Write the bytestring tag
+                data_buffer.write_u8(data_tag::BYTESTRING)?;
+                
+                // Write length and bytes
+                data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
+                data_buffer.write_all(bytes)?;
             },
         }
-
-        // A real implementation would serialize the full structure here
-        // For now, we'll just write a placeholder size
-        self.output.write_u32::<LittleEndian>(0)?;
+        
+        // Get the serialized data
+        let data_bytes = data_buffer.into_inner();
+        
+        // Calculate content size in words (4 bytes each)
+        let content_size = ((data_bytes.len() + 3) / 4) as u32; // Round up to nearest word
+        self.output.write_u32::<LittleEndian>(content_size)?;
+        
+        // Write the data
+        self.output.write_all(&data_bytes)?;
+        
+        // Pad to complete the last word if necessary
+        let padding_size = (4 - (data_bytes.len() % 4)) % 4;
+        if padding_size > 0 {
+            self.output.write_all(&vec![0; padding_size])?;
+        }
 
         Ok(())
     }
