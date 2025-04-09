@@ -4,12 +4,6 @@
 
 use thiserror::Error;
 
-// Import from bitvm-common instead
-use bitvm_common::memory;
-
-// Re-export MemorySegmentType from bitvm-common
-pub use bitvm_common::MemorySegmentType;
-
 /// Errors that can occur during RISC-V code generation
 #[derive(Debug, Error)]
 pub enum CodeGenError {

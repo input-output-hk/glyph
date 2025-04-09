@@ -12,9 +12,6 @@ log = { workspace = true }
 riscv-decode = "0.2.1"
 thiserror = { workspace = true }
 
-# BitVMX dependencies
-bitvm-common = { path = "../bitvm-common" }
-
 # BitVMX-CPU dependencies
 bitcoin-script-riscv = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "main", package = "bitcoin-script-riscv" }
 sha2 = "0.10.8"

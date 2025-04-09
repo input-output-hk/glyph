@@ -13,7 +13,6 @@ thiserror = { workspace = true }
 
 # Internal dependencies
 risc-v-gen = { path = "../risc-v-gen" }
-bitvm-common = { path = "../bitvm-common" }
 
 # External dependencies
 uplc = { version = "1.0" }

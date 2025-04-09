@@ -3,8 +3,6 @@ resolver = "2"
 members = [
     "crates/uplc-to-riscv",
     "crates/risc-v-gen",
-    "crates/cli",
-    "crates/uplc-to-llvm",
     "crates/uplc-serializer",
 ]
 
