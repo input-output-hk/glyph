@@ -1,7 +1,7 @@
 [package]
 name = "risc-v-gen"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 description = "RISC-V code generation utilities"
 license = "Apache-2.0"
 repository = "https://github.com/input-output-hk/uplc-risc"
@@ -19,4 +19,4 @@ sha2 = "0.10.8"
 hex = "0.4.3"
 
 [features]
-default = [] 
+default = []
