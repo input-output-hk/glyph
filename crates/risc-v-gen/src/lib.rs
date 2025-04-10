@@ -235,11 +235,11 @@ pub enum Instruction {
 
 /// Code gene.rator for RISC-V assembly
 #[derive(Debug, Default)]
-pub struct Codegenerator {
+pub struct CodeGenerator {
     instructions: Vec<Instruction>,
 }
 
-impl Codegenerator {
+impl CodeGenerator {
     /// Create a new code gene.rator
     pub fn new() -> Self {
         Self {
@@ -489,7 +489,7 @@ mod tests {
 
     #[test]
     fn test_code_generation() {
-        let mut gene = Codegenerator::new();
+        let mut gene = CodeGenerator::new();
 
         gene.add_instruction(Instruction::Label("main".to_string()));
         gene.add_instruction(Instruction::Li(Register::A0, 42));
@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     fn test_memory_instructions() {
-        let mut gene = Codegenerator::new();
+        let mut gene = CodeGenerator::new();
 
         gene.add_instruction(Instruction::Li(Register::A0, 42));
         gene.add_instruction(Instruction::Sw(Register::A0, 0, Register::Sp));
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn test_branch_instructions() {
-        let mut gene = Codegenerator::new();
+        let mut gene = CodeGenerator::new();
 
         gene.add_instruction(Instruction::Li(Register::A0, 42));
         gene.add_instruction(Instruction::Li(Register::A1, 58));
@@ -539,7 +539,7 @@ mod tests {
 
     #[test]
     fn test_directives() {
-        let mut gene = Codegenerator::new();
+        let mut gene = CodeGenerator::new();
 
         gene.add_instruction(Instruction::Section("text".to_string()));
         gene.add_instruction(Instruction::Global("main".to_string()));
@@ -555,7 +555,7 @@ mod tests {
 
     #[test]
     fn test_directives2() {
-        let mut gene = Codegenerator::new();
+        let mut gene = CodeGenerator::new();
 
         gene.add_instruction(Instruction::Section("text".to_string()));
         gene.add_instruction(Instruction::Global("_start".to_string()));
