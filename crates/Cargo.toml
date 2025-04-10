@@ -1,13 +1,9 @@
 [workspace]
-members = [
-    "uplc-to-riscv",
-    "risc-v-gen",
-    "uplc-serializer",
-]
+members = ["uplc-to-riscv", "risc-v-gen", "uplc-serializer"]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/input-output-hk/uplc-risc"
 authors = ["IOG"]
@@ -30,4 +26,4 @@ opt-level = 0
 # This is a workspace-level configuration that can be overridden in individual crates
 [workspace.package.metadata.riscv-target]
 target = "riscv64imac-unknown-none-elf"
-features = ["hardware-crypto", "no_std"] 
+features = ["hardware-crypto", "no_std"]
