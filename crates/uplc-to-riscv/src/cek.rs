@@ -1210,7 +1210,106 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Label("handle_frame_constr_empty".to_string()));
 
-        self.generator.add_instruction(Instruction::Nop);
+        // fields length is 0 and not needed
+        // allocation amount in bytes is 4 * value length + 9
+        // 1 for frame tag, 4 for constr tag, and 4 for value length
+        let allocation_amount = Register::T2;
+        self.generator
+            .add_instruction(Instruction::Mv(allocation_amount, values_len));
+
+        self.generator
+            .add_instruction(Instruction::Slli(allocation_amount, allocation_amount, 2));
+
+        self.generator
+            .add_instruction(Instruction::Addi(allocation_amount, allocation_amount, 9));
+
+        // Allocate VConstr on the heap
+        // 9 + 4 * value length
+        self.generator
+            .add_instruction(Instruction::Add(self.heap, self.heap, allocation_amount));
+
+        let allocator_space = Register::T2;
+        self.generator.add_instruction(Instruction::Sub(
+            allocator_space,
+            self.heap,
+            allocation_amount,
+        ));
+
+        let value_tag = Register::T5;
+
+        self.generator
+            .add_instruction(Instruction::Li(value_tag, 4));
+
+        self.generator
+            .add_instruction(Instruction::Sb(value_tag, 0, allocator_space));
+
+        self.generator
+            .add_instruction(Instruction::Sw(constr_tag, 1, allocator_space));
+
+        self.generator
+            .add_instruction(Instruction::Sw(values_len, 5, allocator_space));
+
+        let return_value = Register::A5;
+
+        self.generator
+            .add_instruction(Instruction::Mv(return_value, allocator_space));
+
+        self.generator
+            .add_instruction(Instruction::Addi(allocator_space, allocator_space, 9));
+
+        self.generator
+            .add_instruction(Instruction::Addi(values_len, values_len, -1));
+
+        let list_byte_length = Register::T0;
+
+        self.generator
+            .add_instruction(Instruction::Mv(list_byte_length, values_len));
+
+        self.generator
+            .add_instruction(Instruction::Slli(list_byte_length, list_byte_length, 2));
+
+        let tail_list = Register::T1;
+
+        self.generator
+            .add_instruction(Instruction::Add(tail_list, list_byte_length, bytes_offset));
+
+        let next_frame = Register::A6;
+        self.generator
+            .add_instruction(Instruction::Addi(next_frame, tail_list, 4));
+
+        let new_value = Register::A4;
+
+        self.generator
+            .add_instruction(Instruction::Mv(new_value, computed_value));
+
+        let list_to_reverse = ret;
+
+        self.generator
+            .add_instruction(Instruction::Mv(list_to_reverse, tail_list));
+
+        let dest = Register::A1;
+        self.generator
+            .add_instruction(Instruction::Mv(dest, allocator_space));
+
+        let size = Register::A2;
+        self.generator
+            .add_instruction(Instruction::Mv(size, values_len));
+
+        let callback = Register::A3;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "reverse_clone_list".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Sw(new_value, 0, dest));
+
+        self.generator
+            .add_instruction(Instruction::Mv(ret, return_value));
+
+        self.generator
+            .add_instruction(Instruction::Mv(self.frames, next_frame));
+
+        self.generator
+            .add_instruction(Instruction::J("return".to_string()));
     }
 
     pub fn halt(&mut self) {
@@ -1452,6 +1551,7 @@ impl Cek {
     // A0 pointer to terms array
     // A1 is new stack pointer
     // A2 is length of terms array
+    // A3 is the return address
     pub fn clone_list(
         &mut self,
         list: Register,
@@ -1496,6 +1596,63 @@ impl Cek {
 
         self.generator
             .add_instruction(Instruction::Label("clone_list_return".to_string()));
+
+        self.generator.add_instruction(Instruction::Comment(
+            "A3 contains return address".to_string(),
+        ));
+
+        self.generator
+            .add_instruction(Instruction::Jalr(self.discard, callback, 0));
+    }
+
+    // A0 pointer to terms array to decrement from
+    // A1 is new stack pointer
+    // A2 is length of terms array
+    // A3 is the return address
+    pub fn reverse_clone_list(
+        &mut self,
+        list: Register,
+        dest_list: Register,
+        length: Register,
+        callback: Register,
+    ) {
+        self.generator
+            .add_instruction(Instruction::Label("reverse_clone_list".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Comment("A2 contains terms length".to_string()));
+
+        self.generator.add_instruction(Instruction::Beq(
+            length,
+            Register::Zero,
+            "reverse_clone_list_return".to_string(),
+        ));
+
+        let list_item = Register::T0;
+        self.generator
+            .add_instruction(Instruction::Lw(list_item, 0, list));
+
+        // Store term in new storage
+        self.generator
+            .add_instruction(Instruction::Sw(list_item, 0, dest_list));
+
+        // move backwards by 4 bytes
+        self.generator
+            .add_instruction(Instruction::Addi(list, list, -4));
+
+        // move pointer up by 4 bytes
+        self.generator
+            .add_instruction(Instruction::Addi(dest_list, dest_list, 4));
+
+        // decrement terms length
+        self.generator
+            .add_instruction(Instruction::Addi(length, length, -1));
+
+        self.generator
+            .add_instruction(Instruction::J("reverse_clone_list".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Label("reverse_clone_list_return".to_string()));
 
         self.generator.add_instruction(Instruction::Comment(
             "A3 contains return address".to_string(),
