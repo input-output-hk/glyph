@@ -626,7 +626,6 @@ impl Compiler {
     fn parse_uplc(&self, uplc_code: &str) -> Result<Program<Name>> {
         parser::program(uplc_code).map_err(|err| CompilationError::Parse(err.to_string()))
     }
-
 }
 
 #[cfg(test)]
