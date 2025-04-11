@@ -7,7 +7,7 @@ use uplc::ast::{Constant, DeBruijn, Program, Term};
 use uplc::builtins::DefaultFunction;
 use uplc::PlutusData;
 
-use crate::constants::{bool_val, const_tag, data_tag, header, int_size, term_tag};
+use crate::constants::{bool_val, const_tag, data_tag, header, term_tag};
 use crate::{Result, SerializationError};
 
 /// A simple address type for tracking positions in the output buffer
@@ -169,12 +169,12 @@ impl<'a> UPLCSerializer<'a> {
     fn serialize_constant(&mut self, constant: &Rc<Constant>) -> Result<()> {
         // Tag byte for constant
         self.output.write_u8(term_tag::CONSTANT)?;
-        
+
         // Determine the type length and store it
         // (This is a placeholder - you may need to calculate the actual type length)
         let type_length: u8 = 1; // For simple types
         self.output.write_u8(type_length)?;
-        
+
         // Serialize the constant based on its type
         match &**constant {
             Constant::Integer(int) => self.serialize_integer_constant(int)?,
@@ -264,14 +264,18 @@ impl<'a> UPLCSerializer<'a> {
         } else {
             // BigInt (variable size)
             let (sign, bytes) = int.to_bytes_le();
-            
+
             // Write sign byte
-            let sign_byte = if sign == num_bigint::Sign::Minus { 1 } else { 0 };
+            let sign_byte = if sign == num_bigint::Sign::Minus {
+                1
+            } else {
+                0
+            };
             self.output.write_u8(sign_byte)?;
-            
+
             // Write the magnitude bytes
             self.output.write_all(&bytes)?;
-            
+
             // Pad to complete the last word if necessary
             let padding_size = (4 - (bytes.len() + 1) % 4) % 4;
             if padding_size > 0 {
@@ -298,13 +302,13 @@ impl<'a> UPLCSerializer<'a> {
         // Calculate content size in words (4 bytes each)
         let content_size = ((bytes.len() + 3) / 4) as u32; // Round up to nearest word
         self.output.write_u32::<LittleEndian>(content_size)?;
-        
+
         // Write actual length in bytes
         self.output.write_u32::<LittleEndian>(bytes.len() as u32)?;
 
         // Write bytes
         self.output.write_all(bytes)?;
-        
+
         // Pad to complete the last word if necessary
         let padding_size = (4 - (bytes.len() % 4)) % 4;
         if padding_size > 0 {
@@ -343,22 +347,22 @@ impl<'a> UPLCSerializer<'a> {
     fn serialize_data_constant(&mut self, data: &PlutusData) -> Result<()> {
         // Constant type tag
         self.output.write_u8(const_tag::DATA)?;
-        
+
         // For this implementation, we'll treat all Data as "black-box" with a simple representation
         // A full implementation would serialize the structure recursively
-        
+
         // Create a temporary buffer for the serialized data
         let mut data_buffer = Cursor::new(Vec::new());
-        
+
         // Serialize the data based on its variant
         match data {
             PlutusData::Constr(constr_data) => {
                 // Write the tag
                 data_buffer.write_u8(data_tag::CONSTR)?;
-                
+
                 // Serialize constructor tag - in PlutusData, the tag is a usize
                 data_buffer.write_u32::<LittleEndian>(constr_data.tag as u32)?;
-                
+
                 // Write a simple placeholder for fields
                 // In a real implementation, you'd recursively serialize each field
                 data_buffer.write_u32::<LittleEndian>(constr_data.fields.len() as u32)?;
@@ -366,35 +370,35 @@ impl<'a> UPLCSerializer<'a> {
             PlutusData::Map(map_data) => {
                 // Write the map tag
                 data_buffer.write_u8(data_tag::MAP)?;
-                
+
                 // Write map size
                 data_buffer.write_u32::<LittleEndian>(map_data.len() as u32)?;
-                
+
                 // A simplified representation - in reality you'd serialize each key-value pair
                 // This is just a placeholder
             },
             PlutusData::Array(array_data) => {
                 // Write the list tag
                 data_buffer.write_u8(data_tag::LIST)?;
-                
+
                 // Write list size
                 data_buffer.write_u32::<LittleEndian>(array_data.len() as u32)?;
-                
+
                 // A simplified representation - in reality you'd serialize each list element
                 // This is just a placeholder
             },
             PlutusData::BigInt(int_data) => {
                 // Write the integer tag
                 data_buffer.write_u8(data_tag::INTEGER)?;
-                
+
                 // Since we don't know the specific methods available for uplc::BigInt,
                 // we'll just create a simple representation for now
                 // In a real implementation, you would adapt this based on the actual API
-                
+
                 // For simplicity, write a fixed integer representation
                 data_buffer.write_u8(0)?; // sign (positive)
                 data_buffer.write_u32::<LittleEndian>(4)?; // length (4 bytes)
-                
+
                 // Write a simple integer representation
                 // This should be replaced with proper conversion from uplc::BigInt
                 let value = 0i32; // Default value as placeholder
@@ -403,23 +407,23 @@ impl<'a> UPLCSerializer<'a> {
             PlutusData::BoundedBytes(bytes) => {
                 // Write the bytestring tag
                 data_buffer.write_u8(data_tag::BYTESTRING)?;
-                
+
                 // Write length and bytes
                 data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
                 data_buffer.write_all(bytes)?;
             },
         }
-        
+
         // Get the serialized data
         let data_bytes = data_buffer.into_inner();
-        
+
         // Calculate content size in words (4 bytes each)
         let content_size = ((data_bytes.len() + 3) / 4) as u32; // Round up to nearest word
         self.output.write_u32::<LittleEndian>(content_size)?;
-        
+
         // Write the data
         self.output.write_all(&data_bytes)?;
-        
+
         // Pad to complete the last word if necessary
         let padding_size = (4 - (data_bytes.len() % 4)) % 4;
         if padding_size > 0 {
