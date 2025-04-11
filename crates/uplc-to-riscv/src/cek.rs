@@ -1392,20 +1392,183 @@ impl Cek {
     }
 
     pub fn handle_frame_case(&mut self, ret: Register) {
-        let constr = ret;
+        let constr = Register::T5;
+
+        let case_frame = self.frames;
+
         self.generator
             .add_instruction(Instruction::Label("handle_frame_case".to_string()));
+
+        self.generator.add_instruction(Instruction::Mv(constr, ret));
 
         let constr_term_tag = Register::T0;
         self.generator
             .add_instruction(Instruction::Lbu(constr_term_tag, 0, constr));
 
-        // self.generator.add_instruction(instruction);
+        let expected_tag = Register::T1;
+
+        self.generator
+            .add_instruction(Instruction::Li(expected_tag, 4));
+
+        self.generator.add_instruction(Instruction::Bne(
+            constr_term_tag,
+            expected_tag,
+            "handle_frame_case_error".to_string(),
+        ));
+
+        {
+            let constr_tag = Register::T0;
+            self.generator
+                .add_instruction(Instruction::Lw(constr_tag, 1, constr));
+
+            let branches_len = Register::T1;
+            self.generator
+                .add_instruction(Instruction::Lw(branches_len, 5, case_frame));
+
+            self.generator.add_instruction(Instruction::Bge(
+                constr_tag,
+                branches_len,
+                "handle_frame_case_error".to_string(),
+            ));
+
+            // Don't need scope here since handle error is already in another scope
+            // {}
+
+            // set env
+            self.generator
+                .add_instruction(Instruction::Lw(self.env, 1, case_frame));
+
+            let offset_to_branch = Register::T2;
+            self.generator
+                .add_instruction(Instruction::Mv(offset_to_branch, constr_tag));
+
+            self.generator.add_instruction(Instruction::Slli(
+                offset_to_branch,
+                offset_to_branch,
+                2,
+            ));
+
+            self.generator.add_instruction(Instruction::Addi(
+                offset_to_branch,
+                offset_to_branch,
+                9,
+            ));
+
+            self.generator.add_instruction(Instruction::Add(
+                offset_to_branch,
+                offset_to_branch,
+                case_frame,
+            ));
+
+            // Put branch term in return register
+            self.generator
+                .add_instruction(Instruction::Lw(ret, 0, offset_to_branch));
+
+            // reset frame pointer
+            let claim_stack_item = Register::T4;
+            self.generator
+                .add_instruction(Instruction::Mv(claim_stack_item, branches_len));
+
+            self.generator.add_instruction(Instruction::Slli(
+                claim_stack_item,
+                claim_stack_item,
+                2,
+            ));
+
+            self.generator.add_instruction(Instruction::Addi(
+                claim_stack_item,
+                claim_stack_item,
+                9,
+            ));
+
+            self.generator.add_instruction(Instruction::Add(
+                self.frames,
+                self.frames,
+                claim_stack_item,
+            ));
+
+            // Don't care about the frame anymore
+
+            let constr_fields_len = Register::T2;
+            self.generator
+                .add_instruction(Instruction::Lw(constr_fields_len, 5, constr));
+
+            let current_index = Register::T3;
+            self.generator
+                .add_instruction(Instruction::Mv(current_index, Register::Zero));
+
+            let current_offset = Register::T1;
+            // 9 for constant offset
+            // 1 for frame tag + 4 for constr tag + 4 for constr fields len
+            self.generator
+                .add_instruction(Instruction::Addi(current_offset, current_offset, 9));
+
+            self.generator.add_instruction(Instruction::Add(
+                current_offset,
+                current_offset,
+                constr,
+            ));
+
+            {
+                self.generator
+                    .add_instruction(Instruction::Label("transfer_fields_as_args".to_string()));
+
+                self.generator.add_instruction(Instruction::Beq(
+                    current_index,
+                    constr_fields_len,
+                    "compute".to_string(),
+                ));
+
+                // Allocate for FrameAwaitFunValue to stack
+                // 5 bytes, 1 for frame tag, 4 for argument value pointer
+                self.generator
+                    .add_instruction(Instruction::Addi(self.frames, self.frames, -5));
+
+                let frame_tag = Register::T0;
+
+                self.generator
+                    .add_instruction(Instruction::Li(frame_tag, 2));
+
+                self.generator
+                    .add_instruction(Instruction::Sb(frame_tag, 0, self.frames));
+
+                let arg = Register::T0;
+
+                self.generator
+                    .add_instruction(Instruction::Lw(arg, 0, current_offset));
+
+                self.generator
+                    .add_instruction(Instruction::Sw(arg, 1, self.frames));
+
+                self.generator.add_instruction(Instruction::Addi(
+                    current_offset,
+                    current_offset,
+                    4,
+                ));
+
+                self.generator
+                    .add_instruction(Instruction::Addi(current_index, current_index, 1));
+
+                self.generator
+                    .add_instruction(Instruction::J("transfer_fields_as_args".to_string()));
+            }
+        }
+
+        {
+            self.generator
+                .add_instruction(Instruction::Label("handle_frame_case_error".to_string()));
+
+            self.generator
+                .add_instruction(Instruction::J("handle_error".to_string()));
+        }
     }
 
     pub fn halt(&mut self) {
         self.generator
             .add_instruction(Instruction::Label("halt".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Li(Register::A7, 93));
 
         self.generator.add_instruction(Instruction::Ecall);
     }
