@@ -566,6 +566,6 @@ mod tests {
         gene.add_instruction(Instruction::Li(Register::A7, 93));
         gene.add_instruction(Instruction::Ecall);
 
-        let asm = gene.save_to_file("test.s");
+        gene.save_to_file("test.s").unwrap();
     }
 }

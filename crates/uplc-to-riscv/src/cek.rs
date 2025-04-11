@@ -35,7 +35,7 @@ use risc_v_gen::{CodeGenerator, Instruction, Register};
 // }
 
 #[derive(Default, Debug)]
-struct Cek {
+pub struct Cek {
     generator: CodeGenerator,
     frames: Register,
     env: Register,
@@ -44,6 +44,46 @@ struct Cek {
 }
 
 impl Cek {
+    pub fn cek_assembly(self) -> CodeGenerator {
+        let mut cek = Cek::default();
+
+        // Generate the core CEK implementation
+        let ret = cek.init();
+        cek.compute(ret);
+        cek.return_compute();
+        let index = cek.handle_var(ret);
+        cek.handle_delay(ret);
+        cek.handle_lambda(ret);
+        cek.handle_apply(ret);
+        cek.handle_constant(ret);
+        cek.handle_force(ret);
+        cek.handle_error(ret);
+        cek.handle_builtin(ret);
+        let (second_field, frames_arg, size, callback1) = cek.handle_constr(ret);
+        let (list, list_dest, length, callback) = cek.handle_case(ret);
+
+        assert!(
+            second_field == list
+                && list_dest == frames_arg
+                && size == length
+                && callback1 == callback
+        );
+
+        let (function, argument) = cek.handle_frame_await_arg(ret);
+        cek.handle_frame_await_fun_term(ret);
+        cek.handle_frame_force();
+        cek.handle_frame_constr(ret);
+
+        cek.halt();
+        cek.force_evaluate(ret);
+        cek.apply_evaluate(ret, function, argument);
+        cek.lookup(ret, index);
+        cek.clone_list(list, list_dest, length, callback);
+        cek.reverse_clone_list(list, list_dest, length, callback);
+
+        cek.generator
+    }
+
     pub fn init(&mut self) -> Register {
         self.generator
             .add_instruction(Instruction::Section("text".to_string()));
@@ -655,6 +695,16 @@ impl Cek {
 
         self.generator
             .add_instruction(Instruction::J("halt".to_string()));
+    }
+
+    pub fn handle_builtin(&mut self, _ret: Register) {
+        self.generator
+            .add_instruction(Instruction::Label("handle_builtin".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+
+        self.generator
+            .add_instruction(Instruction::J("handle_error".to_string()));
     }
 
     pub fn handle_constr(&mut self, ret: Register) -> (Register, Register, Register, Register) {
@@ -1965,6 +2015,7 @@ mod tests {
         cek.handle_constant(ret);
         cek.handle_force(ret);
         cek.handle_error(ret);
+        cek.handle_builtin(ret);
         let (second_field, frames_arg, size, callback1) = cek.handle_constr(ret);
         let (list, list_dest, length, callback) = cek.handle_case(ret);
 
