@@ -44,44 +44,48 @@ pub struct Cek {
 }
 
 impl Cek {
-    pub fn cek_assembly(self) -> CodeGenerator {
-        let mut cek = Cek::default();
-
+    pub fn cek_assembly(mut self) -> CodeGenerator {
         // Generate the core CEK implementation
-        let ret = cek.init();
-        cek.compute(ret);
-        cek.return_compute();
-        let index = cek.handle_var(ret);
-        cek.handle_delay(ret);
-        cek.handle_lambda(ret);
-        cek.handle_apply(ret);
-        cek.handle_constant(ret);
-        cek.handle_force(ret);
-        cek.handle_error(ret);
-        cek.handle_builtin(ret);
-        let (second_field, frames_arg, size, callback1) = cek.handle_constr(ret);
-        let (list, list_dest, length, callback) = cek.handle_case(ret);
+        self.generator
+            .add_instruction(Instruction::Global("_start".to_string()));
+        self.generator
+            .add_instruction(Instruction::Label("_start".to_string()));
+        let ret = self.init();
+        self.compute(ret);
+        self.return_compute();
+        let index = self.handle_var(ret);
+        self.handle_delay(ret);
+        self.handle_lambda(ret);
+        self.handle_apply(ret);
+        self.handle_constant(ret);
+        self.handle_force(ret);
+        self.handle_error(ret);
+        self.handle_builtin(ret);
+        self.handle_constr(ret);
+        let (list, list_dest, length, callback) = self.handle_case(ret);
+        self.handle_frame_await_fun_term(ret);
+        let (function, argument) = self.handle_frame_await_arg(ret);
+        self.handle_frame_await_fun_value(ret);
+        self.handle_frame_force();
+        self.handle_frame_constr(ret);
+        self.handle_frame_case(ret);
+        self.handle_no_frame();
+        self.halt();
+        self.force_evaluate(ret);
+        self.apply_evaluate(ret, function, argument);
+        self.lookup(ret, index);
+        self.clone_list(list, list_dest, length, callback);
+        self.reverse_clone_list(list, list_dest, length, callback);
+        self.initial_term();
 
-        assert!(
-            second_field == list
-                && list_dest == frames_arg
-                && size == length
-                && callback1 == callback
-        );
+        self.generator
+            .add_instruction(Instruction::Section("heap".to_string()));
+        self.generator
+            .add_instruction(Instruction::Label("heap".to_string()));
 
-        let (function, argument) = cek.handle_frame_await_arg(ret);
-        cek.handle_frame_await_fun_term(ret);
-        cek.handle_frame_force();
-        cek.handle_frame_constr(ret);
+        self.generator.add_instruction(Instruction::Space(0xA00000));
 
-        cek.halt();
-        cek.force_evaluate(ret);
-        cek.apply_evaluate(ret, function, argument);
-        cek.lookup(ret, index);
-        cek.clone_list(list, list_dest, length, callback);
-        cek.reverse_clone_list(list, list_dest, length, callback);
-
-        cek.generator
+        self.generator
     }
 
     pub fn init(&mut self) -> Register {
@@ -91,23 +95,17 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Label("init".to_string()));
 
-        self.generator
-            .add_instruction(Instruction::Comment("start at 10 MB".to_string()));
-
         self.discard = Register::T0;
 
         self.heap = Register::S2;
 
         self.generator
-            .add_instruction(Instruction::Li(self.heap, 0x01000000));
+            .add_instruction(Instruction::Lui(self.heap, 0xc0000));
 
-        self.generator
-            .add_instruction(Instruction::Comment("start at 1 MB".to_string()));
+        self.frames = Register::Sp;
 
-        self.frames = Register::S0;
-
-        self.generator
-            .add_instruction(Instruction::Li(self.frames, 0x00100000));
+        // self.generator
+        //     .add_instruction(Instruction::Lui(self.frames, 0xe0000));
 
         self.generator.add_instruction(Instruction::Comment(
             "1 byte for NoFrame allocation".to_string(),
@@ -611,6 +609,8 @@ impl Cek {
     }
 
     pub fn handle_constant(&mut self, ret: Register) {
+        self.generator
+            .add_instruction(Instruction::Label("handle_constant".to_string()));
         let constant_term = ret;
 
         // store pointer to constant in T0
@@ -754,17 +754,12 @@ impl Cek {
             self.generator
                 .add_instruction(Instruction::Li(min_byte_size, -17));
 
-            let shift_left_amount = Register::T3;
-
-            self.generator
-                .add_instruction(Instruction::Li(shift_left_amount, 2));
-
             let elements_byte_size = Register::T4;
 
-            self.generator.add_instruction(Instruction::Sll(
+            self.generator.add_instruction(Instruction::Slli(
                 elements_byte_size,
                 constr_len_popped,
-                shift_left_amount,
+                2,
             ));
 
             let total_byte_size = Register::T2;
@@ -1090,7 +1085,7 @@ impl Cek {
     }
 
     pub fn handle_frame_await_arg(&mut self, ret: Register) -> (Register, Register) {
-        let arg = Register::A1;
+        let arg = ret;
 
         self.generator
             .add_instruction(Instruction::Label("handle_frame_await_arg".to_string()));
@@ -1193,6 +1188,40 @@ impl Cek {
 
         self.generator
             .add_instruction(Instruction::J("compute".to_string()));
+    }
+
+    pub fn handle_frame_await_fun_value(&mut self, ret: Register) {
+        let function = ret;
+
+        self.generator.add_instruction(Instruction::Label(
+            "handle_frame_await_fun_value".to_string(),
+        ));
+
+        self.generator.add_instruction(Instruction::Comment(
+            "load function value pointer from stack".to_string(),
+        ));
+
+        let arg = Register::T0;
+        self.generator
+            .add_instruction(Instruction::Lw(arg, 1, self.frames));
+
+        self.generator.add_instruction(Instruction::Comment(
+            "reset stack Kontinuation pointer".to_string(),
+        ));
+
+        self.generator
+            .add_instruction(Instruction::Addi(self.frames, self.frames, 5));
+
+        let argument = Register::A1;
+
+        self.generator
+            .add_instruction(Instruction::Mv(argument, arg));
+
+        self.generator
+            .add_instruction(Instruction::Mv(ret, function));
+
+        self.generator
+            .add_instruction(Instruction::J("apply_evaluate".to_string()));
     }
 
     // Takes in a0 and passes it to force_evaluate
@@ -1613,6 +1642,14 @@ impl Cek {
         }
     }
 
+    pub fn handle_no_frame(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("handle_no_frame".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::J("halt".to_string()));
+    }
+
     pub fn halt(&mut self) {
         self.generator
             .add_instruction(Instruction::Label("halt".to_string()));
@@ -1993,6 +2030,16 @@ impl Cek {
                 .add_instruction(Instruction::Jalr(self.discard, callback, 0));
         }
     }
+
+    pub fn initial_term(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Section("data".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Label("initial_term".to_string()));
+
+        self.generator.add_instruction(Instruction::Byte(vec![6]));
+    }
 }
 
 #[cfg(test)]
@@ -2025,22 +2072,33 @@ mod tests {
                 && size == length
                 && callback1 == callback
         );
-        let (function, argument) = cek.handle_frame_await_arg(ret);
         cek.handle_frame_await_fun_term(ret);
+        let (function, argument) = cek.handle_frame_await_arg(ret);
+        cek.handle_frame_await_fun_value(ret);
         cek.handle_frame_force();
         cek.handle_frame_constr(ret);
-
+        cek.handle_frame_case(ret);
         cek.halt();
         cek.force_evaluate(ret);
         cek.apply_evaluate(ret, function, argument);
         cek.lookup(ret, index);
         cek.clone_list(list, list_dest, length, callback);
         cek.reverse_clone_list(list, list_dest, length, callback);
+        cek.initial_term();
 
         // println!("CEK Debug printed is {:#?}", cek);
 
         let code_gen = cek.generator;
 
         println!("{}", code_gen.generate());
+    }
+
+    #[test]
+    fn test_compilation() {
+        let thing = Cek::default();
+
+        let gene = thing.cek_assembly();
+
+        gene.save_to_file("../../test.s").unwrap();
     }
 }

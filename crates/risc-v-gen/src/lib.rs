@@ -221,7 +221,7 @@ pub enum Instruction {
     Section(String),
     Align(i32),
     Word(i32),
-    Byte(i32),
+    Byte(Vec<u8>),
     Ascii(String),
     Asciiz(String),
     Space(i32),
@@ -268,7 +268,7 @@ impl CodeGenerator {
                     result.push_str(&format!(".global {}\n", symbol));
                 },
                 Instruction::Section(section) => {
-                    result.push_str(&format!(".{}\n", section));
+                    result.push_str(&format!(".section .{}\n", section));
                 },
                 Instruction::Align(align) => {
                     result.push_str(&format!("    .align {}\n", align));
@@ -277,7 +277,14 @@ impl CodeGenerator {
                     result.push_str(&format!("    .word {}\n", value));
                 },
                 Instruction::Byte(value) => {
-                    result.push_str(&format!("    .byte {}\n", value));
+                    result.push_str(&format!(
+                        "    .byte {}\n",
+                        value
+                            .iter()
+                            .map(|val| val.to_string())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    ));
                 },
                 Instruction::Ascii(string) => {
                     result.push_str(&format!("    .ascii \"{}\"\n", string));
