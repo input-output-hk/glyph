@@ -1,7 +1,7 @@
 [package]
 name = "uplc-to-riscv"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 description = "Compiler from Untyped Plutus Core to RISC-V"
 license = "Apache-2.0"
 repository = "https://github.com/input-output-hk/uplc-risc"
@@ -44,4 +44,4 @@ tempfile = "3.8.1"
 
 [[example]]
 name = "bitvm_verification_example"
-path = "examples/bitvm_verification_example.rs" 
+path = "examples/bitvm_verification_example.rs"

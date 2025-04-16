@@ -221,7 +221,7 @@ pub enum Instruction {
     Section(String),
     Align(i32),
     Word(i32),
-    Byte(i32),
+    Byte(Vec<u8>),
     Ascii(String),
     Asciiz(String),
     Space(i32),
@@ -235,11 +235,11 @@ pub enum Instruction {
 
 /// Code gene.rator for RISC-V assembly
 #[derive(Debug, Default)]
-pub struct Codegenerator {
+pub struct CodeGenerator {
     instructions: Vec<Instruction>,
 }
 
-impl Codegenerator {
+impl CodeGenerator {
     /// Create a new code gene.rator
     pub fn new() -> Self {
         Self {
@@ -268,7 +268,7 @@ impl Codegenerator {
                     result.push_str(&format!(".global {}\n", symbol));
                 },
                 Instruction::Section(section) => {
-                    result.push_str(&format!(".{}\n", section));
+                    result.push_str(&format!(".section .{}\n", section));
                 },
                 Instruction::Align(align) => {
                     result.push_str(&format!("    .align {}\n", align));
@@ -277,7 +277,14 @@ impl Codegenerator {
                     result.push_str(&format!("    .word {}\n", value));
                 },
                 Instruction::Byte(value) => {
-                    result.push_str(&format!("    .byte {}\n", value));
+                    result.push_str(&format!(
+                        "    .byte {}\n",
+                        value
+                            .iter()
+                            .map(|val| val.to_string())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    ));
                 },
                 Instruction::Ascii(string) => {
                     result.push_str(&format!("    .ascii \"{}\"\n", string));
@@ -489,7 +496,7 @@ mod tests {
 
     #[test]
     fn test_code_generation() {
-        let mut gene = Codegenerator::new();
+        let mut gene = CodeGenerator::new();
 
         gene.add_instruction(Instruction::Label("main".to_string()));
         gene.add_instruction(Instruction::Li(Register::A0, 42));
@@ -505,7 +512,7 @@ mod tests {
 
     #[test]
     fn test_memory_instructions() {
-        let mut gene = Codegenerator::new();
+        let mut gene = CodeGenerator::new();
 
         gene.add_instruction(Instruction::Li(Register::A0, 42));
         gene.add_instruction(Instruction::Sw(Register::A0, 0, Register::Sp));
@@ -519,7 +526,7 @@ mod tests {
 
     #[test]
     fn test_branch_instructions() {
-        let mut gene = Codegenerator::new();
+        let mut gene = CodeGenerator::new();
 
         gene.add_instruction(Instruction::Li(Register::A0, 42));
         gene.add_instruction(Instruction::Li(Register::A1, 58));
@@ -539,7 +546,7 @@ mod tests {
 
     #[test]
     fn test_directives() {
-        let mut gene = Codegenerator::new();
+        let mut gene = CodeGenerator::new();
 
         gene.add_instruction(Instruction::Section("text".to_string()));
         gene.add_instruction(Instruction::Global("main".to_string()));
@@ -555,7 +562,7 @@ mod tests {
 
     #[test]
     fn test_directives2() {
-        let mut gene = Codegenerator::new();
+        let mut gene = CodeGenerator::new();
 
         gene.add_instruction(Instruction::Section("text".to_string()));
         gene.add_instruction(Instruction::Global("_start".to_string()));
@@ -566,6 +573,6 @@ mod tests {
         gene.add_instruction(Instruction::Li(Register::A7, 93));
         gene.add_instruction(Instruction::Ecall);
 
-        let asm = gene.save_to_file("test.s");
+        gene.save_to_file("test.s").unwrap();
     }
 }
