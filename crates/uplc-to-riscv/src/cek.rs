@@ -69,7 +69,7 @@ impl Cek {
         self.handle_frame_force();
         self.handle_frame_constr(ret);
         self.handle_frame_case(ret);
-        self.handle_no_frame();
+        self.handle_no_frame(ret);
         self.halt();
         self.force_evaluate(ret);
         self.apply_evaluate(ret, function, argument);
@@ -78,12 +78,14 @@ impl Cek {
         self.reverse_clone_list(list, list_dest, length, callback);
         self.initial_term();
 
-        self.generator
-            .add_instruction(Instruction::Section("heap".to_string()));
-        self.generator
-            .add_instruction(Instruction::Label("heap".to_string()));
+        // self.generator
+        //     .add_instruction(Instruction::Section("heap".to_string()));
 
-        self.generator.add_instruction(Instruction::Space(0xA00000));
+        // self.generator
+        //     .add_instruction(Instruction::Label("heap".to_string()));
+
+        // self.generator
+        //     .add_instruction(Instruction::Byte(vec![0, 0, 0, 0]));
 
         self.generator
     }
@@ -1295,10 +1297,7 @@ impl Cek {
         ));
 
         {
-            let first_field = Register::A5;
-            self.generator
-                .add_instruction(Instruction::Lw(first_field, 13, frame));
-
+            // Mutate fields length to be 1 less since we are popping from the front
             let current_field_len = fields_len;
 
             self.generator.add_instruction(Instruction::Addi(
@@ -1306,6 +1305,13 @@ impl Cek {
                 current_field_len,
                 -1,
             ));
+
+            self.generator
+                .add_instruction(Instruction::Sw(current_field_len, 9, frame));
+
+            let first_field = Register::A5;
+            self.generator
+                .add_instruction(Instruction::Lw(first_field, 13, frame));
 
             let new_value = Register::A4;
 
@@ -1642,9 +1648,16 @@ impl Cek {
         }
     }
 
-    pub fn handle_no_frame(&mut self) {
+    pub fn handle_no_frame(&mut self, ret: Register) {
         self.generator
             .add_instruction(Instruction::Label("handle_no_frame".to_string()));
+
+        let temp = Register::T0;
+        self.generator
+            .add_instruction(Instruction::Lw(temp, 1, ret));
+
+        self.generator
+            .add_instruction(Instruction::Lw(ret, 0, temp));
 
         self.generator
             .add_instruction(Instruction::J("halt".to_string()));
@@ -2038,7 +2051,10 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Label("initial_term".to_string()));
 
-        self.generator.add_instruction(Instruction::Byte(vec![6]));
+        self.generator.add_instruction(Instruction::Byte(vec![
+            /*apply*/ 3, /*placeholder for arg pointer*/ 11, 0, 0, 144,
+            /*lambda*/ 2, /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, 13, 0, 0, 0,
+        ]));
     }
 }
 
