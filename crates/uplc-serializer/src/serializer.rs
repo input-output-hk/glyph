@@ -9,24 +9,8 @@ use uplc::builtins::DefaultFunction;
 use uplc::PlutusData;
 use uplc::BigInt;
 
-use crate::constants::{bool_val, const_tag, data_tag, header, term_tag};
+use crate::constants::{bool_val, const_tag, data_tag, term_tag};
 use crate::{Result, SerializationError};
-
-/// A simple address type for tracking positions in the output buffer
-#[derive(Debug, Clone, Copy)]
-struct Address(u64);
-
-impl Address {
-    fn new(pos: u64) -> Self {
-        Self(pos)
-    }
-
-    fn as_u32(&self) -> u32 {
-        // This may truncate large addresses, but should be fine for most use cases
-        // A proper implementation might want to check for overflow
-        self.0 as u32
-    }
-}
 
 /// A serializer for UPLC terms
 pub struct UPLCSerializer<'a> {
@@ -42,7 +26,6 @@ impl<'a> UPLCSerializer<'a> {
     pub fn new(program: &'a Program<DeBruijn>) -> Self {
         Self {
             program,
-            // layout: MemoryLayout::new(),
             output: Cursor::new(Vec::new()),
         }
     }
