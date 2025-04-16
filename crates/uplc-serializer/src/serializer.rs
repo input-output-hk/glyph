@@ -483,8 +483,8 @@ impl<'a> UPLCSerializer<'a> {
         // Constructor tag (16-bit)
         x.write_u16::<LittleEndian>(tag as u16)?;
 
-        // Field count (16-bit)
-        x.write_u16::<LittleEndian>(fields.len() as u16)?;
+        // Field count (32-bit)
+        x.write_u32::<LittleEndian>(fields.len() as u32)?;
 
         let field_bodies = fields.iter().map(|field| self.serialize_term(field)).collect::<Result<Vec<_>>>()?;
 
@@ -514,8 +514,8 @@ impl<'a> UPLCSerializer<'a> {
         // Serialize the constructor expression
         let constr_ser = self.serialize_term(constr)?;
 
-        // Case count (16-bit)
-        x.write_u16::<LittleEndian>(branches.len() as u16)?;
+        // Case count (32-bit)
+        x.write_u32::<LittleEndian>(branches.len() as u32)?;
 
         // Write constructor size
         x.write_u32::<LittleEndian>(constr_ser.len().try_into().unwrap())?;
