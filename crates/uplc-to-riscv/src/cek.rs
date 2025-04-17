@@ -17,7 +17,15 @@ use risc_v_gen::{CodeGenerator, Instruction, Register};
 //         fields: Vec<Value>,
 //     },
 // }
-
+//
+// #[derive(Clone, Debug, PartialEq)]
+// pub struct BuiltinRuntime {
+//     pub(super) args: Vec<Value>,
+//     pub fun: DefaultFunction,
+//     pub(super) forces: u32,
+// }
+//
+//
 // enum Context {
 //     FrameAwaitArg(Value, Box<Context>),
 //     FrameAwaitFunTerm(Env, Term<NamedDeBruijn>, Box<Context>),
@@ -619,10 +627,6 @@ impl Cek {
         let constant = Register::T0;
         self.generator
             .add_instruction(Instruction::Addi(constant, constant_term, 1));
-        let constant_value = Register::T2;
-
-        self.generator
-            .add_instruction(Instruction::Mv(constant_value, self.heap));
 
         // allocate 5 bytes on the heap
         self.generator
@@ -633,13 +637,13 @@ impl Cek {
             .add_instruction(Instruction::Li(constant_tag, 0));
 
         self.generator
-            .add_instruction(Instruction::Sb(constant_tag, 0, constant_value));
+            .add_instruction(Instruction::Sb(constant_tag, -5, self.heap));
 
         self.generator
-            .add_instruction(Instruction::Sw(constant, 1, constant_value));
+            .add_instruction(Instruction::Sw(constant, -4, self.heap));
 
         self.generator
-            .add_instruction(Instruction::Mv(ret, constant_value));
+            .add_instruction(Instruction::Addi(ret, self.heap, -5));
 
         self.generator
             .add_instruction(Instruction::J("return".to_string()));
@@ -699,14 +703,50 @@ impl Cek {
             .add_instruction(Instruction::J("halt".to_string()));
     }
 
-    pub fn handle_builtin(&mut self, _ret: Register) {
+    pub fn handle_builtin(&mut self, ret: Register) {
+        let builtin = ret;
+
         self.generator
             .add_instruction(Instruction::Label("handle_builtin".to_string()));
 
-        self.generator.add_instruction(Instruction::Nop);
+        let builtin_func_index = Register::T0;
+        self.generator
+            .add_instruction(Instruction::Lbu(builtin_func_index, 1, builtin));
+
+        // 1 byte for value tag, 1 byte for func index, 1 byte for forces, 4 bytes for args length 0
+        self.generator.add_instruction(Instruction::Comment(
+            "7 bytes for VBuiltin allocation".to_string(),
+        ));
 
         self.generator
-            .add_instruction(Instruction::J("handle_error".to_string()));
+            .add_instruction(Instruction::Addi(self.heap, self.heap, 7));
+
+        let value_tag = Register::T1;
+        self.generator
+            .add_instruction(Instruction::Li(value_tag, 3));
+
+        self.generator
+            .add_instruction(Instruction::Sb(value_tag, -7, self.heap));
+
+        self.generator
+            .add_instruction(Instruction::Sb(builtin_func_index, -6, self.heap));
+
+        let force_lookup = Register::T2;
+        self.generator
+            .add_instruction(Instruction::La(force_lookup, "force_lookup".to_string()));
+
+        let forces = Register::T3;
+        self.generator
+            .add_instruction(Instruction::Lbu(forces, -5, self.heap));
+
+        self.generator
+            .add_instruction(Instruction::Sw(Register::Zero, -4, self.heap));
+
+        self.generator
+            .add_instruction(Instruction::Addi(ret, self.heap, -7));
+
+        self.generator
+            .add_instruction(Instruction::J("return".to_string()));
     }
 
     pub fn handle_constr(&mut self, ret: Register) -> (Register, Register, Register, Register) {
@@ -2052,6 +2092,10 @@ impl Cek {
             .add_instruction(Instruction::Label("initial_term".to_string()));
 
         self.generator.add_instruction(Instruction::Byte(bytes));
+
+        self.generator
+            .add_instruction(Instruction::Label("force_lookup".to_string()));
+        self.generator.add_instruction(Instruction::Byte(vec![]));
     }
 }
 
