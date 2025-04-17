@@ -43,20 +43,20 @@ pub type Result<T> = std::result::Result<T, SerializationError>;
 ///   - DeBruijn index (4 bytes)
 ///
 /// - Lambda (0x01):
-///   - Body reference (4 bytes)
+///   - Followed by body term (0 bytes)
 ///
 /// - Apply (0x02):
-///   - Function reference (4 bytes)
 ///   - Argument reference (4 bytes)
+///   - Followed by function term (0 bytes)
 ///
 /// - Force (0x03):
-///   - Term reference (4 bytes)
+///   - Followed by body term (0 bytes)
 ///
 /// - Delay (0x04):
-///   - Term reference (4 bytes)
+///  - Followed by body term (0 bytes)
 ///
 /// - Constant (0x05):
-///   - Constant reference (4 bytes)
+///   - Followed by constant encoding (0 bytes)
 ///
 /// - Builtin (0x06):
 ///   - Builtin function ID (1 byte)
@@ -66,13 +66,13 @@ pub type Result<T> = std::result::Result<T, SerializationError>;
 ///
 /// - Constructor (0x08):
 ///   - Tag (2 bytes)
-///   - Field count (2 bytes)
-///   - Fields reference (4 bytes)
+///   - Field count (4 bytes)
+///   - x Field references (4*x bytes)
 ///
 /// - Case (0x09):
 ///   - Match term reference (4 bytes)
-///   - Branch count (2 bytes)
-///   - Branches reference (4 bytes)
+///   - Branch count (4 bytes)
+///   - x Branch references (4*x bytes)
 ///
 /// # Arguments
 ///
@@ -185,7 +185,7 @@ mod tests {
         // A more complex program with nested terms
         let complex_text = r#"
         (program 1.0.0
-          (lam f 
+          (lam f
             (lam x
               (force
                 [

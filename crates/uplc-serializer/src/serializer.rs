@@ -1,13 +1,13 @@
 use std::io::{Cursor, Write};
-use std::rc::Rc;
 use std::ops::Deref;
+use std::rc::Rc;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 use num_traits::ToPrimitive;
 use uplc::ast::{Constant, DeBruijn, Program, Term};
 use uplc::builtins::DefaultFunction;
-use uplc::PlutusData;
 use uplc::BigInt;
+use uplc::PlutusData;
 
 use crate::constants::{bool_val, const_tag, data_tag, term_tag};
 use crate::{Result, SerializationError};
@@ -62,7 +62,7 @@ impl<'a> UPLCSerializer<'a> {
     }
 
     /// Serialize a variable term
-    fn serialize_var(&mut self, index: usize) -> Result<Vec<u8>> {
+    fn serialize_var(&self, index: usize) -> Result<Vec<u8>> {
         let mut x: Vec<u8> = Vec::new();
         // Tag byte
         x.write_u8(term_tag::VARIABLE)?;
@@ -83,7 +83,7 @@ impl<'a> UPLCSerializer<'a> {
         let body_ser = self.serialize_term(body)?;
 
         // Write body address
-        let _ = x.write_all(&body_ser);
+        x.write_all(&body_ser)?;
 
         Ok(x)
     }
@@ -148,12 +148,12 @@ impl<'a> UPLCSerializer<'a> {
         let mut x: Vec<u8> = Vec::new();
         // Tag byte for constant
         x.write_u8(term_tag::CONSTANT)?;
-        
+
         // Determine the type length and store it
         // (This is a placeholder - you may need to calculate the actual type length)
         let type_length: u8 = 1; // For simple types
         x.write_u8(type_length)?;
-        
+
         // Serialize the constant based on its type
         let serialized_data = match &**constant {
             Constant::Integer(int) => self.serialize_integer_constant(int)?,
@@ -172,7 +172,7 @@ impl<'a> UPLCSerializer<'a> {
 
         // Write serialized data to our buffer
         x.write_all(&serialized_data)?;
-        
+
         Ok(x)
     }
 
@@ -249,12 +249,16 @@ impl<'a> UPLCSerializer<'a> {
             let (sign, bytes) = int.to_bytes_le();
 
             // Write sign byte
-            let sign_byte = if sign == num_bigint::Sign::Minus { 1 } else { 0 };
+            let sign_byte = if sign == num_bigint::Sign::Minus {
+                1
+            } else {
+                0
+            };
             x.write_u8(sign_byte)?;
-            
+
             // Write the magnitude bytes
             x.write_all(&bytes)?;
-            
+
             // Pad to complete the last word if necessary
             let padding_size = (4 - (bytes.len() + 1) % 4) % 4;
             if padding_size > 0 {
@@ -282,13 +286,13 @@ impl<'a> UPLCSerializer<'a> {
         // Calculate content size in words (4 bytes each)
         let content_size = ((bytes.len() + 3) / 4) as u32; // Round up to nearest word
         x.write_u32::<LittleEndian>(content_size)?;
-        
+
         // Write actual length in bytes
         x.write_u32::<LittleEndian>(bytes.len() as u32)?;
 
         // Write bytes
         x.write_all(bytes)?;
-        
+
         // Pad to complete the last word if necessary
         let padding_size = (4 - (bytes.len() % 4)) % 4;
         if padding_size > 0 {
@@ -330,7 +334,7 @@ impl<'a> UPLCSerializer<'a> {
         let mut x: Vec<u8> = Vec::new();
         // Constant type tag
         x.write_u8(const_tag::DATA)?;
-        
+
         // For this implementation, we'll treat all Data as "black-box" with a simple representation
         // A full implementation would serialize the structure recursively
 
@@ -373,50 +377,50 @@ impl<'a> UPLCSerializer<'a> {
             PlutusData::BigInt(int_data) => {
                 // Write the integer tag
                 data_buffer.write_u8(data_tag::INTEGER)?;
-                
+
                 match int_data {
                     BigInt::Int(int_val) => {
                         // Since we don't have access to details about the Int type's internals,
                         // we'll convert it to a string and use the first character to check sign
                         let int_str = format!("{:?}", int_val);
                         let is_negative = int_str.starts_with('-');
-                        
+
                         // Write sign (0 for positive, 1 for negative)
                         data_buffer.write_u8(if is_negative { 1u8 } else { 0u8 })?;
-                        
+
                         // For simplicity, we'll use a basic byte representation
                         // In a production system, you'd want to extract proper bytes from Int
                         let bytes = [0, 0, 0, 1]; // Simple placeholder
-                        
+
                         // Write the length of bytes
                         data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
-                        
+
                         // Write the actual bytes
                         data_buffer.write_all(&bytes)?;
                     },
                     BigInt::BigUInt(bytes_val) => {
                         // Positive big integer
                         data_buffer.write_u8(0)?; // Sign byte (0 for positive)
-                        
+
                         // Get the bytes from BoundedBytes (which is a wrapper around Vec<u8>)
                         let bytes = bytes_val.deref();
-                        
+
                         // Write the length of bytes
                         data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
-                        
+
                         // Write the actual bytes
                         data_buffer.write_all(bytes)?;
                     },
                     BigInt::BigNInt(bytes_val) => {
                         // Negative big integer
                         data_buffer.write_u8(1)?; // Sign byte (1 for negative)
-                        
+
                         // Get the bytes from BoundedBytes
                         let bytes = bytes_val.deref();
-                        
+
                         // Write the length of bytes
                         data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
-                        
+
                         // Write the actual bytes
                         data_buffer.write_all(bytes)?;
                     },
@@ -438,10 +442,10 @@ impl<'a> UPLCSerializer<'a> {
         // Calculate content size in words (4 bytes each)
         let content_size = ((data_bytes.len() + 3) / 4) as u32; // Round up to nearest word
         x.write_u32::<LittleEndian>(content_size)?;
-        
+
         // Write the data
         x.write_all(&data_bytes)?;
-        
+
         // Pad to complete the last word if necessary
         let padding_size = (4 - (data_bytes.len() % 4)) % 4;
         if padding_size > 0 {
@@ -486,7 +490,10 @@ impl<'a> UPLCSerializer<'a> {
         // Field count (32-bit)
         x.write_u32::<LittleEndian>(fields.len() as u32)?;
 
-        let field_bodies = fields.iter().map(|field| self.serialize_term(field)).collect::<Result<Vec<_>>>()?;
+        let field_bodies = fields
+            .iter()
+            .map(|field| self.serialize_term(field))
+            .collect::<Result<Vec<_>>>()?;
 
         // Write field sizes
         for field_body in &field_bodies {
