@@ -2,11 +2,12 @@
 //!
 //! This crate provides utilities for gene.rating RISC-V assembly code.
 
-use std::{fs::File, io::Write};
+use std::{fs::File, io::Write, path::Path};
 
 use thiserror::Error;
 
 pub mod emulator;
+pub mod elf;
 
 /// Errors that can occur during RISC-V code gene.ration
 #[derive(Debug, Error)]
@@ -236,7 +237,7 @@ pub enum Instruction {
 /// Code gene.rator for RISC-V assembly
 #[derive(Debug, Default)]
 pub struct CodeGenerator {
-    instructions: Vec<Instruction>,
+    pub instructions: Vec<Instruction>,
 }
 
 impl CodeGenerator {
@@ -488,6 +489,24 @@ impl CodeGenerator {
         file.write_all(self.generate().as_bytes())?;
         Ok(())
     }
+
+    /// Generate an ELF file from the code generator
+    pub fn generate_elf(&self, output_path: &Path, linker_script: &str) -> Result<()> {
+        elf::build_elf(self, linker_script, output_path)
+    }
+}
+
+// Re-export functions from the elf module
+pub use elf::{
+    assemble_instructions,
+    build_elf,
+    validate_imm_range,
+    validate_section_overlap,
+};
+
+/// Parse a linker script from a string
+pub fn parse_linker_script(script: &str) -> Result<elf::LinkerScript> {
+    elf::LinkerScript::parse(script)
 }
 
 #[cfg(test)]

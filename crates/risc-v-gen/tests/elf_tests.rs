@@ -1,0 +1,538 @@
+// Tests for ELF generation capabilities
+// These tests verify the functionality described in elf_plan.md
+
+use risc_v_gen::{CodeGenerator, Instruction, Register, Result};
+use std::path::Path;
+use std::fs;
+use std::process::Command;
+
+// For the tests that need temporary directories
+#[cfg(test)]
+mod tests_that_need_tempfile {
+    use super::*;
+    
+    // We're temporarily making these non-ignored tests run by removing the #[ignore] attribute
+    // since we added the tempfile dependency
+    #[test]
+    fn test_basic_elf_generation() {
+        // Create a minimal program with entry point
+        let mut gen = CodeGenerator::new();
+        
+        // Add a simple program that sets register a0 to 42 and exits
+        gen.add_instruction(Instruction::Label("_start".to_string()));
+        gen.add_instruction(Instruction::Li(Register::A0, 42));
+        gen.add_instruction(Instruction::Li(Register::A7, 93)); // exit syscall
+        gen.add_instruction(Instruction::Ecall);
+        
+        // Create a simple linker script
+        let linker_script = r#"
+        MEMORY
+        {
+          RAM (rwx) : ORIGIN = 0x10000, LENGTH = 0x10000
+        }
+        
+        SECTIONS
+        {
+          .text : { *(.text) } > RAM
+        }
+        
+        ENTRY(_start)
+        "#;
+        
+        // Build the ELF file - function to be implemented in Phase 3
+        // Using a simple file path for test - no tempfile dependency
+        let output_path = Path::new("test_program.elf");
+        
+        build_elf(&gen, linker_script, &output_path).unwrap();
+        
+        // Check that the file exists and has a non-zero size
+        assert!(output_path.exists());
+        let metadata = fs::metadata(&output_path).unwrap();
+        assert!(metadata.len() > 0);
+        
+        // Bonus: Verify ELF header with readelf if available
+        // This is more of an integration test and might be run conditionally
+        if Command::new("readelf").arg("-h").output().is_ok() {
+            let output = Command::new("readelf")
+                .arg("-h")
+                .arg(&output_path)
+                .output()
+                .unwrap();
+            
+            let output_str = String::from_utf8_lossy(&output.stdout);
+            assert!(output_str.contains("ELF Header"));
+            assert!(output_str.contains("RISC-V"));
+            assert!(output_str.contains("EXEC (Executable file)"));
+        }
+        
+        // Clean up
+        let _ = fs::remove_file(output_path);
+    }
+    
+    #[test]
+    fn test_complex_elf_program() {
+        // Test a more complex program with multiple sections
+        let mut gen = CodeGenerator::new();
+        
+        // Add .text section with code
+        gen.add_instruction(Instruction::Section(".text".to_string()));
+        gen.add_instruction(Instruction::Global("_start".to_string()));
+        gen.add_instruction(Instruction::Label("_start".to_string()));
+        gen.add_instruction(Instruction::La(Register::T0, "message".to_string()));
+        gen.add_instruction(Instruction::Li(Register::A0, 1)); // stdout
+        gen.add_instruction(Instruction::Mv(Register::A1, Register::T0)); // buffer
+        gen.add_instruction(Instruction::Li(Register::A2, 13)); // length
+        gen.add_instruction(Instruction::Li(Register::A7, 64)); // write syscall
+        gen.add_instruction(Instruction::Ecall);
+        gen.add_instruction(Instruction::Li(Register::A0, 0)); // exit code
+        gen.add_instruction(Instruction::Li(Register::A7, 93)); // exit syscall
+        gen.add_instruction(Instruction::Ecall);
+        
+        // Add .data section with message
+        gen.add_instruction(Instruction::Section(".data".to_string()));
+        gen.add_instruction(Instruction::Label("message".to_string()));
+        gen.add_instruction(Instruction::Asciiz("Hello, World!".to_string()));
+        
+        // Create a linker script with text and data sections
+        let linker_script = r#"
+        MEMORY
+        {
+          RAM (rwx) : ORIGIN = 0x10000, LENGTH = 0x10000
+        }
+        
+        SECTIONS
+        {
+          .text : { *(.text) } > RAM
+          .data : { *(.data) } > RAM
+          .bss  : { *(.bss)  } > RAM
+        }
+        
+        ENTRY(_start)
+        "#;
+        
+        // Build the ELF file
+        let output_path = Path::new("complex_program.elf");
+        
+        build_elf(&gen, linker_script, &output_path).unwrap();
+        
+        // Check that the file exists
+        assert!(output_path.exists());
+        
+        // Clean up
+        let _ = fs::remove_file(output_path);
+    }
+    
+    #[test]
+    fn test_elf_with_symbols() {
+        // Test ELF generation with symbols and relocation
+        let mut gen = CodeGenerator::new();
+        
+        // Create a program with function calls and symbols
+        gen.add_instruction(Instruction::Section(".text".to_string()));
+        gen.add_instruction(Instruction::Global("_start".to_string()));
+        
+        // Main entry point
+        gen.add_instruction(Instruction::Label("_start".to_string()));
+        gen.add_instruction(Instruction::Addi(Register::Sp, Register::Sp, -16)); // Adjust stack
+        gen.add_instruction(Instruction::Sw(Register::Ra, 12, Register::Sp)); // Save return address
+        gen.add_instruction(Instruction::Jal(Register::Ra, "print_message".to_string())); // Call function
+        gen.add_instruction(Instruction::Lw(Register::Ra, 12, Register::Sp)); // Restore return address
+        gen.add_instruction(Instruction::Addi(Register::Sp, Register::Sp, 16)); // Restore stack
+        gen.add_instruction(Instruction::Li(Register::A0, 0)); // Exit code
+        gen.add_instruction(Instruction::Li(Register::A7, 93)); // exit syscall
+        gen.add_instruction(Instruction::Ecall);
+        
+        // Function that prints a message
+        gen.add_instruction(Instruction::Label("print_message".to_string()));
+        gen.add_instruction(Instruction::La(Register::T0, "message".to_string()));
+        gen.add_instruction(Instruction::Li(Register::A0, 1)); // stdout
+        gen.add_instruction(Instruction::Mv(Register::A1, Register::T0)); // buffer
+        gen.add_instruction(Instruction::Li(Register::A2, 13)); // length
+        gen.add_instruction(Instruction::Li(Register::A7, 64)); // write syscall
+        gen.add_instruction(Instruction::Ecall);
+        gen.add_instruction(Instruction::Jalr(Register::Zero, Register::Ra, 0)); // Return
+        
+        // Data section
+        gen.add_instruction(Instruction::Section(".data".to_string()));
+        gen.add_instruction(Instruction::Label("message".to_string()));
+        gen.add_instruction(Instruction::Asciiz("Hello, World!".to_string()));
+        
+        // Create a linker script
+        let linker_script = r#"
+        MEMORY
+        {
+          RAM (rwx) : ORIGIN = 0x10000, LENGTH = 0x10000
+        }
+        
+        SECTIONS
+        {
+          .text : { *(.text) } > RAM
+          .data : { *(.data) } > RAM
+        }
+        
+        ENTRY(_start)
+        "#;
+        
+        // Build the ELF file
+        let output_path = Path::new("symbol_program.elf");
+        
+        build_elf(&gen, linker_script, &output_path).unwrap();
+        
+        // Check that the file exists
+        assert!(output_path.exists());
+        
+        // Clean up
+        let _ = fs::remove_file(output_path);
+    }
+    
+    #[test]
+    fn test_data_initializers() {
+        // Test data section initialization
+        let mut gen = CodeGenerator::new();
+        
+        // Create a program with initialized data
+        gen.add_instruction(Instruction::Section(".data".to_string()));
+        gen.add_instruction(Instruction::Label("integers".to_string()));
+        gen.add_instruction(Instruction::Word(42));
+        gen.add_instruction(Instruction::Word(100));
+        gen.add_instruction(Instruction::Word(255));
+        
+        gen.add_instruction(Instruction::Label("bytes".to_string()));
+        gen.add_instruction(Instruction::Byte(vec![1, 2, 3, 4, 5]));
+        
+        gen.add_instruction(Instruction::Label("string".to_string()));
+        gen.add_instruction(Instruction::Asciiz("Hello, World!".to_string()));
+        
+        // Create a simple linker script
+        let linker_script = r#"
+        MEMORY
+        {
+          RAM (rwx) : ORIGIN = 0x10000, LENGTH = 0x10000
+        }
+        
+        SECTIONS
+        {
+          .data : { *(.data) } > RAM
+        }
+        "#;
+        
+        // Build the ELF file
+        let output_path = Path::new("data_program.elf");
+        
+        build_elf(&gen, linker_script, &output_path).unwrap();
+        
+        // Check that the file exists
+        assert!(output_path.exists());
+        
+        // Clean up
+        let _ = fs::remove_file(output_path);
+    }
+}
+
+// =========== Phase 1: Instruction → bytes tests ===========
+
+#[test]
+fn test_instruction_to_bytes_conversion() {
+    // This test verifies that our instructions can be properly converted to binary machine code
+    let instructions = vec![
+        Instruction::Add(Register::A0, Register::A1, Register::A2),
+        Instruction::Sub(Register::T0, Register::T1, Register::T2),
+        Instruction::Addi(Register::S0, Register::S1, 42),
+    ];
+    
+    // This function will be implemented as part of Phase 1
+    let bytes = assemble_instructions(&instructions).unwrap();
+    
+    // We should get a non-empty byte vector
+    assert!(!bytes.is_empty());
+    
+    // The size should be a multiple of 4 bytes (32-bit instructions)
+    assert_eq!(bytes.len() % 4, 0);
+    
+    // The number of bytes should match the number of instructions × 4
+    assert_eq!(bytes.len(), instructions.len() * 4);
+}
+
+#[test]
+fn test_instruction_edge_cases() {
+    // Test edge cases for immediates and other instruction parameters
+    let edge_cases = vec![
+        // Test maximum positive immediate for ADDI (12 bits)
+        Instruction::Addi(Register::A0, Register::Zero, 2047),
+        
+        // Test minimum negative immediate for ADDI
+        Instruction::Addi(Register::A0, Register::Zero, -2048),
+        
+        // Test branch with maximum offset
+        Instruction::Beq(Register::Zero, Register::Zero, "far_label".to_string()),
+        
+        // Test LUI with large immediate
+        Instruction::Lui(Register::A0, 0xFFFFF),
+    ];
+    
+    // Should successfully assemble without errors
+    let bytes = assemble_instructions(&edge_cases).unwrap();
+    assert_eq!(bytes.len(), edge_cases.len() * 4);
+}
+
+#[test]
+fn test_all_instruction_types() {
+    // Test all instruction types to ensure they're properly encoded
+    let all_types = vec![
+        // R-type
+        Instruction::Add(Register::T0, Register::T1, Register::T2),
+        
+        // I-type
+        Instruction::Addi(Register::S0, Register::S1, 10),
+        Instruction::Lw(Register::A0, 4, Register::Sp),
+        
+        // S-type
+        Instruction::Sw(Register::A0, 8, Register::Sp),
+        
+        // B-type
+        Instruction::Beq(Register::A0, Register::A1, "branch_label".to_string()),
+        
+        // U-type
+        Instruction::Lui(Register::A0, 0x12345),
+        
+        // J-type
+        Instruction::Jal(Register::Ra, "jump_label".to_string()),
+    ];
+    
+    let bytes = assemble_instructions(&all_types).unwrap();
+    assert_eq!(bytes.len(), all_types.len() * 4);
+}
+
+#[test]
+fn test_invalid_instructions() {
+    // Test that invalid instructions are properly rejected
+    let invalid_instructions = vec![
+        // Out of range immediate for ADDI
+        Instruction::Addi(Register::A0, Register::Zero, 4096), // Too large
+        
+        // Out of range immediate for ADDI (negative)
+        Instruction::Addi(Register::A0, Register::Zero, -2049), // Too small
+    ];
+    
+    // This should return an error
+    let result = assemble_instructions(&invalid_instructions);
+    assert!(result.is_err());
+}
+
+// =========== Phase 2: Linker script parser tests ===========
+
+#[test]
+fn test_basic_linker_script_parsing() {
+    let script = r#"
+MEMORY
+{
+  RAM (rwx) : ORIGIN = 0x10000, LENGTH = 0x10000
+  ROM (rx)  : ORIGIN = 0x00000, LENGTH = 0x1000
+}
+
+SECTIONS
+{
+  .text : { *(.text) } > ROM
+  .data : { *(.data) } > RAM
+  .bss  : { *(.bss)  } > RAM
+}
+
+ENTRY(_start)
+"#;
+
+    println!("Basic script:\n{}", script);
+    
+    // Parse the linker script - function to be implemented in Phase 2
+    let linker_script = parse_linker_script(script).unwrap();
+    
+    // Debug prints
+    println!("Parsed sections:");
+    for (i, section) in linker_script.sections.iter().enumerate() {
+        println!("{}: {} in {} (alignment: {})", i, section.name, section.memory_region, section.alignment);
+    }
+    
+    // Verify memory regions
+    assert_eq!(linker_script.memory_regions.len(), 2);
+    assert_eq!(linker_script.memory_regions[0].name, "RAM");
+    assert_eq!(linker_script.memory_regions[0].origin, 0x10000);
+    assert_eq!(linker_script.memory_regions[0].length, 0x10000);
+    
+    // Verify sections
+    assert_eq!(linker_script.sections.len(), 3);
+    assert_eq!(linker_script.sections[0].name, ".text");
+    assert_eq!(linker_script.sections[0].memory_region, "ROM");
+    
+    // Verify entry point
+    assert_eq!(linker_script.entry_point, Some("_start".to_string()));
+}
+
+#[test]
+fn test_linker_script_edge_cases() {
+    // Test more complex linker script with alignment, symbols, etc.
+    let complex_script = r#"
+MEMORY
+{
+  RAM (rwx) : ORIGIN = 0x80000000, LENGTH = 0x4000000
+}
+
+SECTIONS
+{
+  .text : ALIGN(4) {
+    _text_start = .;
+    *(.text)
+    *(.text.*)
+    _text_end = .;
+  } > RAM
+  
+  .rodata : ALIGN(8) {
+    _rodata_start = .;
+    *(.rodata)
+    *(.rodata.*)
+    _rodata_end = .;
+  } > RAM
+  
+  .data : ALIGN(8) {
+    _data_start = .;
+    *(.data)
+    *(.data.*)
+    _data_end = .;
+  } > RAM
+  
+  .bss : ALIGN(8) {
+    _bss_start = .;
+    *(.bss)
+    *(.bss.*)
+    *(COMMON)
+    _bss_end = .;
+  } > RAM
+}
+
+ENTRY(_start)
+"#;
+
+    println!("Complex script:\n{}", complex_script);
+
+    let linker_script = parse_linker_script(complex_script).unwrap();
+    
+    // Debug prints
+    println!("Parsed complex sections:");
+    for (i, section) in linker_script.sections.iter().enumerate() {
+        println!("{}: {} in {} (alignment: {})", i, section.name, section.memory_region, section.alignment);
+    }
+    
+    // Verify memory regions
+    assert_eq!(linker_script.memory_regions.len(), 1);
+    assert_eq!(linker_script.memory_regions[0].name, "RAM");
+    assert_eq!(linker_script.memory_regions[0].origin, 0x80000000);
+    
+    // Verify sections with alignment
+    assert_eq!(linker_script.sections.len(), 4);
+    assert_eq!(linker_script.sections[0].name, ".text");
+    assert_eq!(linker_script.sections[0].alignment, 4);
+    assert_eq!(linker_script.sections[1].name, ".rodata");
+    assert_eq!(linker_script.sections[1].alignment, 8);
+}
+
+#[test]
+fn test_invalid_linker_script() {
+    // Test invalid linker script scenarios
+    let invalid_script = r#"
+MEMORY
+{
+  RAM (rwx) : ORIGIN = -1, LENGTH = 0x10000 /* Invalid negative origin */
+}
+
+SECTIONS
+{
+  .text : { *(.text) } > FLASH /* Reference to undefined memory region */
+}
+"#;
+
+    let result = parse_linker_script(invalid_script);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_validation_helpers() {
+    // Test immediate range validation
+    assert!(validate_imm_range(42, -2048, 2047));
+    assert!(!validate_imm_range(4096, -2048, 2047));
+    assert!(!validate_imm_range(-3000, -2048, 2047));
+    
+    // Test section overlap validation
+    let sections = vec![
+        Section {
+            name: ".text".into(),
+            vma: 0x10000,
+            size: 0x1000,
+            memory_region: "RAM".into(),
+            alignment: 4,
+            input_patterns: vec![],
+        },
+        Section {
+            name: ".data".into(),
+            vma: 0x11000,
+            size: 0x1000,
+            memory_region: "RAM".into(),
+            alignment: 4,
+            input_patterns: vec![],
+        },
+    ];
+    
+    assert!(!validate_section_overlap(&sections));
+    
+    // Test section overlap with actually overlapping sections
+    let overlapping_sections = vec![
+        Section {
+            name: ".text".into(),
+            vma: 0x10000,
+            size: 0x1000,
+            memory_region: "RAM".into(),
+            alignment: 4,
+            input_patterns: vec![],
+        },
+        Section {
+            name: ".data".into(),
+            vma: 0x10800,
+            size: 0x1000,
+            memory_region: "RAM".into(),
+            alignment: 4,
+            input_patterns: vec![],
+        },
+    ];
+    
+    assert!(validate_section_overlap(&overlapping_sections));
+}
+
+// =========== Helper types and functions for tests ===========
+
+// These would be implemented in the actual code
+
+// Helper type for parse_linker_script tests
+
+// Use the actual types from the crate
+use risc_v_gen::elf::{LinkerScript, MemoryRegion, Section};
+
+// This will be implemented in Phase 1
+fn assemble_instructions(instructions: &[Instruction]) -> Result<Vec<u8>> {
+    risc_v_gen::assemble_instructions(instructions)
+}
+
+// This will be implemented in Phase 2
+fn parse_linker_script(script: &str) -> Result<LinkerScript> {
+    risc_v_gen::parse_linker_script(script)
+}
+
+// This will be implemented in Phase 3
+fn build_elf(code_gen: &CodeGenerator, linker_script: &str, output_path: &Path) -> Result<()> {
+    risc_v_gen::build_elf(code_gen, linker_script, output_path)
+}
+
+// Validation helpers for Phase 4
+fn validate_imm_range(imm: i32, min: i32, max: i32) -> bool {
+    risc_v_gen::validate_imm_range(imm, min, max)
+}
+
+fn validate_section_overlap(sections: &[Section]) -> bool {
+    risc_v_gen::validate_section_overlap(sections)
+} 

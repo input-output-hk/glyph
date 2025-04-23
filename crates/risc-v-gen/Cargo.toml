@@ -13,10 +13,17 @@ riscv-decode = "0.2.1"
 thiserror = { workspace = true }
 
 # BitVMX-CPU dependencies
-bitcoin-script-riscv = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "challenges", package = "bitcoin-script-riscv" }
-emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "challenges", package = "emulator" }
+bitcoin-script-riscv = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "main", package = "bitcoin-script-riscv" }
+emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "main", package = "emulator" }
 sha2 = "0.10.8"
 hex = "0.4.3"
+
+# ELF generation dependencies
+object = { version = "0.32.1", features = ["write"] }
+nom = "7.1.3" # For parsing linker scripts
+
+[dev-dependencies]
+tempfile = "3.8.1"
 
 [features]
 default = []
