@@ -42,6 +42,107 @@ use risc_v_gen::{CodeGenerator, Instruction, Register};
 //     NoFrame,
 // }
 
+//AddInteger
+//SubtractInteger
+//MultiplyInteger
+//DivideInteger
+//QuotientInteger
+//RemainderInteger
+//ModInteger
+//EqualsInteger
+//LessThanInteger
+//LessThanEqualsInteger
+//AppendByteString
+//ConsByteString
+//SliceByteString
+//LengthOfByteString
+//IndexByteString
+//EqualsByteString
+//LessThanByteString
+//LessThanEqualsByteString
+//Sha2_256
+//Sha3_256
+//Blake2b_224
+//Blake2b_256
+//Keccak_256
+//VerifyEd25519Signature
+//VerifyEcdsaSecp256k1Signature
+//VerifySchnorrSecp256k1Signature
+//AppendString
+//EqualsString
+//EncodeUtf8
+//DecodeUtf8
+//IfThenElse
+//ChooseUnit
+//Trace
+//FstPair
+//SndPair
+//ChooseList
+//MkCons
+//HeadList
+//TailList
+//NullList
+//ChooseData
+//ConstrData
+//MapData
+//ListData
+//IData
+//BData
+//UnConstrData
+//UnMapData
+//UnListData
+//UnIData
+//UnBData
+//EqualsData
+//SerialiseData
+//MkPairData
+//MkNilData
+//MkNilPairData
+//Bls12_381_G1_Add
+//Bls12_381_G1_Neg
+//Bls12_381_G1_ScalarMul
+//Bls12_381_G1_Equal
+//Bls12_381_G1_Compress
+//Bls12_381_G1_Uncompress
+//Bls12_381_G1_HashToGroup
+//Bls12_381_G2_Add
+//Bls12_381_G2_Neg
+//Bls12_381_G2_ScalarMul
+//Bls12_381_G2_Equal
+//Bls12_381_G2_Compress
+//Bls12_381_G2_Uncompress
+//Bls12_381_G2_HashToGroup
+//Bls12_381_MillerLoop
+//Bls12_381_MulMlResult
+//Bls12_381_FinalVerify
+//IntegerToByteString
+//ByteStringToInteger
+//AndByteString
+//OrByteString
+//XorByteString
+//ComplementByteString
+//ReadBit
+//WriteBits
+//ReplicateByte
+//ShiftByteString
+//RotateByteString
+//CountSetBits
+//FindFirstSetBit
+//Ripemd_160
+//ExpModInteger
+
+const force_counts: [u8; 88] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
+    1, 2, 2, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+const arities: [u8; 88] = [
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 3, 3, 3, 2, 2, 1, 1, 3, 2,
+    2, 1, 1, 3, 2, 1, 1, 1, 6, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 2, 1, 1, 2, 1, 2, 2, 1, 1, 2, 2,
+    1, 2, 2, 1, 1, 2, 2, 2, 2, 3, 2, 3, 3, 3, 1, 2, 3, 2, 2, 2, 1, 1, 1, 0,
+];
+
 #[derive(Default, Debug)]
 pub struct Cek {
     generator: CodeGenerator,
@@ -733,11 +834,20 @@ impl Cek {
 
         let force_lookup = Register::T2;
         self.generator
-            .add_instruction(Instruction::La(force_lookup, "force_lookup".to_string()));
+            .add_instruction(Instruction::La(force_lookup, "force_counts".to_string()));
+
+        self.generator.add_instruction(Instruction::Add(
+            force_lookup,
+            force_lookup,
+            builtin_func_index,
+        ));
 
         let forces = Register::T3;
         self.generator
-            .add_instruction(Instruction::Lbu(forces, -5, self.heap));
+            .add_instruction(Instruction::Lbu(forces, 0, force_lookup));
+
+        self.generator
+            .add_instruction(Instruction::Sw(forces, -5, self.heap));
 
         self.generator
             .add_instruction(Instruction::Sw(Register::Zero, -4, self.heap));
@@ -1784,10 +1894,29 @@ impl Cek {
             ));
 
             {
+                let force_count = Register::T1;
                 self.generator
-                    .add_instruction(Instruction::Comment("Builtin TODO".to_string()));
+                    .add_instruction(Instruction::Lbu(force_count, 2, value));
 
-                self.generator.add_instruction(Instruction::Nop);
+                self.generator.add_instruction(Instruction::Beq(
+                    Register::Zero,
+                    force_count,
+                    "force_evaluate_error".to_string(),
+                ));
+
+                self.generator
+                    .add_instruction(Instruction::Addi(force_count, force_count, -1));
+
+                self.generator
+                    .add_instruction(Instruction::Sb(force_count, 2, value));
+
+                self.generator.add_instruction(Instruction::Bne(
+                    Register::Zero,
+                    force_count,
+                    "return".to_string(),
+                ));
+
+                // TODO
             }
 
             {
@@ -2094,8 +2223,14 @@ impl Cek {
         self.generator.add_instruction(Instruction::Byte(bytes));
 
         self.generator
-            .add_instruction(Instruction::Label("force_lookup".to_string()));
-        self.generator.add_instruction(Instruction::Byte(vec![]));
+            .add_instruction(Instruction::Label("force_counts".to_string()));
+        self.generator
+            .add_instruction(Instruction::Byte(force_counts.to_vec()));
+
+        self.generator
+            .add_instruction(Instruction::Label("arities".to_string()));
+        self.generator
+            .add_instruction(Instruction::Byte(arities.to_vec()));
     }
 }
 
