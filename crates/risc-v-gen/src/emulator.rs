@@ -1,15 +1,15 @@
 use emulator::{
-    executor::fetcher::execute_program,
-    loader::program::{generate_rom_commitment, load_elf},
+    executor::{utils::FailConfiguration, fetcher::{execute_program, FullTrace,}},
+    loader::program::{load_elf},
     ExecutionResult,
 };
 
 /// Verify a RISC-V ELF file by executing it in the BitVMX emulator
-pub fn verify_file(fname: &str) -> Result<(Vec<String>, ExecutionResult), ExecutionResult> {
-    let mut program = load_elf(fname, true).map_err(|_| ExecutionResult::Error)?;
+pub fn verify_file(fname: &str) -> Result<(ExecutionResult, FullTrace), ExecutionResult> {
+    let mut program = load_elf(fname, true).unwrap();
 
     // Execute the program with default settings
-    execute_program(
+    Ok(execute_program(
         &mut program,
         Vec::new(),
         ".bss",
@@ -24,11 +24,8 @@ pub fn verify_file(fname: &str) -> Result<(Vec<String>, ExecutionResult), Execut
         true,
         None,
         None,
-        None,
-        None,
-        None,
-        None,
-    )
+        FailConfiguration::default(),
+    ))
 }
 
 /// Test that the emulator integration works
@@ -46,9 +43,9 @@ fn run_file() {
     match verify_file(test_file) {
         Ok((traces, result)) => {
             println!("Execution result: {:?}", result);
-            for trace in traces {
-                println!("Trace: {}", trace);
-            }
+            // for trace in traces {
+                // println!("Trace: {}", trace);
+            // }
         },
         Err(e) => println!("Failed to verify file: {:?}", e),
     }

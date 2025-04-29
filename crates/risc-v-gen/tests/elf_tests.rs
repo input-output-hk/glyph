@@ -1,7 +1,8 @@
 // Tests for ELF generation capabilities
 // These tests verify the functionality described in elf_plan.md
 
-use risc_v_gen::{CodeGenerator, Instruction, Register, Result};
+use risc_v_gen::{CodeGenerator, Instruction, Register, Result, assemble_and_link, DEFAULT_LINKER_SCRIPT};
+use risc_v_gen::emulator::verify_file;
 use std::path::Path;
 use std::fs;
 use std::process::Command;
@@ -10,6 +11,89 @@ use std::process::Command;
 #[cfg(test)]
 mod tests_that_need_tempfile {
     use super::*;
+    
+    // New test for assemble_and_link function
+    #[test]
+    fn test_assemble_and_link_string() {
+        // Create a simple assembly program
+        let asm_code = r#"
+        .section .text
+        .global _start
+        _start:
+            li a0, 42      # Exit code
+            li a7, 93      # Exit syscall
+            ecall
+        "#;
+        
+        // Output path
+        let output_path = Path::new("test_asm_string.elf");
+        
+        // Assemble and link
+        assemble_and_link(asm_code, output_path, Some(DEFAULT_LINKER_SCRIPT)).unwrap();
+        
+        // Check that the file exists and has a non-zero size
+        assert!(output_path.exists());
+        let metadata = fs::metadata(&output_path).unwrap();
+        assert!(metadata.len() > 0);
+        
+        // Execute the ELF file using the emulator
+        let result = verify_file(output_path.to_str().unwrap());
+        assert!(result.is_ok(), "Failed to verify ELF file: {:?}", result.err());
+        
+        // Check that the exit code is 42 as expected
+        let (execution_result, _trace) = result.unwrap();
+        match execution_result {
+            emulator::ExecutionResult::Halt(exit_value, _) => {
+                assert_eq!(exit_value, 42, "Program exit code should be 42");
+            },
+            other => panic!("Expected Halt variant but got: {:?}", other),
+        }
+        
+        // Clean up
+        let _ = fs::remove_file(output_path);
+    }
+    
+    // Test with data section
+    #[test] // Not sure if we need this: TODO
+    fn test_assemble_and_link_with_data() {
+        // Create a program with both text and data sections
+        let asm_code = r#"
+        .section .text
+        .global _start
+        _start:
+            # Load address of message
+            la a1, message
+            
+            # Set up parameters for write syscall
+            li a0, 1       # stdout
+            li a2, 14      # length of message
+            li a7, 64      # write syscall
+            ecall
+            
+            # Exit
+            li a0, 0       # Exit code
+            li a7, 93      # Exit syscall
+            ecall
+            
+        .section .data
+        message:
+            .ascii "Hello, RISC-V!\n"
+        "#;
+        
+        // Output path
+        let output_path = Path::new("test_asm_data.elf");
+        
+        // Assemble and link
+        assemble_and_link(asm_code, output_path, None).unwrap(); // Use default linker script
+        
+        // Check that the file exists and has a non-zero size
+        assert!(output_path.exists());
+        let metadata = fs::metadata(&output_path).unwrap();
+        assert!(metadata.len() > 0);
+        
+        // Clean up
+        let _ = fs::remove_file(output_path);
+    }
     
     // We're temporarily making these non-ignored tests run by removing the #[ignore] attribute
     // since we added the tempfile dependency

@@ -10,17 +10,335 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 
-use nom::branch::alt;
-use nom::bytes::complete::{tag, take_till, take_until, take_while1};
-use nom::character::complete::{char, digit1, hex_digit1, multispace0, multispace1, space0, space1};
-use nom::combinator::{map, map_res, opt, recognize};
-use nom::multi::{many0, many1, separated_list0, separated_list1};
-use nom::sequence::{delimited, pair, preceded, separated_pair, terminated, tuple};
-use nom::IResult;
 use object::write::{Object, Symbol, SymbolSection};
 use object::{Architecture, BinaryFormat, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
+use lib_rv32_asm as rv_asm;
 
-use crate::{CodeGenError, CodeGenerator, Instruction, Register, Result};
+use crate::{CodeGenError, CodeGenerator, Instruction, Result};
+
+// Default linker script that matches the CLI approach
+pub const DEFAULT_LINKER_SCRIPT: &str = r#"
+MEMORY {
+    FLASH (rx) : ORIGIN = 0x08000000, LENGTH = 256K
+    RAM (rwx) : ORIGIN = 0x20000000, LENGTH = 40K
+}
+SECTIONS {
+    .text : { *(.text*) } > FLASH
+    .data : { *(.data*) } > RAM
+    .bss : { *(.bss*) } > RAM
+}
+ENTRY(_start)
+"#;
+
+/// Assemble assembly code from a string and generate an ELF file
+/// 
+/// This function provides a streamlined way to:
+/// 1. Take assembly code as a string
+/// 2. Assemble it using lib_rv32_asm
+/// 3. Generate an ELF file with the provided or default linker script
+///
+/// It mimics the CLI approach:
+/// ```
+/// riscv64-unknown-elf-as test.s -march=rv32i -mabi=ilp32 -o test.o
+/// riscv64-unknown-elf-ld test.o -m elf32lriscv -o test.elf
+/// ```
+pub fn assemble_and_link(asm_code: &str, output_path: &Path, linker_script: Option<&str>) -> Result<()> {
+    // Use the provided linker script or the default
+    let linker_script_str = linker_script.unwrap_or(DEFAULT_LINKER_SCRIPT);
+
+    // Parse the linker script using the proper LinkerScript functionality
+    let linker_script = LinkerScript::parse(linker_script_str)?;
+    
+    // Parse the assembly code to generate a series of machine code instructions
+    let mut labels = HashMap::new();
+    let mut current_section = ".text".to_string();
+    let mut current_pc = 0;
+    
+    // Create an Object to represent our output file
+    let mut obj = Object::new(
+        BinaryFormat::Elf,
+        Architecture::Riscv32,
+        object::endian::Endianness::Little,
+    );
+    
+    // Initialize sections based on linker script
+    let mut section_ids = HashMap::new();
+    let mut section_data = HashMap::new();
+    
+    for section in &linker_script.sections {
+        let section_kind = match section.name.as_str() {
+            ".text" => SectionKind::Text,
+            ".data" => SectionKind::Data,
+            ".rodata" => SectionKind::ReadOnlyData,
+            ".bss" => SectionKind::UninitializedData,
+            _ => SectionKind::Unknown,
+        };
+        
+        let section_id = obj.add_section(
+            Vec::new(),
+            section.name.clone().into_bytes(),
+            section_kind,
+        );
+        
+        section_ids.insert(section.name.clone(), section_id);
+        section_data.insert(section.name.clone(), Vec::new());
+    }
+    
+    // Process each line of assembly code
+    for line in asm_code.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        
+        // Handle section directives
+        if line.starts_with(".section") || line.starts_with(".text") || 
+           line.starts_with(".data") || line.starts_with(".bss") || 
+           line.starts_with(".rodata") {
+            // Extract section name
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() > 1 {
+                current_section = parts[1].to_string();
+                if current_section.starts_with('.') {
+                    // Already has dot prefix
+                } else {
+                    current_section = format!(".{}", current_section);
+                }
+            } else {
+                // Handle .text, .data, .bss directives without explicit section name
+                if line.starts_with(".text") {
+                    current_section = ".text".to_string();
+                } else if line.starts_with(".data") {
+                    current_section = ".data".to_string();
+                } else if line.starts_with(".bss") {
+                    current_section = ".bss".to_string();
+                } else if line.starts_with(".rodata") {
+                    current_section = ".rodata".to_string();
+                }
+            }
+            continue;
+        }
+        
+        // Handle labels (ending with :)
+        if line.ends_with(':') {
+            let label = line[0..line.len()-1].trim().to_string();
+            labels.insert(label, current_pc);
+            continue;
+        }
+        
+        // Handle data directives
+        if line.starts_with(".word") || line.starts_with(".byte") || 
+           line.starts_with(".ascii") || line.starts_with(".asciiz") || 
+           line.starts_with(".space") {
+            // These will be handled during actual assembly
+            // For now, just adjust PC based on data size
+            if line.starts_with(".word") {
+                current_pc += 4; // 4 bytes per word
+            } else if line.starts_with(".byte") {
+                current_pc += 1; // 1 byte
+            } else if line.starts_with(".ascii") || line.starts_with(".asciiz") {
+                // Rough estimate for string length
+                let parts: Vec<&str> = line.splitn(2, ' ').collect();
+                if parts.len() > 1 {
+                    let mut str_len = parts[1].trim_matches('"').len();
+                    if line.starts_with(".asciiz") {
+                        str_len += 1; // Add null terminator
+                    }
+                    current_pc += str_len as u64;
+                }
+            } else if line.starts_with(".space") {
+                let parts: Vec<&str> = line.splitn(2, ' ').collect();
+                if parts.len() > 1 {
+                    if let Ok(space) = parts[1].parse::<u64>() {
+                        current_pc += space;
+                    }
+                }
+            }
+            continue;
+        }
+        
+        // For executable instructions, each is 4 bytes
+        if !line.starts_with('.') && !line.is_empty() {
+            current_pc += 4;
+        }
+    }
+    
+    // Second pass: actually assemble the code
+    current_pc = 0;
+    current_section = ".text".to_string();
+    
+    // Reset the last identified section to track section changes
+    let mut last_section = current_section.clone();
+    
+    for line in asm_code.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        
+        // Handle section directives
+        if line.starts_with(".section") || line.starts_with(".text") || 
+           line.starts_with(".data") || line.starts_with(".bss") || 
+           line.starts_with(".rodata") {
+            // Extract section name (already done in first pass)
+            if line.starts_with(".section") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() > 1 {
+                    current_section = parts[1].to_string();
+                    if !current_section.starts_with('.') {
+                        current_section = format!(".{}", current_section);
+                    }
+                }
+            } else if line.starts_with(".text") {
+                current_section = ".text".to_string();
+            } else if line.starts_with(".data") {
+                current_section = ".data".to_string();
+            } else if line.starts_with(".bss") {
+                current_section = ".bss".to_string();
+            } else if line.starts_with(".rodata") {
+                current_section = ".rodata".to_string();
+            }
+            
+            // Reset PC when changing sections
+            if current_section != last_section {
+                current_pc = 0;
+                last_section = current_section.clone();
+            }
+            continue;
+        }
+        
+        // Skip labels in second pass
+        if line.ends_with(':') {
+            continue;
+        }
+        
+        // Handle data directives
+        if line.starts_with(".word") {
+            let parts: Vec<&str> = line.splitn(2, ' ').collect();
+            if parts.len() > 1 {
+                if let Ok(word) = parts[1].parse::<i32>() {
+                    if let Some(data) = section_data.get_mut(&current_section) {
+                        data.extend_from_slice(&(word as u32).to_le_bytes());
+                        current_pc += 4;
+                    }
+                }
+            }
+            continue;
+        } else if line.starts_with(".byte") {
+            let parts: Vec<&str> = line.splitn(2, ' ').collect();
+            if parts.len() > 1 {
+                if let Ok(byte) = parts[1].parse::<u8>() {
+                    if let Some(data) = section_data.get_mut(&current_section) {
+                        data.push(byte);
+                        current_pc += 1;
+                    }
+                }
+            }
+            continue;
+        } else if line.starts_with(".ascii") || line.starts_with(".asciiz") {
+            let parts: Vec<&str> = line.splitn(2, ' ').collect();
+            if parts.len() > 1 {
+                let str_content = parts[1].trim_matches('"');
+                if let Some(data) = section_data.get_mut(&current_section) {
+                    data.extend_from_slice(str_content.as_bytes());
+                    current_pc += str_content.len() as u64;
+                    
+                    if line.starts_with(".asciiz") {
+                        data.push(0); // Null terminator
+                        current_pc += 1;
+                    }
+                }
+            }
+            continue;
+        } else if line.starts_with(".space") {
+            let parts: Vec<&str> = line.splitn(2, ' ').collect();
+            if parts.len() > 1 {
+                if let Ok(space) = parts[1].parse::<usize>() {
+                    if let Some(data) = section_data.get_mut(&current_section) {
+                        data.extend(vec![0; space]);
+                        current_pc += space as u64;
+                    }
+                }
+            }
+            continue;
+        }
+        
+        // Skip other directives
+        if line.starts_with('.') {
+            continue;
+        }
+        
+        // Handle actual instructions (use lib_rv32_asm)
+        let mut asm_labels = HashMap::new();
+        for (name, offset) in &labels {
+            asm_labels.insert(name.clone(), *offset as u32);
+        }
+        
+        match rv_asm::assemble_ir(line, &mut asm_labels, current_pc as u32) {
+            Ok(Some(encoded)) => {
+                if let Some(data) = section_data.get_mut(&current_section) {
+                    data.extend_from_slice(&encoded.to_le_bytes());
+                    current_pc += 4;
+                }
+            },
+            Ok(None) => {
+                // Skip empty/invalid instructions
+                continue;
+            },
+            Err(_) => {
+                return Err(CodeGenError::InvalidInstruction(
+                    format!("Failed to encode instruction: {}", line)
+                ));
+            }
+        }
+    }
+    
+    // Add section data to the object
+    for (section_name, data) in section_data {
+        if let Some(&section_id) = section_ids.get(&section_name) {
+            obj.append_section_data(section_id, &data, 4);
+        }
+    }
+    
+    // Set the entry point if specified in the linker script
+    if let Some(entry) = &linker_script.entry_point {
+        if let Some(entry_offset) = labels.get(entry) {
+            // Find the section containing the entry point (usually .text)
+            for section in &linker_script.sections {
+                if section.name == ".text" {
+                    let entry_addr = section.vma + *entry_offset;
+                    obj.add_symbol(Symbol {
+                        name: b"_start".to_vec(),
+                        value: entry_addr,
+                        size: 0,
+                        kind: SymbolKind::Text,
+                        scope: SymbolScope::Linkage,
+                        weak: false,
+                        section: SymbolSection::Absolute,
+                        flags: SymbolFlags::None,
+                    });
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Write the ELF file
+    let elf_data = obj.write().map_err(|e| {
+        CodeGenError::InvalidInstruction(format!("Failed to write ELF file: {}", e))
+    })?;
+    
+    // Save to file
+    let mut file = File::create(output_path).map_err(|e| {
+        CodeGenError::InvalidInstruction(format!("Failed to create output file: {}", e))
+    })?;
+    
+    file.write_all(&elf_data).map_err(|e| {
+        CodeGenError::InvalidInstruction(format!("Failed to write to output file: {}", e))
+    })?;
+    
+    Ok(())
+}
 
 // ========== Part 1: Instruction to Bytes Conversion ==========
 
@@ -50,7 +368,7 @@ fn encode_instructions(instructions: &[Instruction]) -> Result<(Vec<(String, u32
                 labels.insert(name.clone(), offset);
             }
             _ => {
-                if let Some(asm_str) = instruction_to_string(instr) {
+                if let Some(_asm_str) = instruction_to_string(instr) {
                     // Skip incrementing offset for pseudo-instructions that don't generate code
                     // But for actual instructions, assume 4 bytes per instruction
                     match instr {
@@ -74,9 +392,8 @@ fn encode_instructions(instructions: &[Instruction]) -> Result<(Vec<(String, u32
                 Instruction::Byte(_) | Instruction::Ascii(_) | 
                 Instruction::Asciiz(_) | Instruction::Space(_) => {},
                 _ => {
-                    // Here, we would use lib-rv32-asm to encode the instruction
-                    // For now, using a placeholder implementation
-                    let machine_code = encode_instruction(instr, &labels)?;
+                    // Use lib-rv32-asm to encode the instruction
+                    let machine_code = encode_instruction(instr, &labels, &asm_str)?;
                     encoded.push((asm_str, machine_code));
                 }
             }
@@ -134,64 +451,25 @@ fn instruction_to_string(instruction: &Instruction) -> Option<String> {
 }
 
 /// Encode a single instruction into its 32-bit machine code representation
-fn encode_instruction(instruction: &Instruction, _labels: &HashMap<String, u64>) -> Result<u32> {
-    // In a real implementation, we would use lib-rv32-asm to encode the instruction
-    // For now, using placeholder values for testing
+/// using the lib-rv32-asm library
+fn encode_instruction(instruction: &Instruction, labels: &HashMap<String, u64>, asm_str: &str) -> Result<u32> {
+    // Create a mutable HashMap for the lib-rv32-asm library
+    let mut asm_labels = HashMap::new();
     
-    match instruction {
-        Instruction::Add(_, _, _) => Ok(0x00000033), // add x0, x0, x0
-        Instruction::Sub(_, _, _) => Ok(0x40000033), // sub x0, x0, x0
-        Instruction::And(_, _, _) => Ok(0x00007033), // and x0, x0, x0
-        Instruction::Or(_, _, _) => Ok(0x00006033),  // or x0, x0, x0
-        Instruction::Xor(_, _, _) => Ok(0x00004033), // xor x0, x0, x0
-        Instruction::Slt(_, _, _) => Ok(0x00002033), // slt x0, x0, x0
-        Instruction::Sltu(_, _, _) => Ok(0x00003033), // sltu x0, x0, x0
-        
-        // I-type instructions
-        Instruction::Addi(_, _, imm) => {
-            // Validate immediate range for I-type instructions (-2048..2047)
-            if !validate_imm_range(*imm, -2048, 2047) {
-                return Err(CodeGenError::InvalidImmediate(*imm));
-            }
-            Ok(0x00000013) // addi x0, x0, 0
-        },
-        
-        // Load/store instructions
-        Instruction::Lw(_, _, _) => Ok(0x00000003),   // lw x0, 0(x0)
-        Instruction::Sw(_, _, _) => Ok(0x00000023),   // sw x0, 0(x0)
-        
-        // Branch instructions
-        Instruction::Beq(_, _, _) => Ok(0x00000063),  // beq x0, x0, 0
-        
-        // U-type instructions
-        Instruction::Lui(_, imm) => {
-            // Validate immediate range for U-type instructions (0..0xFFFFF)
-            if !validate_imm_range(*imm, 0, 0xFFFFF) {
-                return Err(CodeGenError::InvalidImmediate(*imm));
-            }
-            Ok(0x00000037) // lui x0, 0
-        },
-        
-        // J-type instructions
-        Instruction::Jal(_, _) => Ok(0x0000006F),     // jal x0, 0
-        
-        // Pseudo-instructions
-        Instruction::Li(_, imm) => {
-            // For LI we can accept a wider range since it can be expanded into multiple instructions
-            if *imm > 2047 || *imm < -2048 {
-                // For a real implementation, we would expand this into lui+addi
-                // For the test, we'll just accept it
-            }
-            Ok(0x00000013) // addi x0, x0, 0 (pseudo for li)
-        },
-        Instruction::La(_, _) => Ok(0x00000017),      // auipc x0, 0 (part of la)
-        Instruction::Mv(_, _) => Ok(0x00000013),      // addi xd, xs, 0 (pseudo for mv)
-        
-        // System instructions
-        Instruction::Ecall => Ok(0x00000073),         // ecall
-        
-        // Other instructions - accept them for testing
-        _ => Ok(0x00000033), // add x0, x0, x0 (default placeholder)
+    // Convert our labels from u64 to u32 for the library
+    for (name, offset) in labels {
+        asm_labels.insert(name.clone(), *offset as u32);
+    }
+    
+    // Use lib-rv32-asm to encode the instruction, providing all required arguments
+    // The current PC is set to 0 since we're encoding a single instruction
+    match rv_asm::assemble_ir(asm_str, &mut asm_labels, 0) {
+        Ok(Some(encoded)) => Ok(encoded),
+        Ok(None) => Err(CodeGenError::InvalidInstruction(format!("Failed to encode instruction: {}", asm_str))),
+        Err(_) => {
+            println!("Failed to encode instruction: {}", asm_str);
+            Err(CodeGenError::InvalidInstruction(format!("Failed to encode instruction: {}", asm_str)))
+        }
     }
 }
 
