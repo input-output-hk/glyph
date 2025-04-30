@@ -221,7 +221,7 @@ pub enum Instruction {
     Global(String),
     Section(String),
     Align(i32),
-    Word(i32),
+    Word(String),
     Byte(Vec<u8>),
     Ascii(String),
     Asciiz(String),
