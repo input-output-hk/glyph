@@ -3,8 +3,6 @@
 //! This crate provides functionality to compile Untyped Plutus Core (UPLC)
 //! to RISC-V assembly code.
 
-mod ir;
-
 use thiserror::Error;
 pub mod cek;
 
