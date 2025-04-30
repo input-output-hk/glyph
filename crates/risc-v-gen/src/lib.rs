@@ -504,10 +504,9 @@ impl CodeGenerator {
 /// 3. Generate an ELF file with the provided or default linker script
 ///
 /// It mimics the CLI approach:
-/// ```
-/// riscv64-unknown-elf-as test.s -march=rv32i -mabi=ilp32 -o test.o
-/// riscv64-unknown-elf-ld test.o -m elf32lriscv -o test.elf
-/// ```
+/// `riscv64-unknown-elf-as test.s -march=rv32i -mabi=ilp32 -o test.o`
+/// `riscv64-unknown-elf-ld test.o -m elf32lriscv -o test.elf`
+/// 
 pub fn assemble_and_link(asm_code: &str, output_path: &Path, linker_script: Option<&str>) -> Result<()> {
     elf::assemble_and_link(asm_code, output_path, linker_script)
 }
