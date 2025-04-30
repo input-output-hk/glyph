@@ -206,13 +206,13 @@ impl Cek {
         self.compute();
         self.return_compute();
         self.handle_var();
-        self.handle_delay(ret);
-        self.handle_lambda(ret);
-        self.handle_apply(ret);
-        self.handle_constant(ret);
-        self.handle_force(ret);
-        self.handle_error(ret);
-        self.handle_builtin(ret);
+        self.handle_delay();
+        self.handle_lambda();
+        self.handle_apply();
+        self.handle_constant();
+        self.handle_force();
+        self.handle_error();
+        self.handle_builtin();
         self.handle_constr(ret);
         let (list, list_dest, length, callback) = self.handle_case(ret);
         self.handle_frame_await_fun_term(ret);
@@ -562,15 +562,17 @@ impl Cek {
             .add_instruction(Instruction::J("lookup".to_string()));
     }
 
-    pub fn handle_delay(&mut self, ret: Register) {
-        let delay_term = ret;
+    pub fn handle_delay(&mut self) {
+        let delay_term = self.first_arg;
+        let heap = self.heap;
+        let env = self.env;
         self.generator
             .add_instruction(Instruction::Label("handle_delay".to_string()));
 
         self.generator
             .add_instruction(Instruction::Comment("Term body is next byte".to_string()));
 
-        let body = Register::T0;
+        let body = self.first_temp;
 
         self.generator
             .add_instruction(Instruction::Addi(body, delay_term, 1));
@@ -579,12 +581,12 @@ impl Cek {
             "9 bytes for DelayValue allocation".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(self.heap, self.heap, 9));
+            .add_instruction(Instruction::Addi(heap, heap, 9));
 
         self.generator
             .add_instruction(Instruction::Comment("tag is 1 in rust".to_string()));
 
-        let vdelay_tag = Register::T1;
+        let vdelay_tag = self.second_temp;
 
         self.generator
             .add_instruction(Instruction::Li(vdelay_tag, 1));
@@ -593,40 +595,42 @@ impl Cek {
             .add_instruction(Instruction::Comment("first byte is tag".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Sb(vdelay_tag, -9, self.heap));
+            .add_instruction(Instruction::Sb(vdelay_tag, -9, heap));
 
         self.generator
             .add_instruction(Instruction::Comment("Store body pointer".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Sw(body, -8, self.heap));
+            .add_instruction(Instruction::Sw(body, -8, heap));
 
         self.generator
             .add_instruction(Instruction::Comment("Store environment".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Sw(self.env, -4, self.heap));
+            .add_instruction(Instruction::Sw(env, -4, heap));
 
         self.generator
             .add_instruction(Instruction::Comment("Put return value into A0".to_string()));
 
+        let ret = self.return_reg;
         self.generator
-            .add_instruction(Instruction::Addi(ret, self.heap, -9));
+            .add_instruction(Instruction::Addi(ret, heap, -9));
 
         self.generator
             .add_instruction(Instruction::J("return".to_string()));
     }
 
-    pub fn handle_lambda(&mut self, ret: Register) {
-        let lambda_term = ret;
-
+    pub fn handle_lambda(&mut self) {
+        let lambda_term = self.first_arg;
+        let heap = self.heap;
+        let env = self.env;
         self.generator
             .add_instruction(Instruction::Label("handle_lambda".to_string()));
 
         self.generator
             .add_instruction(Instruction::Comment("Term body is next byte".to_string()));
 
-        let body = Register::T0;
+        let body = self.first_temp;
 
         self.generator
             .add_instruction(Instruction::Addi(body, lambda_term, 1));
@@ -636,12 +640,12 @@ impl Cek {
         ));
 
         self.generator
-            .add_instruction(Instruction::Addi(self.heap, self.heap, 9));
+            .add_instruction(Instruction::Addi(heap, heap, 9));
 
         self.generator
             .add_instruction(Instruction::Comment("tag is 2 in rust".to_string()));
 
-        let vlambda_tag = Register::T1;
+        let vlambda_tag = self.second_temp;
 
         self.generator
             .add_instruction(Instruction::Li(vlambda_tag, 2));
@@ -650,32 +654,35 @@ impl Cek {
             .add_instruction(Instruction::Comment("first byte is tag".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Sb(vlambda_tag, -9, self.heap));
+            .add_instruction(Instruction::Sb(vlambda_tag, -9, heap));
 
         self.generator
             .add_instruction(Instruction::Comment("Store body".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Sw(body, -8, self.heap));
+            .add_instruction(Instruction::Sw(body, -8, heap));
 
         self.generator
             .add_instruction(Instruction::Comment("Store environment".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Sw(self.env, -4, self.heap));
+            .add_instruction(Instruction::Sw(env, -4, heap));
 
         self.generator
             .add_instruction(Instruction::Comment("Put return value into A0".to_string()));
 
+        let ret = self.return_reg;
         self.generator
-            .add_instruction(Instruction::Addi(ret, self.heap, -9));
+            .add_instruction(Instruction::Addi(ret, heap, -9));
 
         self.generator
             .add_instruction(Instruction::J("return".to_string()));
     }
 
-    pub fn handle_apply(&mut self, ret: Register) {
-        let apply_term = ret;
+    pub fn handle_apply(&mut self) {
+        let apply_term = self.first_arg;
+        let frames = self.frames;
+        let env = self.env;
         self.generator
             .add_instruction(Instruction::Label("handle_apply".to_string()));
 
@@ -686,7 +693,7 @@ impl Cek {
             "Function is 5 bytes after tag location".to_string(),
         ));
 
-        let function = Register::T0;
+        let function = self.first_temp;
 
         self.generator
             .add_instruction(Instruction::Addi(function, apply_term, 5));
@@ -694,7 +701,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Comment("Load argument into temp".to_string()));
 
-        let argument = Register::T1;
+        let argument = self.second_temp;
         self.generator
             .add_instruction(Instruction::Lw(argument, 1, apply_term));
 
@@ -702,12 +709,12 @@ impl Cek {
             "9 bytes for FrameAwaitFunTerm allocation".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(self.frames, self.frames, -9));
+            .add_instruction(Instruction::Addi(frames, frames, -9));
 
         self.generator.add_instruction(Instruction::Comment(
             "Tag is 1 for FrameAwaitFunTerm".to_string(),
         ));
-        let frame_tag = Register::T2;
+        let frame_tag = self.third_temp;
 
         self.generator
             .add_instruction(Instruction::Li(frame_tag, 1));
@@ -716,25 +723,26 @@ impl Cek {
             .add_instruction(Instruction::Comment("Push tag onto stack".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Sb(frame_tag, 0, self.frames));
+            .add_instruction(Instruction::Sb(frame_tag, 0, frames));
 
         self.generator
             .add_instruction(Instruction::Comment("Push argument onto stack".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Sw(argument, 1, self.frames));
+            .add_instruction(Instruction::Sw(argument, 1, frames));
 
         self.generator.add_instruction(Instruction::Comment(
             "Push environment onto stack".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Sw(self.env, 5, self.frames));
+            .add_instruction(Instruction::Sw(env, 5, frames));
 
         self.generator.add_instruction(Instruction::Comment(
             "Put function address into A0".to_string(),
         ));
 
+        let ret = self.return_reg;
         self.generator
             .add_instruction(Instruction::Mv(ret, function));
 
@@ -742,39 +750,43 @@ impl Cek {
             .add_instruction(Instruction::J("compute".to_string()));
     }
 
-    pub fn handle_constant(&mut self, ret: Register) {
+    pub fn handle_constant(&mut self) {
+        let constant_term = self.first_arg;
+        let heap = self.heap;
+
         self.generator
             .add_instruction(Instruction::Label("handle_constant".to_string()));
-        let constant_term = ret;
 
         // store pointer to constant in T0
-        let constant = Register::T0;
+        let constant = self.first_temp;
         self.generator
             .add_instruction(Instruction::Addi(constant, constant_term, 1));
 
         // allocate 5 bytes on the heap
         self.generator
-            .add_instruction(Instruction::Addi(self.heap, self.heap, 5));
+            .add_instruction(Instruction::Addi(heap, heap, 5));
 
-        let constant_tag = Register::T1;
+        let constant_tag = self.second_temp;
         self.generator
             .add_instruction(Instruction::Li(constant_tag, 0));
 
         self.generator
-            .add_instruction(Instruction::Sb(constant_tag, -5, self.heap));
+            .add_instruction(Instruction::Sb(constant_tag, -5, heap));
 
         self.generator
-            .add_instruction(Instruction::Sw(constant, -4, self.heap));
+            .add_instruction(Instruction::Sw(constant, -4, heap));
 
+        let ret = self.return_reg;
         self.generator
-            .add_instruction(Instruction::Addi(ret, self.heap, -5));
+            .add_instruction(Instruction::Addi(ret, heap, -5));
 
         self.generator
             .add_instruction(Instruction::J("return".to_string()));
     }
 
-    pub fn handle_force(&mut self, ret: Register) {
-        let force_term = ret;
+    pub fn handle_force(&mut self) {
+        let force_term = self.first_arg;
+        let frames = self.frames;
 
         self.generator
             .add_instruction(Instruction::Label("handle_force".to_string()));
@@ -782,7 +794,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Comment("Load term body".to_string()));
 
-        let body = Register::T0;
+        let body = self.first_temp;
 
         self.generator
             .add_instruction(Instruction::Addi(body, force_term, 1));
@@ -791,49 +803,53 @@ impl Cek {
             "1 byte for FrameForce allocation".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(self.frames, self.frames, -1));
+            .add_instruction(Instruction::Addi(frames, frames, -1));
 
         self.generator
             .add_instruction(Instruction::Comment("Tag is 3 for FrameForce".to_string()));
 
-        let tag = Register::T1;
+        let tag = self.second_temp;
         self.generator.add_instruction(Instruction::Li(tag, 3));
 
         self.generator.add_instruction(Instruction::Comment(
             "Push FrameForce tag onto stack".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Sb(tag, 0, self.frames));
+            .add_instruction(Instruction::Sb(tag, 0, frames));
 
         self.generator.add_instruction(Instruction::Comment(
             "Put term body address into A0".to_string(),
         ));
+
+        let ret = self.return_reg;
         self.generator.add_instruction(Instruction::Mv(ret, body));
 
         self.generator
             .add_instruction(Instruction::J("compute".to_string()));
     }
 
-    pub fn handle_error(&mut self, ret: Register) {
+    pub fn handle_error(&mut self) {
         self.generator
             .add_instruction(Instruction::Label("handle_error".to_string()));
 
         self.generator
             .add_instruction(Instruction::Comment("Load -1 into A0".to_string()));
 
+        let ret = self.return_reg;
         self.generator.add_instruction(Instruction::Li(ret, -1));
 
         self.generator
             .add_instruction(Instruction::J("halt".to_string()));
     }
 
-    pub fn handle_builtin(&mut self, ret: Register) {
-        let builtin = ret;
+    pub fn handle_builtin(&mut self) {
+        let builtin = self.first_arg;
+        let heap = self.heap;
 
         self.generator
             .add_instruction(Instruction::Label("handle_builtin".to_string()));
 
-        let builtin_func_index = Register::T0;
+        let builtin_func_index = self.first_temp;
         self.generator
             .add_instruction(Instruction::Lbu(builtin_func_index, 1, builtin));
 
@@ -843,19 +859,19 @@ impl Cek {
         ));
 
         self.generator
-            .add_instruction(Instruction::Addi(self.heap, self.heap, 7));
+            .add_instruction(Instruction::Addi(heap, heap, 7));
 
-        let value_tag = Register::T1;
+        let value_tag = self.second_temp;
         self.generator
             .add_instruction(Instruction::Li(value_tag, 3));
 
         self.generator
-            .add_instruction(Instruction::Sb(value_tag, -7, self.heap));
+            .add_instruction(Instruction::Sb(value_tag, -7, heap));
 
         self.generator
-            .add_instruction(Instruction::Sb(builtin_func_index, -6, self.heap));
+            .add_instruction(Instruction::Sb(builtin_func_index, -6, heap));
 
-        let force_lookup = Register::T2;
+        let force_lookup = self.third_temp;
         self.generator
             .add_instruction(Instruction::La(force_lookup, "force_counts".to_string()));
 
@@ -865,18 +881,19 @@ impl Cek {
             builtin_func_index,
         ));
 
-        let forces = Register::T3;
+        let forces = self.fourth_temp;
         self.generator
             .add_instruction(Instruction::Lbu(forces, 0, force_lookup));
 
         self.generator
-            .add_instruction(Instruction::Sb(forces, -5, self.heap));
+            .add_instruction(Instruction::Sb(forces, -5, heap));
 
         self.generator
-            .add_instruction(Instruction::Sw(Register::Zero, -4, self.heap));
+            .add_instruction(Instruction::Sw(Register::Zero, -4, heap));
 
+        let ret = self.return_reg;
         self.generator
-            .add_instruction(Instruction::Addi(ret, self.heap, -7));
+            .add_instruction(Instruction::Addi(ret, heap, -7));
 
         self.generator
             .add_instruction(Instruction::J("return".to_string()));
@@ -2248,6 +2265,7 @@ impl Cek {
 
     pub fn lookup(&mut self) {
         let index = self.first_arg;
+        let env = self.env;
         self.generator
             .add_instruction(Instruction::Label("lookup".to_string()));
 
@@ -2272,10 +2290,10 @@ impl Cek {
 
             let current_env = self.second_temp;
             self.generator
-                .add_instruction(Instruction::Lw(current_env, 4, self.env));
+                .add_instruction(Instruction::Lw(current_env, 4, env));
 
             self.generator
-                .add_instruction(Instruction::Mv(self.env, current_env));
+                .add_instruction(Instruction::Mv(env, current_env));
 
             let ret = self.return_reg;
             self.generator
@@ -2290,8 +2308,7 @@ impl Cek {
                 .add_instruction(Instruction::Label("lookup_return".to_string()));
 
             let ret = self.return_reg;
-            self.generator
-                .add_instruction(Instruction::Lw(ret, 0, self.env));
+            self.generator.add_instruction(Instruction::Lw(ret, 0, env));
 
             self.generator
                 .add_instruction(Instruction::J("return".to_string()));
@@ -2462,13 +2479,13 @@ mod tests {
         cek.compute();
         cek.return_compute();
         cek.handle_var();
-        cek.handle_delay(ret);
-        cek.handle_lambda(ret);
-        cek.handle_apply(ret);
-        cek.handle_constant(ret);
-        cek.handle_force(ret);
-        cek.handle_error(ret);
-        cek.handle_builtin(ret);
+        cek.handle_delay();
+        cek.handle_lambda();
+        cek.handle_apply();
+        cek.handle_constant();
+        cek.handle_force();
+        cek.handle_error();
+        cek.handle_builtin();
         let (second_field, frames_arg, size, callback1) = cek.handle_constr(ret);
         let (list, list_dest, length, callback) = cek.handle_case(ret);
 
