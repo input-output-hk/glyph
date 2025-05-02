@@ -253,6 +253,88 @@ impl CodeGenerator {
         self.instructions.push(instruction);
     }
 
+    /// Expand pseudo-instructions into real RISC-V instructions
+    fn expand_pseudo_instruction(&self, instruction: &Instruction) -> Vec<Instruction> {
+        match instruction {
+            // J is a pseudo-instruction for jal x0, label
+            Instruction::J(label) => {
+                vec![Instruction::Jal(Register::Zero, label.clone())]
+            },
+            // Li is a pseudo-instruction for loading immediates
+            // For small immediates: addi rd, x0, imm
+            // For larger immediates: lui rd, imm_upper + addi rd, rd, imm_lower (if needed)
+            Instruction::Li(rd, imm) => {
+                if *imm >= -2048 && *imm < 2048 {
+                    // Small immediate: use addi rd, x0, imm
+                    vec![Instruction::Addi(*rd, Register::Zero, *imm)]
+                } else {
+                    // Larger immediate: use lui + addi if needed
+                    let imm_upper = (*imm >> 12) & 0xFFFFF;
+                    let imm_lower = *imm & 0xFFF;
+                    
+                    // If lower bits would sign-extend negatively, adjust upper bits
+                    let adjusted_upper = if (imm_lower & 0x800) != 0 {
+                        imm_upper + 1
+                    } else {
+                        imm_upper
+                    };
+                    
+                    if adjusted_upper != 0 {
+                        if imm_lower != 0 {
+                            vec![
+                                Instruction::Lui(*rd, adjusted_upper as i32),
+                                Instruction::Addi(*rd, *rd, imm_lower as i32),
+                            ]
+                        } else {
+                            vec![Instruction::Lui(*rd, adjusted_upper as i32)]
+                        }
+                    } else {
+                        vec![Instruction::Addi(*rd, Register::Zero, imm_lower as i32)]
+                    }
+                }
+            },
+            // La is a pseudo-instruction for loading an address
+            // This is complex and depends on PIC vs non-PIC
+            // In the simplest form, it expands to: auipc rd, %pcrel_hi(symbol) + addi rd, rd, %pcrel_lo(symbol)
+            Instruction::La(rd, symbol) => {
+                // Using PC-relative addressing for position-independent code
+                vec![
+                    // These would be expanded further with relocation information,
+                    // but we'll emit them as is for now since the actual expansion
+                    // depends on linker details
+                    Instruction::Auipc(*rd, 0), // placeholder, would be filled with %pcrel_hi(symbol)
+                    Instruction::Addi(*rd, *rd, 0), // placeholder, would be filled with %pcrel_lo(symbol)
+                ]
+            },
+            // Mv is a pseudo-instruction for addi rd, rs, 0
+            Instruction::Mv(rd, rs) => {
+                vec![Instruction::Addi(*rd, *rs, 0)]
+            },
+            // Not is a pseudo-instruction for xori rd, rs, -1
+            Instruction::Not(rd, rs) => {
+                vec![Instruction::Xori(*rd, *rs, -1)]
+            },
+            // Neg is a pseudo-instruction for sub rd, x0, rs
+            Instruction::Neg(rd, rs) => {
+                vec![Instruction::Sub(*rd, Register::Zero, *rs)]
+            },
+            // Seqz is a pseudo-instruction for sltiu rd, rs, 1
+            Instruction::Seqz(rd, rs) => {
+                vec![Instruction::Sltiu(*rd, *rs, 1)]
+            },
+            // Snez is a pseudo-instruction for sltu rd, x0, rs
+            Instruction::Snez(rd, rs) => {
+                vec![Instruction::Sltu(*rd, Register::Zero, *rs)]
+            },
+            // Nop is a pseudo-instruction for addi x0, x0, 0
+            Instruction::Nop => {
+                vec![Instruction::Addi(Register::Zero, Register::Zero, 0)]
+            },
+            // Return the instruction itself if it's not a pseudo-instruction
+            _ => vec![instruction.clone()],
+        }
+    }
+
     /// gene.rate assembly code
     pub fn generate(&self) -> String {
         let mut result = String::new();
@@ -297,9 +379,26 @@ impl CodeGenerator {
                     result.push_str(&format!("    .space {}\n", size));
                 },
                 _ => {
-                    result.push_str("    ");
-                    result.push_str(&self.format_instruction(instruction));
-                    result.push('\n');
+                    // For executable instructions, expand pseudo-instructions
+                    let expanded_instructions = self.expand_pseudo_instruction(instruction);
+                    for expanded in expanded_instructions {
+                        if !matches!(expanded, 
+                            Instruction::Label(_) | 
+                            Instruction::Comment(_) | 
+                            Instruction::Global(_) | 
+                            Instruction::Section(_) | 
+                            Instruction::Align(_) | 
+                            Instruction::Word(_) | 
+                            Instruction::Byte(_) | 
+                            Instruction::Ascii(_) | 
+                            Instruction::Asciiz(_) | 
+                            Instruction::Space(_)
+                        ) {
+                            result.push_str("    ");
+                            result.push_str(&self.format_instruction(&expanded));
+                            result.push('\n');
+                        }
+                    }
                 },
             }
         }
@@ -490,9 +589,34 @@ impl CodeGenerator {
         Ok(())
     }
 
-    /// Generate an ELF file from the code generator
-    pub fn generate_elf(&self, output_path: &Path, linker_script: &str) -> Result<()> {
-        elf::build_elf(self, linker_script, output_path)
+    /// Get a flattened list of instructions with all pseudo-instructions expanded
+    pub fn get_expanded_instructions(&self) -> Vec<Instruction> {
+        let mut expanded = Vec::new();
+        
+        for instruction in &self.instructions {
+            match instruction {
+                // Directives and labels are passed through as is
+                Instruction::Label(_) | 
+                Instruction::Global(_) | 
+                Instruction::Section(_) | 
+                Instruction::Align(_) | 
+                Instruction::Word(_) | 
+                Instruction::Byte(_) | 
+                Instruction::Ascii(_) | 
+                Instruction::Asciiz(_) | 
+                Instruction::Space(_) |
+                Instruction::Comment(_) => {
+                    expanded.push(instruction.clone());
+                },
+                // All other instructions (including pseudo-instructions) are expanded
+                _ => {
+                    let expanded_instructions = self.expand_pseudo_instruction(instruction);
+                    expanded.extend(expanded_instructions);
+                }
+            }
+        }
+        
+        expanded
     }
 }
 
@@ -513,8 +637,6 @@ pub fn assemble_and_link(asm_code: &str, output_path: &Path, linker_script: Opti
 
 // Re-export functions from the elf module
 pub use elf::{
-    assemble_instructions,
-    build_elf,
     validate_imm_range,
     validate_section_overlap,
     DEFAULT_LINKER_SCRIPT,
@@ -540,8 +662,8 @@ mod tests {
 
         let asm = gene.generate();
         assert!(asm.contains("main:"));
-        assert!(asm.contains("li a0, 42"));
-        assert!(asm.contains("li a1, 58"));
+        assert!(asm.contains("addi a0, zero, 42"));
+        assert!(asm.contains("addi a1, zero, 58"));
         assert!(asm.contains("add a2, a0, a1"));
     }
 
@@ -554,7 +676,7 @@ mod tests {
         gene.add_instruction(Instruction::Lw(Register::A1, 0, Register::Sp));
 
         let asm = gene.generate();
-        assert!(asm.contains("li a0, 42"));
+        assert!(asm.contains("addi a0, zero, 42"));
         assert!(asm.contains("sw a0, 0(sp)"));
         assert!(asm.contains("lw a1, 0(sp)"));
     }
@@ -573,8 +695,8 @@ mod tests {
         gene.add_instruction(Instruction::Label("label".to_string()));
 
         let asm = gene.generate();
-        assert!(asm.contains("li a0, 42"));
-        assert!(asm.contains("li a1, 58"));
+        assert!(asm.contains("addi a0, zero, 42"));
+        assert!(asm.contains("addi a1, zero, 58"));
         assert!(asm.contains("blt a0, a1, label"));
         assert!(asm.contains("label:"));
     }
@@ -609,5 +731,51 @@ mod tests {
         gene.add_instruction(Instruction::Ecall);
 
         gene.save_to_file("test.s").unwrap();
+    }
+
+    #[test]
+    fn test_pseudo_instructions_expansion() {
+        let mut gene = CodeGenerator::new();
+
+        gene.add_instruction(Instruction::Label("test_pseudo".to_string()));
+        // Test li with large immediate (requires lui + addi)
+        gene.add_instruction(Instruction::Li(Register::A0, 0x12345));
+        // Test mv
+        gene.add_instruction(Instruction::Mv(Register::A1, Register::A0));
+        // Test not
+        gene.add_instruction(Instruction::Not(Register::A2, Register::A1));
+        // Test neg
+        gene.add_instruction(Instruction::Neg(Register::A3, Register::A2));
+        // Test seqz
+        gene.add_instruction(Instruction::Seqz(Register::A4, Register::A3));
+        // Test snez
+        gene.add_instruction(Instruction::Snez(Register::A5, Register::A4));
+        // Test j
+        gene.add_instruction(Instruction::J("end".to_string()));
+        // Test nop
+        gene.add_instruction(Instruction::Nop);
+        gene.add_instruction(Instruction::Label("end".to_string()));
+
+        let asm = gene.generate();
+        // Check for expanded instructions
+        assert!(asm.contains("test_pseudo:"));
+        // li with large immediate should expand to lui + addi
+        assert!(asm.contains("lui a0, 18")); // 0x12 = 18
+        assert!(asm.contains("addi a0, a0, 837")); // 0x345 = 837
+        // mv should expand to addi
+        assert!(asm.contains("addi a1, a0, 0"));
+        // not should expand to xori
+        assert!(asm.contains("xori a2, a1, -1"));
+        // neg should expand to sub
+        assert!(asm.contains("sub a3, zero, a2"));
+        // seqz should expand to sltiu
+        assert!(asm.contains("sltiu a4, a3, 1"));
+        // snez should expand to sltu
+        assert!(asm.contains("sltu a5, zero, a4"));
+        // j should expand to jal
+        assert!(asm.contains("jal zero, end"));
+        // nop should expand to addi zero, zero, 0
+        assert!(asm.contains("addi zero, zero, 0"));
+        assert!(asm.contains("end:"));
     }
 }
