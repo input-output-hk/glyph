@@ -31,8 +31,8 @@ bitcoin-script-riscv = { git = "https://github.com/FairgateLabs/BitVMX-CPU", bra
 emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "challenges", package = "emulator" }
 
 # Serialization dependencies for BitVMX integration
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { version = "^1.0.219", features = ["derive"] }
+serde_json = "^1.0"
 
 # Optional features can be added later
 
@@ -41,7 +41,3 @@ default = []
 
 [dev-dependencies]
 tempfile = "3.8.1"
-
-[[example]]
-name = "bitvm_verification_example"
-path = "examples/bitvm_verification_example.rs"

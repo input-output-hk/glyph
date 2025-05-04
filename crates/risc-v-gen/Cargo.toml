@@ -18,5 +18,15 @@ emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "chall
 sha2 = "0.10.8"
 hex = "0.4.3"
 
+# ELF generation dependencies
+object = { version = "0.32.1", features = ["write"] }
+nom = "7.1.3" # For parsing linker scripts
+
+# RISC-V assembly encoding
+lib-rv32-asm = "0.2.0"
+
+[dev-dependencies]
+tempfile = "3.8.1"
+
 [features]
 default = []
