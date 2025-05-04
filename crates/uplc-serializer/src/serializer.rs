@@ -20,6 +20,12 @@ pub fn serialize(program: &Program<DeBruijn>) -> Result<Vec<u8>> {
 
     x.write_all(&serialized_bytes)?;
 
+    // Ensure the final bytestring is divisible by 4 in length
+    let padding_size = (4 - (x.len() % 4)) % 4;
+    if padding_size > 0 {
+        x.write_all(&vec![0; padding_size])?;
+    }
+
     // Return the serialized program
     Ok(x)
 }
