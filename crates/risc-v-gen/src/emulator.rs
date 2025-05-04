@@ -7,12 +7,12 @@ use emulator::{
     EmulatorError, ExecutionResult,
 };
 
-fn gen_com(fname: &str) -> RomCommitment {
+pub fn gen_com(fname: &str) -> RomCommitment {
     let program = load_elf(fname, false).unwrap();
     generate_rom_commitment(&program).unwrap()
 }
 
-fn verify_file(fname: &str) -> Result<(ExecutionResult, FullTrace), EmulatorError> {
+pub fn verify_file(fname: &str) -> Result<(ExecutionResult, FullTrace), EmulatorError> {
     let mut program = load_elf(fname, true)?;
 
     // println!("PROG IS {:?}", program);

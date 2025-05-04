@@ -6,7 +6,7 @@ use std::{fs::File, io::Write};
 
 use thiserror::Error;
 
-mod emulator;
+pub mod emulator;
 
 /// Errors that can occur during RISC-V code gene.ration
 #[derive(Debug, Error)]
