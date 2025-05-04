@@ -2061,6 +2061,7 @@ mod tests {
 
     use emulator::ExecutionResult;
     use risc_v_gen::emulator::verify_file;
+    use uplc::ast::{DeBruijn, Program, Term};
 
     use crate::cek::Cek;
 
@@ -2170,6 +2171,53 @@ mod tests {
     #[test]
     fn test_force_delay_error() {
         let thing = Cek::default();
+
+        let gene = thing.cek_assembly(vec![5, 1, 6, 0]);
+
+        gene.save_to_file("test_force.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_force.o",
+                "test_force.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_force.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_force.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_force.elf").unwrap();
+
+        match v.0 {
+            ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
+            _ => unreachable!("HOW?"),
+        }
+    }
+
+    #[test]
+    fn test_force_delay_error_serialize() {
+        let thing = Cek::default();
+
+        let term = Term::Error.delay().force();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term,
+        };
 
         let gene = thing.cek_assembly(vec![5, 1, 6, 0]);
 
