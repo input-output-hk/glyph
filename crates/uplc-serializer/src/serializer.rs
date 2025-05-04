@@ -13,10 +13,10 @@ use crate::constants::{bool_val, const_tag, data_tag, term_tag};
 use crate::{Result, SerializationError};
 
 /// Serialize the program to a binary format
-pub fn serialize(program: &Program<DeBruijn>) -> Result<Vec<u8>> {
+pub fn serialize(program: &Program<DeBruijn>, preceeding_byte_size: u32) -> Result<Vec<u8>> {
     // Now serialize the root term
     let mut x: Vec<u8> = Vec::new();
-    let serialized_bytes = serialize_term(0, &program.term)?;
+    let serialized_bytes = serialize_term(preceeding_byte_size, &program.term)?;
 
     x.write_all(&serialized_bytes)?;
 
@@ -88,13 +88,12 @@ fn serialize_apply(
     x.write_u8(term_tag::APPLY)?;
 
     // Serialize the function and argument (recursively)
-    let function_pointer = preceeding_byte_size + 9;
+    let function_pointer = preceeding_byte_size + 5;
     let function_ser = serialize_term(function_pointer, function).unwrap();
     let argument_pointer = function_pointer + function_ser.len() as u32;
     let argument_ser = serialize_term(argument_pointer, argument).unwrap();
 
     // We need to provide the size of each term before writing the terms
-    x.write_u32::<LittleEndian>(function_pointer)?;
     x.write_u32::<LittleEndian>(argument_pointer)?;
 
     // Write function and argument addresses
