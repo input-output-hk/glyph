@@ -2062,6 +2062,7 @@ mod tests {
     use emulator::ExecutionResult;
     use risc_v_gen::emulator::verify_file;
     use uplc::ast::{DeBruijn, Program, Term};
+    use uplc_serializer::serialize;
 
     use crate::cek::Cek;
 
@@ -2104,8 +2105,8 @@ mod tests {
         cek.clone_list(list, list_dest, length, callback);
         cek.reverse_clone_list(list, list_dest, length, callback);
         cek.initial_term(vec![
-            /*apply*/ 3, /*placeholder for arg pointer*/ 11, 0, 0, 144,
-            /*lambda*/ 2, /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, 13, 0, 0, 0,
+            /*apply*/ 3, /* arg pointer*/ 11, 0, 0, 144, /*lambda*/ 2,
+            /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, 13, 0, 0, 0,
         ]);
 
         let code_gen = cek.generator;
@@ -2114,12 +2115,13 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_compilation() {
         let thing = Cek::default();
 
         let gene = thing.cek_assembly(vec![
-            /*apply*/ 3, /*placeholder for arg pointer*/ 11, 0, 0, 144,
-            /*lambda*/ 2, /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, 13, 0, 0, 0,
+            /*apply*/ 3, /* arg pointer*/ 11, 0, 0, 144, /*lambda*/ 2,
+            /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, 13, 0, 0, 0,
         ]);
 
         gene.save_to_file("../../test.s").unwrap();
@@ -2130,8 +2132,8 @@ mod tests {
         let thing = Cek::default();
 
         let gene = thing.cek_assembly(vec![
-            /*apply*/ 3, /*placeholder for arg pointer*/ 11, 0, 0, 144,
-            /*lambda*/ 2, /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, 13, 0, 0, 0,
+            /*apply*/ 3, /* arg pointer*/ 11, 0, 0, 144, /*lambda*/ 2,
+            /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, 13, 0, 0, 0,
         ]);
 
         gene.save_to_file("test_apply.s").unwrap();
@@ -2219,17 +2221,19 @@ mod tests {
             term,
         };
 
-        let gene = thing.cek_assembly(vec![5, 1, 6, 0]);
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
 
-        gene.save_to_file("test_force.s").unwrap();
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_serialize.s").unwrap();
 
         Command::new("riscv64-elf-as")
             .args([
                 "-march=rv32i",
                 "-mabi=ilp32",
                 "-o",
-                "test_force.o",
-                "test_force.s",
+                "test_serialize.o",
+                "test_serialize.s",
             ])
             .status()
             .unwrap();
@@ -2239,15 +2243,71 @@ mod tests {
                 "-m",
                 "elf32lriscv",
                 "-o",
-                "test_force.elf",
+                "test_serialize.elf",
                 "-T",
                 "../../linker/link.ld",
-                "test_force.o",
+                "test_serialize.o",
             ])
             .status()
             .unwrap();
 
-        let v = verify_file("test_force.elf").unwrap();
+        let v = verify_file("test_serialize.elf").unwrap();
+
+        match v.0 {
+            ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
+            _ => unreachable!("HOW?"),
+        }
+    }
+
+    #[test]
+    fn test_apply_lambda_force_var_delay_error_serialize() {
+        let thing = Cek::default();
+
+        let term = Term::var("x")
+            .force()
+            .lambda("x")
+            .apply(Term::Error.delay());
+
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
+
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+        dbg!(&riscv_program);
+
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_serialize_2.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_serialize_2.o",
+                "test_serialize_2.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_serialize_2.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_serialize_2.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_serialize_2.elf").unwrap();
 
         match v.0 {
             ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),

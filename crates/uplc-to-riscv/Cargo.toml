@@ -8,14 +8,14 @@ repository = "https://github.com/input-output-hk/uplc-risc"
 
 [dependencies]
 # Core dependencies
-log = { workspace = true }
 thiserror = { workspace = true }
 
 # Internal dependencies
 risc-v-gen = { path = "../risc-v-gen" }
+uplc-serializer = { path = "../uplc-serializer" }
 
 # External dependencies
-uplc = { version = "1.0" }
+uplc = { git = "https://github.com/aiken-lang/aiken.git", package = "uplc" }
 num-bigint = "0.4"
 peg = "0.8"
 pallas-primitives = { version = "^0.32.0" }

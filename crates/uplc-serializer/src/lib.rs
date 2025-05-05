@@ -3,7 +3,7 @@ use thiserror::Error;
 use uplc::ast::{DeBruijn, Program};
 
 pub mod constants;
-mod serializer;
+pub mod serializer;
 
 pub use serializer::serialize;
 
@@ -82,7 +82,7 @@ pub type Result<T> = std::result::Result<T, SerializationError>;
 ///
 /// A `Result` containing the serialized program as a `Vec<u8>` or a `SerializationError`
 pub fn serialize_program(program: &Program<DeBruijn>) -> Result<Vec<u8>> {
-    serialize(program)
+    serialize(program, 0)
 }
 
 /// Parse a UPLC file and serialize it to binary format
