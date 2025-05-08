@@ -3,16 +3,17 @@ use emulator::{
         fetcher::{execute_program, FullTrace},
         utils::FailConfiguration,
     },
-    loader::program::load_elf,
+    loader::program::{self, load_elf, Program},
     ExecutionResult,
 };
 
 /// Verify a RISC-V ELF file by executing it in the BitVMX emulator
-pub fn verify_file(fname: &str) -> Result<(ExecutionResult, FullTrace), ExecutionResult> {
+pub fn verify_file(fname: &str) -> Result<(ExecutionResult, FullTrace, Program), ExecutionResult> {
     let mut program = load_elf(fname, true).unwrap();
 
     // Execute the program with default settings
-    Ok(execute_program(
+
+    let (result, trace) = execute_program(
         &mut program,
         Vec::new(),
         ".bss",
@@ -28,7 +29,9 @@ pub fn verify_file(fname: &str) -> Result<(ExecutionResult, FullTrace), Executio
         None,
         None,
         FailConfiguration::default(),
-    ))
+    );
+
+    Ok((result, trace, program))
 }
 
 /// Test that the emulator integration works
@@ -44,7 +47,7 @@ fn run_file() {
     }
 
     match verify_file(test_file) {
-        Ok((traces, result)) => {
+        Ok((_traces, result, _program)) => {
             println!("Execution result: {:?}", result);
             // for trace in traces {
             // println!("Trace: {}", trace);

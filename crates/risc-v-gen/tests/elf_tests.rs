@@ -46,7 +46,7 @@ mod tests_that_need_tempfile {
         );
 
         // Check that the exit code is 42 as expected
-        let (execution_result, _trace) = result.unwrap();
+        let (execution_result, _trace, _program) = result.unwrap();
         match execution_result {
             emulator::ExecutionResult::Halt(exit_value, _) => {
                 assert_eq!(exit_value, 42, "Program exit code should be 42");
