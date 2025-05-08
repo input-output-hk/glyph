@@ -1836,13 +1836,20 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Label("handle_no_frame".to_string()));
 
-        let temp = self.first_temp;
+        let value_tag = self.first_temp;
         self.generator
-            .add_instruction(Instruction::Lw(temp, 1, value));
+            .add_instruction(Instruction::Lbu(value_tag, 0, value));
+
+        // We should only return constants. That greatly simplifies how we return a value to the user
+        self.generator.add_instruction(Instruction::Bne(
+            value_tag,
+            Register::Zero,
+            "handle_error".to_string(),
+        ));
 
         let ret = self.return_reg;
         self.generator
-            .add_instruction(Instruction::Lw(ret, 0, temp));
+            .add_instruction(Instruction::Lw(ret, 1, value));
 
         self.generator
             .add_instruction(Instruction::J("halt".to_string()));
@@ -2484,6 +2491,13 @@ impl Default for Cek {
     }
 }
 
+fn u32_vec_to_u8_vec(input: Vec<u32>) -> Vec<u8> {
+    input
+        .into_iter()
+        .flat_map(|num| num.to_be_bytes())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs::File, io::Write, process::Command};
@@ -2493,7 +2507,7 @@ mod tests {
     use uplc::ast::{DeBruijn, Name, Program, Term};
     use uplc_serializer::serialize;
 
-    use crate::cek::Cek;
+    use crate::cek::{u32_vec_to_u8_vec, Cek};
 
     #[test]
     fn test_cek_machine() {
@@ -2544,7 +2558,9 @@ mod tests {
 
         let gene = thing.cek_assembly(vec![
             /*apply*/ 3, /* arg pointer*/ 11, 0, 0, 144, /*lambda*/ 2,
-            /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, 13, 0, 0, 0,
+            /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, /* type length in bytes */ 1,
+            /* integer */ 0, /* sign */ 0, /* length */ 1, 0, 0, 0,
+            /*value (little-endian) */ 13, 0, 0, 0,
         ]);
 
         // println!("{}", gene.generate());
@@ -2577,10 +2593,48 @@ mod tests {
 
         let v = verify_file("test_apply.elf").unwrap();
 
-        match v.0 {
-            ExecutionResult::Halt(result, _step) => assert_eq!(result, 13),
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
             _ => unreachable!("HOW?"),
-        }
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, 0);
+
+        let sign = section_data[offset_index + 2];
+
+        assert_eq!(sign, 0);
+
+        let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(word_length, 1);
+
+        let value = *section_data[(offset_index + 7)..(offset_index + 11)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(value, 13);
     }
 
     #[test]
@@ -2631,14 +2685,17 @@ mod tests {
 
         let gene = thing.cek_assembly(vec![
             /*case */ 9, /*const pointer */ 17, 0, 0, 144, /*branches length */ 2,
-            0, 0, 0, /*first branch pointer */ 44, 0, 0, 144,
-            /*second branch pointer */ 45, 0, 0, 144, /*constr*/ 8, /* tag*/ 1, 0,
+            0, 0, 0, /*first branch pointer */ 58, 0, 0, 144,
+            /*second branch pointer */ 59, 0, 0, 144, /*constr*/ 8, /* tag*/ 1, 0,
             0, 0, /*fields length */ 2, 0, 0, 0, /*first field pointer */ 34, 0, 0, 144,
-            /*second field pointer */ 39, 0, 0, 144, /* first field constant */ 4,
-            /*integer 99 */ 99, 0, 0, 0, /*second field constant */ 4,
+            /*second field pointer */ 46, 0, 0, 144, /* first field constant */ 4,
+            /* type length in bytes */ 1, /* integer */ 0, /* sign */ 0,
+            /* length */ 1, 0, 0, 0, /*integer 99 */ 99, 0, 0, 0,
+            /*second field constant */ 4, /* type length in bytes */ 1,
+            /* integer */ 0, /* sign */ 0, /* length */ 1, 0, 0, 0,
             /*integer 13 */ 13, 0, 0, 0, /*first branch error*/ 6,
             /*second branch lambda */ 2, /*lambda */ 2, /*var */ 0,
-            /*second debruijn index */ 2, 0, 0, 0,
+            /*second debruijn index */ 2, 0, 0, 0, 0, 0,
         ]);
 
         gene.save_to_file("test_case_constr.s").unwrap();
@@ -2688,11 +2745,50 @@ mod tests {
         // )
         // .unwrap();
         // file.flush().unwrap();
+        //
 
-        match v.0 {
-            ExecutionResult::Halt(result, _step) => assert_eq!(result, 99),
-            g => unreachable!("HOW? {:#?}", g),
-        }
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            _ => unreachable!("HOW?"),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, 0);
+
+        let sign = section_data[offset_index + 2];
+
+        assert_eq!(sign, 0);
+
+        let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(word_length, 1);
+
+        let value = *section_data[(offset_index + 7)..(offset_index + 11)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(value, 99);
     }
 
     #[test]
