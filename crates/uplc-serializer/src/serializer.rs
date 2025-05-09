@@ -174,6 +174,10 @@ fn serialize_integer_constant(int: &num_bigint::BigInt) -> Result<Vec<u8>> {
     // Write constant type tag
     x.write_u8(const_tag::INTEGER)?;
 
+    // Write the sign bit
+    let sign_bit = if int < &num_bigint::BigInt::from(0) { 1 } else { 0 };
+    x.write_u8(sign_bit)?;
+
     // Determine content size and write it (1 word = 4 bytes)
     let size_in_bytes = (int.bits() + 7) / 8; // Round up to nearest byte
     let content_size = ((size_in_bytes + 3) / 4) as u32; // Round up to nearest word (4 bytes)
