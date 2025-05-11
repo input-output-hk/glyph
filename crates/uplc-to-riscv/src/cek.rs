@@ -2015,6 +2015,10 @@ impl Cek {
                     "return".to_string(),
                 ));
 
+                let function_index = self.second_arg;
+                self.generator
+                    .add_instruction(Instruction::Mv(function_index, builtin_func_index));
+
                 self.generator
                     .add_instruction(Instruction::J("eval_builtin_app".to_string()));
             }
@@ -2268,6 +2272,10 @@ impl Cek {
                     "return".to_string(),
                 ));
 
+                let function_index = self.second_arg;
+                self.generator
+                    .add_instruction(Instruction::Mv(function_index, builtin_func_index));
+
                 self.generator
                     .add_instruction(Instruction::J("eval_builtin_app".to_string()));
             }
@@ -2473,15 +2481,389 @@ impl Cek {
     }
 
     pub fn eval_builtin_app(&mut self) {
+        let builtin_value = self.first_arg;
+        let builtin_func_index = self.second_arg;
         self.generator
             .add_instruction(Instruction::Label("eval_builtin_app".to_string()));
 
-        // Marker temporarily
+        // offset to actual args for the builtin call
+        let builtin_args = self.first_arg;
         self.generator
-            .add_instruction(Instruction::Li(self.return_reg, 33));
+            .add_instruction(Instruction::Addi(builtin_args, builtin_value, 7));
+
+        let builtin_call_jump = self.first_temp;
+        self.generator.add_instruction(Instruction::La(
+            builtin_call_jump,
+            "eval_builtin_call".to_string(),
+        ));
+
+        let builtin_index_offset = self.second_temp;
+        self.generator.add_instruction(Instruction::Slli(
+            builtin_index_offset,
+            builtin_func_index,
+            2,
+        ));
+
+        self.generator.add_instruction(Instruction::Add(
+            builtin_call_jump,
+            builtin_call_jump,
+            builtin_index_offset,
+        ));
 
         self.generator
-            .add_instruction(Instruction::J("halt".to_string()));
+            .add_instruction(Instruction::Jalr(self.discard, builtin_call_jump, 0));
+
+        self.generator
+            .add_instruction(Instruction::Label("eval_builtin_call".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::J("add_integer".to_string()));
+    }
+
+    pub fn unwrap_integer(&mut self) {
+        let arg = self.first_arg;
+        let return_address = self.second_arg;
+        self.generator
+            .add_instruction(Instruction::Label("unwrap_integer".to_string()));
+
+        let expected_type = self.first_temp;
+        self.generator
+            .add_instruction(Instruction::Li(expected_type, 1));
+
+        // The type ends up being [0x01, 0x00] which in little endian is 1
+        let arg_type = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Lhu(arg_type, 0, arg));
+
+        self.generator.add_instruction(Instruction::Bne(
+            expected_type,
+            arg_type,
+            "handle_error".to_string(),
+        ));
+
+        // Return pointer to integer value
+        let ret = self.return_reg;
+        self.generator
+            .add_instruction(Instruction::Addi(ret, arg, 2));
+
+        self.generator
+            .add_instruction(Instruction::Jalr(self.discard, return_address, 0));
+    }
+
+    pub fn add_integer(&mut self) {
+        let args = self.first_arg;
+        self.generator
+            .add_instruction(Instruction::Label("add_integer".to_string()));
+
+        let x_value = self.first_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(x_value, 0, args));
+
+        let y_value = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(y_value, 4, args));
+
+        // Overwrite args
+        let first_arg = args;
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, x_value));
+
+        let store_y = self.third_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(store_y, y_value));
+
+        let callback = self.second_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+
+        // Overwrite x_value
+        let x_integer = x_value;
+        self.generator
+            .add_instruction(Instruction::Mv(x_integer, first_arg));
+
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, store_y));
+
+        // Overwrite store_y
+        let store_x = store_y;
+        self.generator
+            .add_instruction(Instruction::Mv(store_x, x_integer));
+
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+
+        // Now move things back
+        self.generator
+            .add_instruction(Instruction::Mv(x_integer, store_x));
+
+        // Overwrite y_value
+        let y_integer = y_value;
+        self.generator
+            .add_instruction(Instruction::Mv(y_integer, first_arg));
+
+        // Overwrite first_arg
+        let x_sign = first_arg;
+        self.generator
+            .add_instruction(Instruction::Lbu(x_sign, 0, x_integer));
+
+        // Overwrite callback
+        let y_sign = callback;
+        self.generator
+            .add_instruction(Instruction::Lbu(y_sign, 0, y_integer));
+
+        let x_magnitude = store_x;
+        self.generator
+            .add_instruction(Instruction::Addi(x_magnitude, x_integer, 1));
+
+        let y_magnitude = self.fourth_arg;
+        self.generator
+            .add_instruction(Instruction::Addi(y_magnitude, y_integer, 1));
+
+        self.generator
+            .add_instruction(Instruction::J("add_signed_integers".to_string()));
+    }
+
+    pub fn add_signed_integers(&mut self) {
+        let first_sign = self.first_arg;
+        let second_sign = self.second_arg;
+        let first_magnitude = self.third_arg;
+        let second_magnitude = self.fourth_arg;
+        let heap = self.heap;
+
+        self.generator
+            .add_instruction(Instruction::Label("add_signed_integers".to_string()));
+
+        // If the signs are not equal we subtract the larger magnitude from the smaller magnitude
+        // Then we use the largers sign. Except if equal magnitudes then we set the value to 0 and the sign to positive
+        self.generator.add_instruction(Instruction::Bne(
+            first_sign,
+            second_sign,
+            "sub_signed_integers".to_string(),
+        ));
+
+        {
+            let first_magnitude_length = self.first_temp;
+            self.generator.add_instruction(Instruction::Lw(
+                first_magnitude_length,
+                0,
+                first_magnitude,
+            ));
+
+            let second_magnitude_length = self.second_temp;
+            self.generator.add_instruction(Instruction::Lw(
+                second_magnitude_length,
+                0,
+                second_magnitude,
+            ));
+
+            let max_magnitude_length = self.third_temp;
+
+            self.generator.add_instruction(Instruction::Blt(
+                first_magnitude_length,
+                second_magnitude_length,
+                "first_smaller".to_string(),
+            ));
+
+            {
+                self.generator.add_instruction(Instruction::Mv(
+                    max_magnitude_length,
+                    first_magnitude_length,
+                ));
+
+                self.generator
+                    .add_instruction(Instruction::J("allocate_heap".to_string()));
+            }
+
+            {
+                self.generator
+                    .add_instruction(Instruction::Label("first_smaller".to_string()));
+
+                self.generator.add_instruction(Instruction::Mv(
+                    max_magnitude_length,
+                    second_magnitude_length,
+                ));
+
+                self.generator
+                    .add_instruction(Instruction::J("allocate_heap".to_string()));
+            }
+
+            self.generator
+                .add_instruction(Instruction::Label("allocate_heap".to_string()));
+
+            let max_heap_allocation = self.fourth_temp;
+            self.generator.add_instruction(Instruction::Addi(
+                max_heap_allocation,
+                max_magnitude_length,
+                1,
+            ));
+
+            self.generator.add_instruction(Instruction::Slli(
+                max_heap_allocation,
+                max_heap_allocation,
+                2,
+            ));
+
+            // Add fixed constant for creating a constant integer value on the heap
+            // 1 for value tag + 4 for constant pointer + 1 for type length + 1 for type integer
+            // + 1 for sign + 4 for magnitude length + (4 * (largest magnitude length + 1))
+            self.generator.add_instruction(Instruction::Addi(
+                max_heap_allocation,
+                max_heap_allocation,
+                12,
+            ));
+
+            let value_builder = self.fifth_temp;
+            self.generator
+                .add_instruction(Instruction::Mv(value_builder, heap));
+
+            // Add maximum heap value needed possibly and reclaim later after addition
+            self.generator
+                .add_instruction(Instruction::Add(heap, heap, max_heap_allocation));
+
+            // Overwrite max_heap_allocation
+            let value_tag = max_heap_allocation;
+            self.generator
+                .add_instruction(Instruction::Li(value_tag, 0));
+
+            self.generator
+                .add_instruction(Instruction::Sb(value_tag, 0, value_builder));
+
+            self.generator
+                .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
+
+            // Overwrite value_tag
+            let integer_pointer = value_tag;
+            // We store integer immediately after the pointer so we simply add 4 to point to the location
+            self.generator
+                .add_instruction(Instruction::Addi(integer_pointer, value_builder, 4));
+
+            self.generator
+                .add_instruction(Instruction::Sw(integer_pointer, 0, value_builder));
+
+            self.generator
+                .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
+
+            // Overwrite integer_pointer
+            let integer_type = integer_pointer;
+            self.generator
+                .add_instruction(Instruction::Li(integer_type, 1));
+
+            self.generator
+                .add_instruction(Instruction::Sh(integer_type, 0, value_builder));
+
+            self.generator
+                .add_instruction(Instruction::Addi(value_builder, value_builder, 2));
+
+            // Overwrite integer_type
+            let length_pointer = integer_type;
+            self.generator
+                .add_instruction(Instruction::Mv(length_pointer, value_builder));
+
+            self.generator
+                .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
+
+            // Overwrite first_magnitude_length
+            let current_word_index = first_magnitude_length;
+            self.generator
+                .add_instruction(Instruction::Li(current_word_index, 0));
+
+            // Overwrite second_magnitude_length
+            // First carry is always 0
+            let carry = second_magnitude_length;
+            self.generator.add_instruction(Instruction::Li(carry, 0));
+
+            // Overwrite first_magnitude
+            let first_arg_word_location = first_magnitude;
+            self.generator.add_instruction(Instruction::Addi(
+                first_arg_word_location,
+                first_magnitude,
+                4,
+            ));
+
+            // Overwrite second_magnitude
+            let second_arg_word_location = second_magnitude;
+            self.generator.add_instruction(Instruction::Addi(
+                second_arg_word_location,
+                first_magnitude,
+                4,
+            ));
+
+            {
+                self.generator
+                    .add_instruction(Instruction::Label("add_words".to_string()));
+
+                self.generator.add_instruction(Instruction::Beq(
+                    current_word_index,
+                    max_magnitude_length,
+                    "finalize_int_value".to_string(),
+                ));
+
+                let arg_word_x = self.sixth_temp;
+                self.generator.add_instruction(Instruction::Lw(
+                    arg_word_x,
+                    0,
+                    first_arg_word_location,
+                ));
+
+                let arg_word_y = self.seventh_temp;
+                self.generator.add_instruction(Instruction::Lw(
+                    arg_word_y,
+                    0,
+                    second_arg_word_location,
+                ));
+
+                // Overwrite arg_word_y
+                let result = arg_word_y;
+                self.generator
+                    .add_instruction(Instruction::Add(result, arg_word_x, arg_word_y));
+
+                // Add previous carry
+                self.generator
+                    .add_instruction(Instruction::Add(result, result, carry));
+
+                // Set carry if we overflowed
+                self.generator
+                    .add_instruction(Instruction::Sltu(carry, result, arg_word_x));
+
+                self.generator
+                    .add_instruction(Instruction::Sw(result, 0, value_builder));
+
+                self.generator
+                    .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
+
+                self.generator.add_instruction(Instruction::Addi(
+                    first_arg_word_location,
+                    first_arg_word_location,
+                    4,
+                ));
+
+                self.generator.add_instruction(Instruction::Addi(
+                    second_arg_word_location,
+                    second_arg_word_location,
+                    4,
+                ));
+
+                self.generator.add_instruction(Instruction::Addi(
+                    current_word_index,
+                    current_word_index,
+                    1,
+                ));
+
+                self.generator
+                    .add_instruction(Instruction::J("add_words".to_string()));
+            }
+
+            self.generator
+                .add_instruction(Instruction::Label("finalize_int_value".to_string()));
+
+            self.generator.add_instruction(Instruction::Nop);
+        }
+        {
+            self.generator
+                .add_instruction(Instruction::Label("sub_signed_integers".to_string()));
+
+            self.generator.add_instruction(Instruction::Nop);
+        }
     }
 }
 
