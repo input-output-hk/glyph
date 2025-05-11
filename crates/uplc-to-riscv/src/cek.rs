@@ -229,6 +229,9 @@ impl Cek {
         self.clone_list();
         self.reverse_clone_list();
         self.eval_builtin_app();
+        self.unwrap_integer();
+        self.add_integer();
+        self.add_signed_integers();
         self.initial_term(bytes);
 
         // self.generator
@@ -2526,14 +2529,35 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Label("unwrap_integer".to_string()));
 
-        let expected_type = self.first_temp;
+        let expected_tag = self.first_temp;
+        self.generator
+            .add_instruction(Instruction::Li(expected_tag, 0));
+
+        // The type ends up being [0x01, 0x00] which in little endian is 1
+        let value_tag = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Lb(value_tag, 0, arg));
+
+        self.generator.add_instruction(Instruction::Bne(
+            expected_tag,
+            value_tag,
+            "handle_error".to_string(),
+        ));
+
+        let constant_value = self.third_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(constant_value, 1, arg));
+
+        // Overwrite expected_tag
+        let expected_type = expected_tag;
         self.generator
             .add_instruction(Instruction::Li(expected_type, 1));
 
         // The type ends up being [0x01, 0x00] which in little endian is 1
-        let arg_type = self.second_temp;
+        // Overwrite value_tag
+        let arg_type = value_tag;
         self.generator
-            .add_instruction(Instruction::Lhu(arg_type, 0, arg));
+            .add_instruction(Instruction::Lhu(arg_type, 0, constant_value));
 
         self.generator.add_instruction(Instruction::Bne(
             expected_type,
@@ -2544,7 +2568,7 @@ impl Cek {
         // Return pointer to integer value
         let ret = self.return_reg;
         self.generator
-            .add_instruction(Instruction::Addi(ret, arg, 2));
+            .add_instruction(Instruction::Addi(ret, constant_value, 2));
 
         self.generator
             .add_instruction(Instruction::Jalr(self.discard, return_address, 0));
@@ -2978,6 +3002,9 @@ mod tests {
         cek.clone_list();
         cek.reverse_clone_list();
         cek.eval_builtin_app();
+        cek.unwrap_integer();
+        cek.add_integer();
+        cek.add_signed_integers();
         cek.initial_term(vec![
             /*apply*/ 3, /* arg pointer*/ 11, 0, 0, 144, /*lambda*/ 2,
             /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, 13, 0, 0, 0,
@@ -3071,6 +3098,113 @@ mod tests {
             .unwrap();
 
         assert_eq!(value, 13);
+    }
+
+    #[test]
+    fn test_add_integer_double() {
+        let thing = Cek::default();
+
+        let gene = thing.cek_assembly(vec![
+            /*apply*/ 3, /* arg pointer*/ 28, 0, 0, 144, /*lambda*/ 2,
+            /*apply */ 3, /* arg pointer*/ 18, 0, 0, 144, /*apply */ 3,
+            /* arg pointer*/ 23, 0, 0, 144, /*add_integer */ 7, 0, /*var*/ 0, 1, 0,
+            0, 0, /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4,
+            /* type length in bytes */ 1, /* integer */ 0, /* sign */ 0,
+            /* length */ 1, 0, 0, 0, /*value (little-endian) */ 13, 0, 0, 0,
+        ]);
+
+        // println!("{}", gene.generate());
+
+        gene.save_to_file("test_add.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_add.o",
+                "test_add.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_add.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_add.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_add.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            _ => unreachable!("HOW?"),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, 0);
+
+        let sign = section_data[offset_index + 2];
+
+        assert_eq!(sign, 0);
+
+        let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(word_length, 1);
+
+        let value = *section_data[(offset_index + 7)..(offset_index + 11)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(value, 26);
     }
 
     #[test]
@@ -3399,7 +3533,7 @@ mod tests {
         // file.flush().unwrap();
 
         match v.0 {
-            ExecutionResult::Halt(result, _step) => assert_eq!(result, 33),
+            ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
             g => unreachable!("HOW? {:#?}", g),
         }
     }
