@@ -2683,8 +2683,7 @@ impl Cek {
                     second_magnitude_length,
                 ));
 
-                self.generator
-                    .add_instruction(Instruction::J("allocate_heap".to_string()));
+                // No need for jump since next instruction is allocate_heap
             }
 
             self.generator
@@ -2715,6 +2714,10 @@ impl Cek {
             let value_builder = self.fifth_temp;
             self.generator
                 .add_instruction(Instruction::Mv(value_builder, heap));
+
+            // Overwrite first_sign
+            let ret = self.return_reg;
+            self.generator.add_instruction(Instruction::Mv(ret, heap));
 
             // Add maximum heap value needed possibly and reclaim later after addition
             self.generator
@@ -2754,6 +2757,13 @@ impl Cek {
             self.generator
                 .add_instruction(Instruction::Addi(value_builder, value_builder, 2));
 
+            // Store second sign. In this case the signs are the same
+            self.generator
+                .add_instruction(Instruction::Sb(second_sign, 0, value_builder));
+
+            self.generator
+                .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
+
             // Overwrite integer_type
             let length_pointer = integer_type;
             self.generator
@@ -2784,7 +2794,7 @@ impl Cek {
             let second_arg_word_location = second_magnitude;
             self.generator.add_instruction(Instruction::Addi(
                 second_arg_word_location,
-                first_magnitude,
+                second_magnitude,
                 4,
             ));
 
@@ -2856,7 +2866,51 @@ impl Cek {
             self.generator
                 .add_instruction(Instruction::Label("finalize_int_value".to_string()));
 
-            self.generator.add_instruction(Instruction::Nop);
+            self.generator.add_instruction(Instruction::Bne(
+                carry,
+                Register::Zero,
+                "handle_final_carry".to_string(),
+            ));
+            {
+                self.generator.add_instruction(Instruction::Sw(
+                    max_magnitude_length,
+                    0,
+                    length_pointer,
+                ));
+
+                // Reclaim 4 bytes since no carry is used
+                self.generator
+                    .add_instruction(Instruction::Addi(heap, heap, -4));
+
+                // ret is set earlier and never overwritten
+                self.generator
+                    .add_instruction(Instruction::J("return".to_string()));
+            }
+
+            {
+                self.generator
+                    .add_instruction(Instruction::Label("handle_final_carry".to_string()));
+
+                // handle carry increasing word length
+                self.generator.add_instruction(Instruction::Addi(
+                    max_magnitude_length,
+                    max_magnitude_length,
+                    1,
+                ));
+
+                self.generator.add_instruction(Instruction::Sw(
+                    max_magnitude_length,
+                    0,
+                    length_pointer,
+                ));
+
+                self.generator
+                    .add_instruction(Instruction::Sw(carry, 0, value_builder));
+
+                // ret is set earlier and never overwritten
+                self.generator
+                    .add_instruction(Instruction::J("return".to_string()));
+            }
         }
         {
             self.generator
