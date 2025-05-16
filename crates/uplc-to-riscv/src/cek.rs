@@ -1,4 +1,5 @@
 use risc_v_gen::{CodeGenerator, Instruction, Register};
+use sha2::digest::typenum::Zero;
 
 // pub enum Value {
 //     Con(Rc<Constant>),
@@ -2626,7 +2627,7 @@ impl Cek {
             .add_instruction(Instruction::Mv(y_integer, first_arg));
 
         // Overwrite first_arg
-        let x_sign = first_arg;
+        let x_sign = self.return_reg;
         self.generator
             .add_instruction(Instruction::Lbu(x_sign, 0, x_integer));
 
@@ -2930,33 +2931,58 @@ impl Cek {
         }
     }
 
+    // returns
+    // equality flag(1:0)
+    // greater magnitude
+    // lesser magnitude
+    // greater magnitude sign(0 if equal)
     pub fn compare_magnitude(&mut self) {
         let first_sign = self.first_arg;
         let second_sign = self.second_arg;
-        let first_arg = self.third_arg;
-        let second_arg = self.fourth_arg;
+        let first_value = self.third_arg;
+        let second_value = self.fourth_arg;
         let callback = self.fifth_arg;
 
         let first_magnitude_len = self.first_temp;
         self.generator
-            .add_instruction(Instruction::Lw(first_magnitude_len, 0, first_arg));
+            .add_instruction(Instruction::Lw(first_magnitude_len, 0, first_value));
 
         let second_magnitude_len = self.second_temp;
         self.generator
-            .add_instruction(Instruction::Lw(second_magnitude_len, 0, second_arg));
+            .add_instruction(Instruction::Lw(second_magnitude_len, 0, second_value));
 
+        // Check absolute lengths of the magnitudes
+        let comparison_check = self.third_temp;
+        self.generator.add_instruction(Instruction::Sltu(
+            comparison_check,
+            first_magnitude_len,
+            second_magnitude_len,
+        ));
+
+        // If lengths are unequal we don't need to compare the
+        // individual words in the magnitudes
         self.generator.add_instruction(Instruction::Bne(
             first_magnitude_len,
             second_magnitude_len,
-            "unequal_magnitude_len".to_string(),
+            "unequal_values".to_string(),
         ));
 
         {
+            // Magnitudes are the same length
             let magnitude_len = first_magnitude_len;
             self.generator
                 .add_instruction(Instruction::Mv(magnitude_len, first_magnitude_len));
 
+            let word_offset = self.fourth_temp;
+            self.generator
+                .add_instruction(Instruction::Slli(word_offset, magnitude_len, 2));
+
             {
+                // Loop to compare values
+                // either they are equal when we have checked each
+                // word in the length or we find a word where there is
+                // a difference. We do a comparison check and then branch
+                // to unequal_values in that case
                 self.generator
                     .add_instruction(Instruction::Label("compare_words".to_string()));
 
@@ -2966,103 +2992,147 @@ impl Cek {
                     "equal_values".to_string(),
                 ));
 
-                let word_offset = self.third_temp;
-                self.generator
-                    .add_instruction(Instruction::Slli(word_offset, magnitude_len, 2));
-
-                let first_arg_offset = self.fourth_temp;
+                let first_arg_offset = self.fifth_temp;
                 self.generator.add_instruction(Instruction::Add(
                     first_arg_offset,
                     word_offset,
-                    first_arg,
+                    first_value,
                 ));
 
                 // Overwrite word_offset
-                let second_arg_offset = word_offset;
+                let second_arg_offset = second_magnitude_len;
                 self.generator.add_instruction(Instruction::Add(
                     second_arg_offset,
                     word_offset,
-                    second_arg,
+                    second_value,
                 ));
 
-                let first_arg_word = self.fifth_temp;
+                let first_arg_values = self.sixth_temp;
                 self.generator.add_instruction(Instruction::Lw(
-                    first_arg_word,
+                    first_arg_values,
                     0,
                     first_arg_offset,
                 ));
 
-                let second_arg_word = self.sixth_temp;
+                let second_arg_values = self.seventh_temp;
                 self.generator.add_instruction(Instruction::Lw(
-                    second_arg_word,
+                    second_arg_values,
                     0,
                     second_arg_offset,
                 ));
 
-                // TODO: the actual comparison
+                self.generator.add_instruction(Instruction::Sltu(
+                    comparison_check,
+                    first_arg_values,
+                    second_arg_values,
+                ));
+
+                self.generator.add_instruction(Instruction::Bne(
+                    first_arg_values,
+                    second_arg_values,
+                    "unequal_values".to_string(),
+                ));
+
+                self.generator
+                    .add_instruction(Instruction::Addi(magnitude_len, magnitude_len, -1));
+
+                self.generator
+                    .add_instruction(Instruction::Addi(word_offset, word_offset, -4));
+
+                self.generator
+                    .add_instruction(Instruction::J("compare_words".to_string()));
             }
 
             self.generator
                 .add_instruction(Instruction::Label("equal_values".to_string()));
 
-            self.generator.add_instruction(Instruction::Nop);
+            // Overwrite first_sign
+            let equality = self.return_reg;
+            self.generator.add_instruction(Instruction::Li(equality, 1));
+
+            // Overwrite second_sign
+            let greater_magnitude = second_sign;
+            self.generator
+                .add_instruction(Instruction::Mv(greater_magnitude, first_value));
+
+            // Overwrite first_value
+            let lesser_magnitude = first_value;
+            self.generator
+                .add_instruction(Instruction::Mv(lesser_magnitude, second_value));
+
+            // Overwrite second_value
+            let sign = second_value;
+            self.generator.add_instruction(Instruction::Li(sign, 0));
+
+            self.generator
+                .add_instruction(Instruction::Jalr(self.discard, callback, 0));
         }
         {
             self.generator
-                .add_instruction(Instruction::Label("unequal_magnitude_len".to_string()));
+                .add_instruction(Instruction::Label("unequal_values".to_string()));
 
-            let second_arg_temp = self.third_temp;
-            self.generator
-                .add_instruction(Instruction::Mv(second_arg_temp, second_arg));
-
-            let equal_values = second_arg;
-            // Values are not equal so return 0
-            self.generator
-                .add_instruction(Instruction::Mv(equal_values, Register::Zero));
-
-            self.generator.add_instruction(Instruction::Bltu(
-                first_magnitude_len,
-                second_magnitude_len,
-                "first_length_smaller".to_string(),
+            self.generator.add_instruction(Instruction::Bne(
+                comparison_check,
+                Register::Zero,
+                "first_value_smaller".to_string(),
             ));
 
             {
-                // Overwrite first_sign
-                let sign = self.return_reg;
+                let first_sign_temp = self.fourth_temp;
                 self.generator
-                    .add_instruction(Instruction::Mv(sign, first_sign));
+                    .add_instruction(Instruction::Mv(first_sign_temp, first_sign));
+
+                // Overwrite first_sign
+                let equality = self.return_reg;
+                // Values are not equal so return 0
+                self.generator
+                    .add_instruction(Instruction::Mv(equality, Register::Zero));
 
                 // Overwrite second_sign
                 let greater_value = second_sign;
                 self.generator
-                    .add_instruction(Instruction::Mv(greater_value, first_arg));
+                    .add_instruction(Instruction::Mv(greater_value, first_value));
 
                 // Overwrite first_value
-                let lesser_value = first_arg;
+                let lesser_value = first_value;
                 self.generator
-                    .add_instruction(Instruction::Mv(lesser_value, second_arg_temp));
+                    .add_instruction(Instruction::Mv(lesser_value, second_value));
+
+                // Overwrite second_value
+                let greater_sign = second_value;
+                self.generator
+                    .add_instruction(Instruction::Mv(greater_sign, first_sign_temp));
 
                 self.generator
                     .add_instruction(Instruction::Jalr(self.discard, callback, 0));
             }
             {
                 self.generator
-                    .add_instruction(Instruction::Label("first_length_smaller".to_string()));
+                    .add_instruction(Instruction::Label("first_value_smaller".to_string()));
+
+                let second_sign_temp = self.fourth_temp;
+                self.generator
+                    .add_instruction(Instruction::Mv(second_sign_temp, second_sign));
 
                 // Overwrite first_sign
-                let sign = self.return_reg;
+                let equality = self.return_reg;
+                // Values are not equal so return 0
                 self.generator
-                    .add_instruction(Instruction::Mv(sign, second_sign));
+                    .add_instruction(Instruction::Mv(equality, Register::Zero));
 
                 // Overwrite second_sign
                 let greater_value = second_sign;
                 self.generator
-                    .add_instruction(Instruction::Mv(greater_value, second_arg_temp));
+                    .add_instruction(Instruction::Mv(greater_value, second_value));
 
                 // Overwrite first_value
-                let lesser_value = first_arg;
+                let lesser_value = first_value;
                 self.generator
-                    .add_instruction(Instruction::Mv(lesser_value, first_arg));
+                    .add_instruction(Instruction::Mv(lesser_value, first_value));
+
+                let greater_sign = second_value;
+                self.generator
+                    .add_instruction(Instruction::Mv(greater_sign, second_sign_temp));
 
                 self.generator
                     .add_instruction(Instruction::Jalr(self.discard, callback, 0));
@@ -3071,10 +3141,300 @@ impl Cek {
     }
 
     pub fn sub_signed_integers(&mut self) {
+        let first_sign = self.first_arg;
+        let second_sign = self.second_arg;
+        let first_value = self.third_arg;
+        let second_value = self.fourth_arg;
+        let heap = self.heap;
         self.generator
             .add_instruction(Instruction::Label("sub_signed_integers".to_string()));
 
-        self.generator.add_instruction(Instruction::Nop);
+        let callback = self.fifth_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "compare_magnitude".to_string()));
+        // Overwrite first_sign
+        let equality = first_sign;
+        // Overwrite second_sign
+        let greater_value = second_sign;
+        // Overwrite first_value
+        let lesser_value = first_value;
+        // Overwrite second_value
+        let greater_sign = second_value;
+
+        let equality_temp = self.first_temp;
+        self.generator
+            .add_instruction(Instruction::Mv(equality_temp, equality));
+
+        let value_builder = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Mv(value_builder, heap));
+
+        // Overwrite equality
+        let ret = self.return_reg;
+        self.generator.add_instruction(Instruction::Mv(ret, heap));
+
+        let greater_magnitude_len = self.third_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(greater_magnitude_len, 0, greater_value));
+
+        let max_heap_allocation = self.fourth_temp;
+        self.generator.add_instruction(Instruction::Slli(
+            max_heap_allocation,
+            greater_magnitude_len,
+            2,
+        ));
+
+        self.generator.add_instruction(Instruction::Addi(
+            max_heap_allocation,
+            max_heap_allocation,
+            12,
+        ));
+        // Add maximum heap value needed possibly and reclaim later after addition
+        self.generator
+            .add_instruction(Instruction::Add(heap, heap, max_heap_allocation));
+
+        // Overwrite max_heap_allocation
+        let value_tag = max_heap_allocation;
+        self.generator
+            .add_instruction(Instruction::Li(value_tag, 0));
+
+        self.generator
+            .add_instruction(Instruction::Sb(value_tag, 0, value_builder));
+
+        self.generator
+            .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
+
+        // Overwrite value_tag
+        let integer_pointer = value_tag;
+        // We store integer immediately after the pointer so we simply add 4 to point to the location
+        self.generator
+            .add_instruction(Instruction::Addi(integer_pointer, value_builder, 4));
+
+        self.generator
+            .add_instruction(Instruction::Sw(integer_pointer, 0, value_builder));
+
+        self.generator
+            .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
+
+        // Overwrite integer_pointer
+        let integer_type = integer_pointer;
+        self.generator
+            .add_instruction(Instruction::Li(integer_type, 1));
+
+        self.generator
+            .add_instruction(Instruction::Sh(integer_type, 0, value_builder));
+
+        self.generator
+            .add_instruction(Instruction::Addi(value_builder, value_builder, 2));
+
+        // Store greater sign
+        self.generator
+            .add_instruction(Instruction::Sb(greater_sign, 0, value_builder));
+
+        self.generator
+            .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
+
+        // Overwrite integer_type
+        let length_pointer = integer_type;
+        self.generator
+            .add_instruction(Instruction::Mv(length_pointer, value_builder));
+
+        self.generator
+            .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
+
+        self.generator.add_instruction(Instruction::Bne(
+            equality_temp,
+            Register::Zero,
+            "equal_value_subtraction".to_string(),
+        ));
+        {
+            // Overwrite equality_temp
+            let current_word_index = equality_temp;
+            self.generator
+                .add_instruction(Instruction::Li(current_word_index, 0));
+
+            // First carry is always 0
+            let carry = self.fifth_temp;
+            self.generator.add_instruction(Instruction::Li(carry, 0));
+
+            // Overwrite first_magnitude
+            let greater_arg_word_location = greater_value;
+            self.generator.add_instruction(Instruction::Addi(
+                greater_arg_word_location,
+                greater_value,
+                4,
+            ));
+
+            // Overwrite second_magnitude
+            let lesser_arg_word_location = lesser_value;
+            self.generator.add_instruction(Instruction::Addi(
+                lesser_arg_word_location,
+                lesser_value,
+                4,
+            ));
+
+            let reclaim_heap_amount = callback;
+            self.generator
+                .add_instruction(Instruction::Li(reclaim_heap_amount, 0));
+
+            let final_length = self.sixth_arg;
+            self.generator
+                .add_instruction(Instruction::Li(final_length, 0));
+
+            {
+                self.generator
+                    .add_instruction(Instruction::Label("sub_words".to_string()));
+
+                self.generator.add_instruction(Instruction::Beq(
+                    current_word_index,
+                    greater_magnitude_len,
+                    "finalize_sub_int_value".to_string(),
+                ));
+
+                let arg_word_x = self.sixth_temp;
+                self.generator.add_instruction(Instruction::Lw(
+                    arg_word_x,
+                    0,
+                    greater_arg_word_location,
+                ));
+
+                let arg_word_y = self.seventh_temp;
+                self.generator.add_instruction(Instruction::Lw(
+                    arg_word_y,
+                    0,
+                    lesser_arg_word_location,
+                ));
+
+                // Overwrite arg_word_y
+                let result = arg_word_y;
+                self.generator
+                    .add_instruction(Instruction::Sub(result, arg_word_x, arg_word_y));
+
+                // Overwrite greater_sign
+                let first_carry_check = greater_sign;
+                // Check result is more than first arg thus needing a carry
+                self.generator.add_instruction(Instruction::Sltu(
+                    first_carry_check,
+                    arg_word_x,
+                    result,
+                ));
+
+                // Sub previous carry
+                self.generator
+                    .add_instruction(Instruction::Sub(result, result, carry));
+
+                // Set carry if we overflowed
+                self.generator
+                    .add_instruction(Instruction::Sltu(carry, arg_word_x, result));
+
+                // OR the carry checks
+                self.generator
+                    .add_instruction(Instruction::Or(carry, carry, first_carry_check));
+
+                self.generator
+                    .add_instruction(Instruction::Sw(result, 0, value_builder));
+
+                self.generator
+                    .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
+
+                self.generator.add_instruction(Instruction::Addi(
+                    greater_arg_word_location,
+                    greater_arg_word_location,
+                    4,
+                ));
+
+                self.generator.add_instruction(Instruction::Addi(
+                    lesser_arg_word_location,
+                    lesser_arg_word_location,
+                    4,
+                ));
+
+                self.generator.add_instruction(Instruction::Addi(
+                    current_word_index,
+                    current_word_index,
+                    1,
+                ));
+
+                self.generator.add_instruction(Instruction::Beq(
+                    Register::Zero,
+                    result,
+                    "can_reclaim_heap_word".to_string(),
+                ));
+
+                {
+                    self.generator.add_instruction(Instruction::Addi(
+                        final_length,
+                        final_length,
+                        1,
+                    ));
+
+                    self.generator.add_instruction(Instruction::Add(
+                        final_length,
+                        final_length,
+                        reclaim_heap_amount,
+                    ));
+
+                    self.generator
+                        .add_instruction(Instruction::Li(reclaim_heap_amount, 0));
+
+                    self.generator
+                        .add_instruction(Instruction::J("sub_words".to_string()));
+                }
+                {
+                    self.generator
+                        .add_instruction(Instruction::Label("can_reclaim_heap_word".to_string()));
+
+                    self.generator.add_instruction(Instruction::Addi(
+                        reclaim_heap_amount,
+                        reclaim_heap_amount,
+                        1,
+                    ));
+
+                    self.generator
+                        .add_instruction(Instruction::J("sub_words".to_string()));
+                }
+            }
+
+            self.generator
+                .add_instruction(Instruction::Label("finalize_sub_int_value".to_string()));
+
+            self.generator
+                .add_instruction(Instruction::Sw(length_pointer, 0, final_length));
+
+            self.generator.add_instruction(Instruction::Slli(
+                reclaim_heap_amount,
+                reclaim_heap_amount,
+                2,
+            ));
+
+            self.generator
+                .add_instruction(Instruction::Sub(heap, heap, reclaim_heap_amount));
+
+            self.generator
+                .add_instruction(Instruction::J("return".to_string()));
+        }
+        {
+            self.generator
+                .add_instruction(Instruction::Label("equal_value_subtraction".to_string()));
+
+            // In this case equality_temp stores 1 anyway
+            // but to make sure we still set to 1
+            self.generator
+                .add_instruction(Instruction::Li(equality_temp, 1));
+
+            self.generator
+                .add_instruction(Instruction::Sw(equality_temp, 0, length_pointer));
+
+            self.generator
+                .add_instruction(Instruction::Sw(Register::Zero, 0, value_builder));
+
+            // reclaim heap since value is 0 and length is 1
+            self.generator
+                .add_instruction(Instruction::Addi(heap, value_builder, 4));
+
+            self.generator
+                .add_instruction(Instruction::J("return".to_string()));
+        }
     }
 }
 
