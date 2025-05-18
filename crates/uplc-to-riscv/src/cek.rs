@@ -3221,6 +3221,10 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Lw(greater_magnitude_len, 0, greater_value));
 
+        let lesser_magnitude_len = self.seventh_arg;
+        self.generator
+            .add_instruction(Instruction::Lw(lesser_magnitude_len, 0, lesser_value));
+
         let max_heap_allocation = self.fourth_temp;
         self.generator.add_instruction(Instruction::Slli(
             max_heap_allocation,
@@ -3335,31 +3339,55 @@ impl Cek {
                     "finalize_sub_int_value".to_string(),
                 ));
 
-                let arg_word_x = self.sixth_temp;
+                let arg_word_greater = self.sixth_temp;
                 self.generator.add_instruction(Instruction::Lw(
-                    arg_word_x,
+                    arg_word_greater,
                     0,
                     greater_arg_word_location,
                 ));
 
-                let arg_word_y = self.seventh_temp;
-                self.generator.add_instruction(Instruction::Lw(
-                    arg_word_y,
-                    0,
-                    lesser_arg_word_location,
+                let arg_word_smaller = self.seventh_temp;
+                self.generator.add_instruction(Instruction::Bltu(
+                    lesser_magnitude_len,
+                    current_word_index,
+                    "lesser".to_string(),
                 ));
 
-                // Overwrite arg_word_y
-                let result = arg_word_y;
+                {
+                    self.generator.add_instruction(Instruction::Lw(
+                        arg_word_smaller,
+                        0,
+                        lesser_arg_word_location,
+                    ));
+
+                    self.generator
+                        .add_instruction(Instruction::J("sub_result".to_string()));
+                }
+                {
+                    self.generator
+                        .add_instruction(Instruction::Label("lesser".to_string()));
+
+                    self.generator
+                        .add_instruction(Instruction::Li(arg_word_smaller, 0));
+                }
+
                 self.generator
-                    .add_instruction(Instruction::Sub(result, arg_word_x, arg_word_y));
+                    .add_instruction(Instruction::Label("sub_result".to_string()));
+
+                // Overwrite arg_word_smaller
+                let result = arg_word_smaller;
+                self.generator.add_instruction(Instruction::Sub(
+                    result,
+                    arg_word_greater,
+                    arg_word_smaller,
+                ));
 
                 // Overwrite greater_sign
                 let first_carry_check = greater_sign;
                 // Check result is more than first arg thus needing a carry
                 self.generator.add_instruction(Instruction::Sltu(
                     first_carry_check,
-                    arg_word_x,
+                    arg_word_greater,
                     result,
                 ));
 
@@ -3369,7 +3397,7 @@ impl Cek {
 
                 // Set carry if we overflowed
                 self.generator
-                    .add_instruction(Instruction::Sltu(carry, arg_word_x, result));
+                    .add_instruction(Instruction::Sltu(carry, arg_word_greater, result));
 
                 // OR the carry checks
                 self.generator
@@ -3443,7 +3471,7 @@ impl Cek {
                 .add_instruction(Instruction::Label("finalize_sub_int_value".to_string()));
 
             self.generator
-                .add_instruction(Instruction::Sw(length_pointer, 0, final_length));
+                .add_instruction(Instruction::Sw(final_length, 0, length_pointer));
 
             self.generator.add_instruction(Instruction::Slli(
                 reclaim_heap_amount,
@@ -4095,7 +4123,7 @@ mod tests {
 
         let riscv_program = serialize(&program, 0x90000000).unwrap();
 
-        println!("{:#?}", riscv_program);
+        // println!("{:#?}", riscv_program);
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -4160,7 +4188,7 @@ mod tests {
 
         let offset_index = (result_pointer - section.start) as usize;
 
-        println!("{:#?}", &section_data[offset_index..(offset_index + 100)]);
+        // println!("{:#?}", &section_data[offset_index..(offset_index + 100)]);
 
         let type_length = section_data[offset_index];
 
@@ -4191,5 +4219,117 @@ mod tests {
         let result = value[0] as u64 + value[1] as u64 * 256_u64.pow(4);
 
         assert_eq!(result, 5000000005);
+    }
+
+    #[test]
+    fn test_add_2_different_sign_numbers() {
+        let thing = Cek::default();
+
+        // (apply (lambda x (force x)) (delay (error)))
+        let term: Term<Name> = Term::add_integer()
+            .apply(Term::integer((-5_000_000_000_i128).into()))
+            .apply(Term::integer((5).into()));
+
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
+
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_add_big_int_sign.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_add_big_int_sign.o",
+                "test_add_big_int_sign.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_add_big_int_sign.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_add_big_int_sign.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_add_big_int_sign.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            a => unreachable!("HOW? {:#?}", a),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, 0);
+
+        let sign = section_data[offset_index + 2];
+
+        assert_eq!(sign, 1);
+
+        let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(word_length, 2);
+
+        let value = section_data[(offset_index + 7)..(offset_index + 15)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>();
+
+        let result = value[0] as u64 + value[1] as u64 * 256_u64.pow(4);
+
+        assert_eq!(result, 4999999995);
     }
 }
