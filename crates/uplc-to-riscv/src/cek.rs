@@ -232,6 +232,7 @@ impl Cek {
         self.eval_builtin_app();
         self.unwrap_integer();
         self.add_integer();
+        self.sub_integer();
         self.add_signed_integers();
         self.compare_magnitude();
         self.sub_signed_integers();
@@ -2521,8 +2522,13 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Label("eval_builtin_call".to_string()));
 
+        // 0 - add_integer
         self.generator
             .add_instruction(Instruction::J("add_integer".to_string()));
+
+        // 1 - sub_integer
+        self.generator
+            .add_instruction(Instruction::J("sub_integer".to_string()));
     }
 
     pub fn unwrap_integer(&mut self) {
@@ -2635,6 +2641,83 @@ impl Cek {
         let y_sign = callback;
         self.generator
             .add_instruction(Instruction::Lbu(y_sign, 0, y_integer));
+
+        let x_magnitude = store_x;
+        self.generator
+            .add_instruction(Instruction::Addi(x_magnitude, x_integer, 1));
+
+        let y_magnitude = self.fourth_arg;
+        self.generator
+            .add_instruction(Instruction::Addi(y_magnitude, y_integer, 1));
+
+        self.generator
+            .add_instruction(Instruction::J("add_signed_integers".to_string()));
+    }
+
+    pub fn sub_integer(&mut self) {
+        let args = self.first_arg;
+        self.generator
+            .add_instruction(Instruction::Label("sub_integer".to_string()));
+
+        let x_value = self.first_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(x_value, 0, args));
+
+        let y_value = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(y_value, 4, args));
+
+        // Overwrite args
+        let first_arg = args;
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, x_value));
+
+        let store_y = self.third_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(store_y, y_value));
+
+        let callback = self.second_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+
+        // Overwrite x_value
+        let x_integer = x_value;
+        self.generator
+            .add_instruction(Instruction::Mv(x_integer, first_arg));
+
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, store_y));
+
+        // Overwrite store_y
+        let store_x = store_y;
+        self.generator
+            .add_instruction(Instruction::Mv(store_x, x_integer));
+
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+
+        // Now move things back
+        self.generator
+            .add_instruction(Instruction::Mv(x_integer, store_x));
+
+        // Overwrite y_value
+        let y_integer = y_value;
+        self.generator
+            .add_instruction(Instruction::Mv(y_integer, first_arg));
+
+        // Overwrite first_arg
+        let x_sign = self.return_reg;
+        self.generator
+            .add_instruction(Instruction::Lbu(x_sign, 0, x_integer));
+
+        // Overwrite callback
+        let y_sign = callback;
+        self.generator
+            .add_instruction(Instruction::Lbu(y_sign, 0, y_integer));
+
+        // flip y_sign
+        self.generator
+            .add_instruction(Instruction::Xori(y_sign, y_sign, 1));
 
         let x_magnitude = store_x;
         self.generator
@@ -3569,6 +3652,7 @@ mod tests {
         cek.eval_builtin_app();
         cek.unwrap_integer();
         cek.add_integer();
+        cek.sub_integer();
         cek.add_signed_integers();
         cek.compare_magnitude();
         cek.sub_signed_integers();
@@ -4313,6 +4397,118 @@ mod tests {
         let sign = section_data[offset_index + 2];
 
         assert_eq!(sign, 1);
+
+        let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(word_length, 2);
+
+        let value = section_data[(offset_index + 7)..(offset_index + 15)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>();
+
+        let result = value[0] as u64 + value[1] as u64 * 256_u64.pow(4);
+
+        assert_eq!(result, 4999999995);
+    }
+
+    #[test]
+    fn test_sub_2_numbers() {
+        let thing = Cek::default();
+
+        // (apply (lambda x (force x)) (delay (error)))
+        let term: Term<Name> = Term::subtract_integer()
+            .apply(Term::integer((5_000_000_000_i128).into()))
+            .apply(Term::integer((5).into()));
+
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
+
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_sub_big_int.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_sub_big_int.o",
+                "test_sub_big_int.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_sub_big_int.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_sub_big_int.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_sub_big_int.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            a => unreachable!("HOW? {:#?}", a),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, 0);
+
+        let sign = section_data[offset_index + 2];
+
+        assert_eq!(sign, 0);
 
         let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
             .chunks_exact(4)
