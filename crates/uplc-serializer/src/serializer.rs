@@ -3,7 +3,6 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use byteorder::{LittleEndian, WriteBytesExt};
-use num_traits::ToBytes;
 use uplc::ast::{Constant, DeBruijn, Program, Term};
 use uplc::builtins::DefaultFunction;
 use uplc::BigInt;

@@ -3598,7 +3598,7 @@ impl Default for Cek {
     }
 }
 
-fn u32_vec_to_u8_vec(input: Vec<u32>) -> Vec<u8> {
+pub fn u32_vec_to_u8_vec(input: Vec<u32>) -> Vec<u8> {
     input
         .into_iter()
         .flat_map(|num| num.to_be_bytes())

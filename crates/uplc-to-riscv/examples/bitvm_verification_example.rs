@@ -1,4 +1,3 @@
-
 fn main() {
     //     // Read the UPLC program from a file
     //     let uplc_program =

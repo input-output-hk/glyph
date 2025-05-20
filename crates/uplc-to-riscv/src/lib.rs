@@ -6,8 +6,6 @@
 use thiserror::Error;
 pub mod cek;
 
-type Result<T> = std::result::Result<T, CompilationError>;
-
 /// Errors that can occur during the compilation process
 #[derive(Debug, Error)]
 pub enum CompilationError {
