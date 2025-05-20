@@ -34,7 +34,7 @@ mod tests_that_need_tempfile {
 
         // Check that the file exists and has a non-zero size
         assert!(output_path.exists());
-        let metadata = fs::metadata(&output_path).unwrap();
+        let metadata = fs::metadata(output_path).unwrap();
         assert!(metadata.len() > 0);
 
         // Execute the ELF file using the emulator
@@ -93,7 +93,7 @@ mod tests_that_need_tempfile {
 
         // Check that the file exists and has a non-zero size
         assert!(output_path.exists());
-        let metadata = fs::metadata(&output_path).unwrap();
+        let metadata = fs::metadata(output_path).unwrap();
         assert!(metadata.len() > 0);
 
         // Clean up
@@ -132,11 +132,11 @@ mod tests_that_need_tempfile {
         // Using a simple file path for test - no tempfile dependency
         let output_path = Path::new("test_program.elf");
 
-        build_elf(&code_generator, linker_script, &output_path).unwrap();
+        build_elf(&code_generator, linker_script, output_path).unwrap();
 
         // Check that the file exists and has a non-zero size
         assert!(output_path.exists());
-        let metadata = fs::metadata(&output_path).unwrap();
+        let metadata = fs::metadata(output_path).unwrap();
         assert!(metadata.len() > 0);
 
         // Clean up
@@ -187,7 +187,7 @@ mod tests_that_need_tempfile {
         // Build the ELF file
         let output_path = Path::new("complex_program.elf");
 
-        build_elf(&code_generator, linker_script, &output_path).unwrap();
+        build_elf(&code_generator, linker_script, output_path).unwrap();
 
         // Check that the file exists
         assert!(output_path.exists());
@@ -250,7 +250,7 @@ mod tests_that_need_tempfile {
         // Build the ELF file
         let output_path = Path::new("symbol_program.elf");
 
-        build_elf(&code_generator, linker_script, &output_path).unwrap();
+        build_elf(&code_generator, linker_script, output_path).unwrap();
 
         // Check that the file exists
         assert!(output_path.exists());
@@ -293,7 +293,7 @@ mod tests_that_need_tempfile {
         // Build the ELF file
         let output_path = Path::new("data_program.elf");
 
-        build_elf(&code_generator, linker_script, &output_path).unwrap();
+        build_elf(&code_generator, linker_script, output_path).unwrap();
 
         // Check that the file exists
         assert!(output_path.exists());

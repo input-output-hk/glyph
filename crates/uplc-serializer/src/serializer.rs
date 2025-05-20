@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use byteorder::{LittleEndian, WriteBytesExt};
-use num_traits::{ToBytes, ToPrimitive};
+use num_traits::ToBytes;
 use uplc::ast::{Constant, DeBruijn, Program, Term};
 use uplc::builtins::DefaultFunction;
 use uplc::BigInt;
@@ -361,7 +361,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
     let data_bytes = data_buffer.into_inner();
 
     // Calculate content size in words (4 bytes each)
-    let content_size = ((data_bytes.len() + 3) / 4) as u32; // Round up to nearest word
+    let content_size = data_bytes.len().div_ceil(4) as u32; // Round up to nearest word
     x.write_u32::<LittleEndian>(content_size)?;
 
     // Write the data

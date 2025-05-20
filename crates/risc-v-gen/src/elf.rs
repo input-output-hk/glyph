@@ -772,7 +772,7 @@ fn encode_instruction(
             let imm = ((*offset as u32) & 0xfff) << 20;
 
             // Combine all parts to form the instruction
-            let instr = imm | (rs1_value << 15) | (0b000 << 12) | (rd_value << 7) | 0b1100111;
+            let instr = (imm | (rs1_value << 15)) | (rd_value << 7) | 0b1100111;
 
             return Ok(instr);
         },
@@ -830,11 +830,10 @@ fn encode_instruction(
 
                 // Combine all parts to form the instruction
                 // funct3 for beq is 0b000, opcode for branch is 0b1100011
-                let instr = imm_12
+                let instr = (imm_12
                     | imm_10_5
                     | (rs2_value << 20)
-                    | (rs1_value << 15)
-                    | (0b000 << 12)
+                    | (rs1_value << 15))
                     | imm_4_1
                     | imm_11
                     | 0b1100011;
@@ -1180,7 +1179,7 @@ fn parse_memory_regions(input: &str) -> Result<Vec<MemoryRegion>> {
                 let length_start = length_pos + equals_pos + 1;
                 let length_str = line[length_start..]
                     .trim()
-                    .trim_end_matches(|c| c == ',' || c == '}');
+                    .trim_end_matches([',', '}']);
 
                 // Handle K, M suffixes
                 if length_str.ends_with('K') || length_str.ends_with('k') {
@@ -1329,7 +1328,7 @@ fn parse_sections(input: &str, memory_regions: &[MemoryRegion]) -> Result<Vec<Se
                 if let Some(gt_pos) = section_decl.find('>') {
                     if gt_pos < section_decl.len() - 1 {
                         let region_end = section_decl[gt_pos + 1..]
-                            .find(|c: char| c == '{' || c == '}' || c == '\n')
+                            .find(['{', '}', '\n'])
                             .unwrap_or(section_decl[gt_pos + 1..].len());
                         memory_region = section_decl[gt_pos + 1..gt_pos + 1 + region_end]
                             .trim()

@@ -1,5 +1,4 @@
 use risc_v_gen::{CodeGenerator, Instruction, Register};
-use sha2::digest::typenum::Zero;
 
 // pub enum Value {
 //     Con(Rc<Constant>),
@@ -3608,7 +3607,7 @@ fn u32_vec_to_u8_vec(input: Vec<u32>) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Write, process::Command};
+    use std::process::Command;
 
     use emulator::ExecutionResult;
     use risc_v_gen::emulator::verify_file;

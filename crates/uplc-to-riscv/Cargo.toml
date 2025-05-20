@@ -27,7 +27,7 @@ riscv-decode = "0.2.1"
 tempfile = "3.8.1"
 
 # BitVMX-CPU dependencies
-bitcoin-script-riscv = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "main", package = "bitcoin-script-riscv" }
+bitcoin-script-riscv = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "challenges", package = "bitcoin-script-riscv" }
 emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "challenges", package = "emulator" }
 
 # Serialization dependencies for BitVMX integration
