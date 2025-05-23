@@ -1,8 +1,5 @@
 use risc_v_gen::{CodeGenerator, Instruction, Register};
-use uplc_serializer::constants::{
-    const_tag::{self, BOOL, BYTESTRING},
-    data_tag::INTEGER,
-};
+use uplc_serializer::constants::const_tag::{self, BOOL};
 
 // pub enum Value {
 //     Con(Rc<Constant>),
