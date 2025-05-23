@@ -2,12 +2,12 @@
 //!
 //! This crate provides utilities for gene.rating RISC-V assembly code.
 
-use std::{fs::File, io::Write, path::Path};
+use std::{fs::File, io::Write};
 
 use thiserror::Error;
 
+// pub mod elf;
 pub mod emulator;
-pub mod elf;
 
 /// Errors that can occur during RISC-V code gene.ration
 #[derive(Debug, Error)]
@@ -490,40 +490,41 @@ impl CodeGenerator {
         Ok(())
     }
 
-    /// Generate an ELF file from the code generator
-    pub fn generate_elf(&self, output_path: &Path, linker_script: &str) -> Result<()> {
-        elf::build_elf(self, linker_script, output_path)
-    }
+    // Generate an ELF file from the code generator
+    // pub fn generate_elf(&self, output_path: &Path, linker_script: &str) -> Result<()> {
+    //     elf::build_elf(self, linker_script, output_path)
+    // }
 }
 
-/// Assemble assembly code from a string and generate an ELF file
-/// 
-/// This function provides a streamlined way to:
-/// 1. Take assembly code as a string
-/// 2. Assemble it using lib_rv32_asm 
-/// 3. Generate an ELF file with the provided or default linker script
-///
-/// It mimics the CLI approach:
-/// `riscv64-unknown-elf-as test.s -march=rv32i -mabi=ilp32 -o test.o`
-/// `riscv64-unknown-elf-ld test.o -m elf32lriscv -o test.elf`
-/// 
-pub fn assemble_and_link(asm_code: &str, output_path: &Path, linker_script: Option<&str>) -> Result<()> {
-    elf::assemble_and_link(asm_code, output_path, linker_script)
-}
+// Assemble assembly code from a string and generate an ELF file
+//
+// This function provides a streamlined way to:
+// 1. Take assembly code as a string
+// 2. Assemble it using lib_rv32_asm
+// 3. Generate an ELF file with the provided or default linker script
+//
+// It mimics the CLI approach:
+// `riscv64-unknown-elf-as test.s -march=rv32i -mabi=ilp32 -o test.o`
+// `riscv64-unknown-elf-ld test.o -m elf32lriscv -o test.elf`
+//
+// pub fn assemble_and_link(
+//     asm_code: &str,
+//     output_path: &Path,
+//     linker_script: Option<&str>,
+// ) -> Result<()> {
+//     elf::assemble_and_link(asm_code, output_path, linker_script)
+// }
 
-// Re-export functions from the elf module
-pub use elf::{
-    assemble_instructions,
-    build_elf,
-    validate_imm_range,
-    validate_section_overlap,
-    DEFAULT_LINKER_SCRIPT,
-};
+// // Re-export functions from the elf module
+// pub use elf::{
+//     assemble_instructions, build_elf, validate_imm_range, validate_section_overlap,
+//     DEFAULT_LINKER_SCRIPT,
+// };
 
-/// Parse a linker script from a string
-pub fn parse_linker_script(script: &str) -> Result<elf::LinkerScript> {
-    elf::LinkerScript::parse(script)
-}
+// /// Parse a linker script from a string
+// pub fn parse_linker_script(script: &str) -> Result<elf::LinkerScript> {
+//     elf::LinkerScript::parse(script)
+// }
 
 #[cfg(test)]
 mod tests {

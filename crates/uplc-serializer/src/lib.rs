@@ -203,7 +203,7 @@ mod tests {
         // Again, we can't check exact contents, but we want to verify
         // that the complex program was serialized without errors
         assert!(
-            binary.len() > 0,
+            !binary.is_empty(),
             "Binary should contain substantial data for a complex program"
         );
     }

@@ -3,7 +3,7 @@ use emulator::{
         fetcher::{execute_program, FullTrace},
         utils::FailConfiguration,
     },
-    loader::program::{self, load_elf, Program},
+    loader::program::{load_elf, Program},
     ExecutionResult,
 };
 

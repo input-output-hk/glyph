@@ -3,7 +3,6 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use byteorder::{LittleEndian, WriteBytesExt};
-use num_traits::ToPrimitive;
 use uplc::ast::{Constant, DeBruijn, Program, Term};
 use uplc::builtins::DefaultFunction;
 use uplc::BigInt;
@@ -39,7 +38,9 @@ fn serialize_term(preceeding_byte_size: u32, term: &Term<DeBruijn>) -> Result<Ve
             parameter_name: _,
             body,
         } => serialize_lambda(preceeding_byte_size, body),
-        Term::Apply { function, argument } => serialize_apply(preceeding_byte_size, function, argument),
+        Term::Apply { function, argument } => {
+            serialize_apply(preceeding_byte_size, function, argument)
+        },
         Term::Force(term) => serialize_force(preceeding_byte_size, term),
         Term::Delay(term) => serialize_delay(preceeding_byte_size, term),
         Term::Constant(constant) => serialize_constant(constant),
@@ -140,12 +141,12 @@ fn serialize_constant(constant: &Rc<Constant>) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte for constant
     x.write_u8(term_tag::CONSTANT)?;
-        
+
     // Determine the type length and store it
     // (This is a placeholder - you may need to calculate the actual type length)
     let type_length: u8 = 1; // For simple types
     x.write_u8(type_length)?;
-        
+
     // Serialize the constant based on its type
     let serialized_data = match &**constant {
         Constant::Integer(int) => serialize_integer_constant(int)?,
@@ -164,7 +165,7 @@ fn serialize_constant(constant: &Rc<Constant>) -> Result<Vec<u8>> {
 
     // Write serialized data to our buffer
     x.write_all(&serialized_data)?;
-        
+
     Ok(x)
 }
 
@@ -174,89 +175,27 @@ fn serialize_integer_constant(int: &num_bigint::BigInt) -> Result<Vec<u8>> {
     // Write constant type tag
     x.write_u8(const_tag::INTEGER)?;
 
-    // Write the sign bit
-    let sign_bit = if int < &num_bigint::BigInt::from(0) { 1 } else { 0 };
-    x.write_u8(sign_bit)?;
+    // BigInt (variable size)
+    let (sign, bytes) = int.to_u32_digits();
 
-    // Determine content size and write it (1 word = 4 bytes)
-    let size_in_bytes = (int.bits() + 7) / 8; // Round up to nearest byte
-    let content_size = ((size_in_bytes + 3) / 4) as u32; // Round up to nearest word (4 bytes)
-    x.write_u32::<LittleEndian>(content_size)?;
-
-    // Determine the format based on size
-    if int.bits() <= 8
-        && int >= &num_bigint::BigInt::from(-128)
-        && int <= &num_bigint::BigInt::from(127)
-    {
-        // Small integer (1 byte)
-        if let Some(i) = int.to_i8() {
-            x.write_i8(i)?;
-            // Pad to complete the word
-            x.write_all(&[0, 0, 0])?;
-        } else {
-            return Err(SerializationError::IntegerTooLarge(format!(
-                "Integer doesn't fit in i8: {}",
-                int
-            )));
-        }
-    } else if int.bits() <= 16
-        && int >= &num_bigint::BigInt::from(-32768)
-        && int <= &num_bigint::BigInt::from(32767)
-    {
-        // Medium integer (2 bytes)
-        if let Some(i) = int.to_i16() {
-            x.write_i16::<LittleEndian>(i)?;
-            // Pad to complete the word
-            x.write_all(&[0, 0])?;
-        } else {
-            return Err(SerializationError::IntegerTooLarge(format!(
-                "Integer doesn't fit in i16: {}",
-                int
-            )));
-        }
-    } else if int.bits() <= 32
-        && int >= &num_bigint::BigInt::from(i32::MIN)
-        && int <= &num_bigint::BigInt::from(i32::MAX)
-    {
-        // Large integer (4 bytes)
-        if let Some(i) = int.to_i32() {
-            x.write_i32::<LittleEndian>(i)?;
-        } else {
-            return Err(SerializationError::IntegerTooLarge(format!(
-                "Integer doesn't fit in i32: {}",
-                int
-            )));
-        }
-    } else if int.bits() <= 64
-        && int >= &num_bigint::BigInt::from(i64::MIN)
-        && int <= &num_bigint::BigInt::from(i64::MAX)
-    {
-        // Extra large integer (8 bytes = 2 words)
-        if let Some(i) = int.to_i64() {
-            x.write_i64::<LittleEndian>(i)?;
-        } else {
-            return Err(SerializationError::IntegerTooLarge(format!(
-                "Integer doesn't fit in i64: {}",
-                int
-            )));
-        }
+    // Write sign byte
+    let sign_byte = if sign == num_bigint::Sign::Minus {
+        1
     } else {
-        // BigInt (variable size)
-        let (sign, bytes) = int.to_bytes_le();
+        0
+    };
 
-        // Write sign byte
-        let sign_byte = if sign == num_bigint::Sign::Minus { 1 } else { 0 };
-        x.write_u8(sign_byte)?;
-            
-        // Write the magnitude bytes
-        x.write_all(&bytes)?;
-            
-        // Pad to complete the last word if necessary
-        let padding_size = (4 - (bytes.len() + 1) % 4) % 4;
-        if padding_size > 0 {
-            x.write_all(&vec![0; padding_size])?;
-        }
-    }
+    x.write_u8(sign_byte)?;
+
+    x.write_u32::<LittleEndian>(bytes.len().try_into().unwrap())?;
+
+    // Write the magnitude bytes
+    x.write_all(
+        &bytes
+            .into_iter()
+            .flat_map(|x| x.to_le_bytes())
+            .collect::<Vec<u8>>(),
+    )?;
 
     Ok(x)
 }
@@ -275,21 +214,11 @@ fn serialize_bytestring_constant(bytes: &[u8]) -> Result<Vec<u8>> {
     // Write constant type tag
     x.write_u8(const_tag::BYTESTRING)?;
 
-    // Calculate content size in words (4 bytes each)
-    let content_size = ((bytes.len() + 3) / 4) as u32; // Round up to nearest word
-    x.write_u32::<LittleEndian>(content_size)?;
-        
     // Write actual length in bytes
     x.write_u32::<LittleEndian>(bytes.len() as u32)?;
 
     // Write bytes
     x.write_all(bytes)?;
-        
-    // Pad to complete the last word if necessary
-    let padding_size = (4 - (bytes.len() % 4)) % 4;
-    if padding_size > 0 {
-        x.write_all(&vec![0; padding_size])?;
-    }
 
     Ok(x)
 }
@@ -301,7 +230,6 @@ fn serialize_unit_constant() -> Result<Vec<u8>> {
     x.write_u8(const_tag::UNIT)?;
 
     // No additional data for unit
-
     Ok(x)
 }
 
@@ -326,7 +254,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Constant type tag
     x.write_u8(const_tag::DATA)?;
-        
+
     // For this implementation, we'll treat all Data as "black-box" with a simple representation
     // A full implementation would serialize the structure recursively
 
@@ -369,50 +297,50 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
         PlutusData::BigInt(int_data) => {
             // Write the integer tag
             data_buffer.write_u8(data_tag::INTEGER)?;
-                
+
             match int_data {
                 BigInt::Int(int_val) => {
                     // Since we don't have access to details about the Int type's internals,
                     // we'll convert it to a string and use the first character to check sign
                     let int_str = format!("{:?}", int_val);
                     let is_negative = int_str.starts_with('-');
-                        
+
                     // Write sign (0 for positive, 1 for negative)
                     data_buffer.write_u8(if is_negative { 1u8 } else { 0u8 })?;
-                        
+
                     // For simplicity, we'll use a basic byte representation
                     // In a production system, you'd want to extract proper bytes from Int
                     let bytes = [0, 0, 0, 1]; // Simple placeholder
-                        
+
                     // Write the length of bytes
                     data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
-                        
+
                     // Write the actual bytes
                     data_buffer.write_all(&bytes)?;
                 },
                 BigInt::BigUInt(bytes_val) => {
                     // Positive big integer
                     data_buffer.write_u8(0)?; // Sign byte (0 for positive)
-                        
+
                     // Get the bytes from BoundedBytes (which is a wrapper around Vec<u8>)
                     let bytes = bytes_val.deref();
-                        
+
                     // Write the length of bytes
                     data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
-                        
+
                     // Write the actual bytes
                     data_buffer.write_all(bytes)?;
                 },
                 BigInt::BigNInt(bytes_val) => {
                     // Negative big integer
                     data_buffer.write_u8(1)?; // Sign byte (1 for negative)
-                        
+
                     // Get the bytes from BoundedBytes
                     let bytes = bytes_val.deref();
-                        
+
                     // Write the length of bytes
                     data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
-                        
+
                     // Write the actual bytes
                     data_buffer.write_all(bytes)?;
                 },
@@ -432,12 +360,12 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
     let data_bytes = data_buffer.into_inner();
 
     // Calculate content size in words (4 bytes each)
-    let content_size = ((data_bytes.len() + 3) / 4) as u32; // Round up to nearest word
+    let content_size = data_bytes.len().div_ceil(4) as u32; // Round up to nearest word
     x.write_u32::<LittleEndian>(content_size)?;
-        
+
     // Write the data
     x.write_all(&data_bytes)?;
-        
+
     // Pad to complete the last word if necessary
     let padding_size = (4 - (data_bytes.len() % 4)) % 4;
     if padding_size > 0 {
@@ -471,7 +399,11 @@ fn serialize_error() -> Result<Vec<u8>> {
 }
 
 /// Serialize a constructor term
-fn serialize_constructor(preceeding_byte_size: u32, tag: usize, fields: &[Term<DeBruijn>]) -> Result<Vec<u8>> {
+fn serialize_constructor(
+    preceeding_byte_size: u32,
+    tag: usize,
+    fields: &[Term<DeBruijn>],
+) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte
     x.write_u8(term_tag::CONSTRUCTOR)?;
@@ -489,11 +421,11 @@ fn serialize_constructor(preceeding_byte_size: u32, tag: usize, fields: &[Term<D
     // - 4 bytes for field count
     // - 4 bytes per field for pointers
     let mut current_offset = preceeding_byte_size + 1 + 2 + 4 + (fields.len() as u32 * 4);
-    
+
     // Serialize each field with its appropriate offset and collect results
     let mut field_bodies = Vec::with_capacity(fields.len());
     let mut field_pointers = Vec::with_capacity(fields.len());
-    
+
     for field in fields {
         field_pointers.push(current_offset);
         let field_body = serialize_term(current_offset, field)?;
@@ -546,7 +478,7 @@ fn serialize_case(
     // Serialize each branch and collect pointers
     let mut branch_pointers = Vec::with_capacity(branches.len());
     let mut branch_bodies = Vec::with_capacity(branches.len());
-    
+
     for branch in branches {
         branch_pointers.push(current_offset);
         let branch_ser = serialize_term(current_offset, branch)?;

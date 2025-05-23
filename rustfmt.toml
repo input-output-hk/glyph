@@ -6,6 +6,5 @@ use_small_heuristics = "Default"
 reorder_imports = true
 reorder_modules = true
 remove_nested_parens = true
-format_strings = true
 match_block_trailing_comma = true
-merge_derives = true 
+merge_derives = true
