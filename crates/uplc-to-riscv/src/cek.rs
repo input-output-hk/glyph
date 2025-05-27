@@ -150,6 +150,7 @@ pub struct Cek {
     frames: Register,
     env: Register,
     heap: Register,
+    saved: Register,
     discard: Register,
     return_reg: Register,
     first_arg: Register,
@@ -176,7 +177,8 @@ impl Cek {
             frames: Register::Sp,
             env: Register::S1,
             heap: Register::S2,
-            discard: Register::T0,
+            saved: Register::S3,
+            discard: Register::Zero,
             return_reg: Register::A0,
             first_arg: Register::A0,
             second_arg: Register::A1,
@@ -231,6 +233,8 @@ impl Cek {
         self.eval_builtin_app();
         self.unwrap_integer();
         self.unwrap_bytestring();
+        self.allocate_integer_type();
+        self.allocate_bytestring_type();
         self.add_integer();
         self.sub_integer();
         self.multiply_integer();
@@ -2628,6 +2632,92 @@ impl Cek {
             .add_instruction(Instruction::Jalr(self.discard, return_address, 0));
     }
 
+    // purely allocate integer type + constant value on heap
+    pub fn allocate_integer_type(&mut self) {
+        let heap = self.heap;
+        let allocate_temp = self.saved;
+        let callback = self.eighth_arg;
+
+        self.generator
+            .add_instruction(Instruction::Label("allocate_integer_type".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Addi(heap, heap, 7));
+
+        // Overwrite allocate_temp
+        let value_tag = allocate_temp;
+        self.generator
+            .add_instruction(Instruction::Li(value_tag, 0));
+
+        self.generator
+            .add_instruction(Instruction::Sb(value_tag, -7, heap));
+
+        // Overwrite value_tag
+        let integer_pointer = value_tag;
+        // We store integer immediately after the pointer so we simply add 4 to point to the location
+        self.generator
+            .add_instruction(Instruction::Addi(integer_pointer, heap, -2));
+
+        self.generator
+            .add_instruction(Instruction::Sw(integer_pointer, -6, heap));
+
+        // Overwrite integer_pointer
+        let integer_type = integer_pointer;
+        self.generator.add_instruction(Instruction::Li(
+            integer_type,
+            1 + (const_tag::INTEGER as i32) * 256,
+        ));
+
+        self.generator
+            .add_instruction(Instruction::Sh(integer_type, -2, heap));
+
+        self.generator
+            .add_instruction(Instruction::Jalr(self.discard, callback, 0));
+    }
+
+    // purely allocate integer type + constant value on heap
+    pub fn allocate_bytestring_type(&mut self) {
+        let heap = self.heap;
+        let allocate_temp = self.saved;
+        let callback = self.eighth_arg;
+
+        self.generator
+            .add_instruction(Instruction::Label("allocate_bytestring_type".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Addi(heap, heap, 7));
+
+        // Overwrite allocate_temp
+        let value_tag = allocate_temp;
+        self.generator
+            .add_instruction(Instruction::Li(value_tag, 0));
+
+        self.generator
+            .add_instruction(Instruction::Sb(value_tag, -7, heap));
+
+        // Overwrite value_tag
+        let bytestring_pointer = value_tag;
+        // We store integer immediately after the pointer so we simply add 4 to point to the location
+        self.generator
+            .add_instruction(Instruction::Addi(bytestring_pointer, heap, -2));
+
+        self.generator
+            .add_instruction(Instruction::Sw(bytestring_pointer, -6, heap));
+
+        // Overwrite bytestring_pointer
+        let integer_type = bytestring_pointer;
+        self.generator.add_instruction(Instruction::Li(
+            integer_type,
+            1 + (const_tag::BYTESTRING as i32) * 256,
+        ));
+
+        self.generator
+            .add_instruction(Instruction::Sh(integer_type, -2, heap));
+
+        self.generator
+            .add_instruction(Instruction::Jalr(self.discard, callback, 0));
+    }
+
     pub fn unwrap_bytestring(&mut self) {
         let arg = self.first_arg;
         let return_address = self.second_arg;
@@ -3429,6 +3519,8 @@ impl Cek {
             .add_instruction(Instruction::J("return".to_string()));
     }
 
+    pub fn cons_bytestring(&mut self) {}
+
     pub fn add_signed_integers(&mut self) {
         let first_sign = self.first_arg;
         let second_sign = self.second_arg;
@@ -3526,59 +3618,32 @@ impl Cek {
         ));
 
         // Add fixed constant for creating a constant integer value on the heap
-        // 1 for value tag + 4 for constant pointer + 1 for type length + 1 for type integer
         // + 1 for sign + 4 for magnitude length + (4 * (largest magnitude length + 1))
         self.generator.add_instruction(Instruction::Addi(
             max_heap_allocation,
             max_heap_allocation,
-            12,
+            5,
+        ));
+
+        // Overwrite first_sign
+        let ret = self.return_reg;
+        self.generator.add_instruction(Instruction::Mv(ret, heap));
+
+        let callback = self.eighth_arg;
+        // This function does not modify temps and only changes heap and s3
+        // and eighth arg
+        self.generator.add_instruction(Instruction::Jal(
+            callback,
+            "allocate_integer_type".to_string(),
         ));
 
         let value_builder = self.fifth_temp;
         self.generator
             .add_instruction(Instruction::Mv(value_builder, heap));
 
-        // Overwrite first_sign
-        let ret = self.return_reg;
-        self.generator.add_instruction(Instruction::Mv(ret, heap));
-
         // Add maximum heap value needed possibly and reclaim later after addition
         self.generator
             .add_instruction(Instruction::Add(heap, heap, max_heap_allocation));
-
-        // Overwrite max_heap_allocation
-        let value_tag = max_heap_allocation;
-        self.generator
-            .add_instruction(Instruction::Li(value_tag, 0));
-
-        self.generator
-            .add_instruction(Instruction::Sb(value_tag, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
-
-        // Overwrite value_tag
-        let integer_pointer = value_tag;
-        // We store integer immediately after the pointer so we simply add 4 to point to the location
-        self.generator
-            .add_instruction(Instruction::Addi(integer_pointer, value_builder, 4));
-
-        self.generator
-            .add_instruction(Instruction::Sw(integer_pointer, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
-
-        // Overwrite integer_pointer
-        let integer_type = integer_pointer;
-        self.generator
-            .add_instruction(Instruction::Li(integer_type, 1));
-
-        self.generator
-            .add_instruction(Instruction::Sh(integer_type, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 2));
 
         // Store second sign. In this case the signs are the same
         self.generator
@@ -3587,8 +3652,8 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
 
-        // Overwrite integer_type
-        let length_pointer = integer_type;
+        // Overwrite max_heap_allocation
+        let length_pointer = max_heap_allocation;
         self.generator
             .add_instruction(Instruction::Mv(length_pointer, value_builder));
 
@@ -3990,10 +4055,6 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Mv(equality_temp, equality));
 
-        let value_builder = self.second_temp;
-        self.generator
-            .add_instruction(Instruction::Mv(value_builder, heap));
-
         // Overwrite equality
         let ret = self.return_reg;
         self.generator.add_instruction(Instruction::Mv(ret, heap));
@@ -4016,45 +4077,24 @@ impl Cek {
         self.generator.add_instruction(Instruction::Addi(
             max_heap_allocation,
             max_heap_allocation,
-            12,
+            5,
         ));
+
+        let callback = self.eighth_arg;
+        // This function does not modify temps and only changes heap and s3
+        // and eighth arg
+        self.generator.add_instruction(Instruction::Jal(
+            callback,
+            "allocate_integer_type".to_string(),
+        ));
+
+        let value_builder = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Mv(value_builder, heap));
+
         // Add maximum heap value needed possibly and reclaim later after addition
         self.generator
             .add_instruction(Instruction::Add(heap, heap, max_heap_allocation));
-
-        // Overwrite max_heap_allocation
-        let value_tag = max_heap_allocation;
-        self.generator
-            .add_instruction(Instruction::Li(value_tag, 0));
-
-        self.generator
-            .add_instruction(Instruction::Sb(value_tag, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
-
-        // Overwrite value_tag
-        let integer_pointer = value_tag;
-        // We store integer immediately after the pointer so we simply add 4 to point to the location
-        self.generator
-            .add_instruction(Instruction::Addi(integer_pointer, value_builder, 4));
-
-        self.generator
-            .add_instruction(Instruction::Sw(integer_pointer, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
-
-        // Overwrite integer_pointer
-        let integer_type = integer_pointer;
-        self.generator
-            .add_instruction(Instruction::Li(integer_type, 1));
-
-        self.generator
-            .add_instruction(Instruction::Sh(integer_type, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 2));
 
         // Store greater sign
         self.generator
@@ -4063,8 +4103,8 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
 
-        // Overwrite integer_type
-        let length_pointer = integer_type;
+        // Overwrite max_heap_allocation
+        let length_pointer = max_heap_allocation;
         self.generator
             .add_instruction(Instruction::Mv(length_pointer, value_builder));
 
@@ -4350,6 +4390,8 @@ mod tests {
         cek.eval_builtin_app();
         cek.unwrap_integer();
         cek.unwrap_bytestring();
+        cek.allocate_integer_type();
+        cek.allocate_bytestring_type();
         cek.add_integer();
         cek.sub_integer();
         cek.multiply_integer();
@@ -4979,8 +5021,6 @@ mod tests {
         let section_data = u32_vec_to_u8_vec(section.data.clone());
 
         let offset_index = (result_pointer - section.start) as usize;
-
-        // println!("{:#?}", &section_data[offset_index..(offset_index + 100)]);
 
         let type_length = section_data[offset_index];
 
