@@ -339,6 +339,7 @@ impl Cek {
         self.generator.add_instruction(Instruction::Comment(
             "Term address should be in A0".to_string(),
         ));
+
         self.generator
             .add_instruction(Instruction::Comment("Load term tag".to_string()));
 
@@ -3423,6 +3424,14 @@ impl Cek {
 
         self.generator.add_instruction(Instruction::Mv(ret, heap));
 
+        let callback = self.eighth_arg;
+        // This function does not modify temps and only changes heap and s3
+        // and eighth arg
+        self.generator.add_instruction(Instruction::Jal(
+            callback,
+            "allocate_bytestring_type".to_string(),
+        ));
+
         let value_builder = self.sixth_temp;
         self.generator
             .add_instruction(Instruction::Mv(value_builder, heap));
@@ -3435,36 +3444,10 @@ impl Cek {
         // heap allocation = 1 byte for value tag + 4 bytes for pointer + 1 byte for type length
         // + 1 byte for type + 4 bytes for bytestring length + 4 * bytestring length bytes
         self.generator
-            .add_instruction(Instruction::Addi(total_allocation, total_allocation, 11));
+            .add_instruction(Instruction::Addi(total_allocation, total_allocation, 4));
 
         self.generator
             .add_instruction(Instruction::Add(heap, heap, total_allocation));
-
-        self.generator
-            .add_instruction(Instruction::Sb(Register::Zero, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
-
-        let constant_pointer = total_allocation;
-        self.generator
-            .add_instruction(Instruction::Addi(constant_pointer, value_builder, 4));
-
-        self.generator
-            .add_instruction(Instruction::Sw(constant_pointer, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
-
-        let bytestring_type = constant_pointer;
-        self.generator
-            .add_instruction(Instruction::Li(bytestring_type, 257));
-
-        self.generator
-            .add_instruction(Instruction::Sh(bytestring_type, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 2));
 
         self.generator
             .add_instruction(Instruction::Sw(total_length, 0, value_builder));
