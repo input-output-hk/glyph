@@ -3415,18 +3415,17 @@ impl Cek {
 
         let x_length = self.third_temp;
         self.generator
-            .add_instruction(Instruction::Lw(x_value, 0, x_bytestring));
+            .add_instruction(Instruction::Lw(x_length, 0, x_bytestring));
 
         let y_length = self.fourth_temp;
         self.generator
-            .add_instruction(Instruction::Lw(y_value, 0, y_bytestring));
+            .add_instruction(Instruction::Lw(y_length, 0, y_bytestring));
 
         let total_length = self.fifth_temp;
         self.generator
             .add_instruction(Instruction::Add(total_length, x_length, y_length));
 
         let ret = self.return_reg;
-
         self.generator.add_instruction(Instruction::Mv(ret, heap));
 
         let callback = self.eighth_arg;
@@ -4722,7 +4721,7 @@ mod tests {
 
         let constant_type = section_data[offset_index + 1];
 
-        assert_eq!(constant_type, 0);
+        assert_eq!(constant_type, const_tag::INTEGER);
 
         let sign = section_data[offset_index + 2];
 
@@ -4876,7 +4875,7 @@ mod tests {
 
         let constant_type = section_data[offset_index + 1];
 
-        assert_eq!(constant_type, 0);
+        assert_eq!(constant_type, const_tag::INTEGER);
 
         let sign = section_data[offset_index + 2];
 
@@ -5167,7 +5166,7 @@ mod tests {
 
         let constant_type = section_data[offset_index + 1];
 
-        assert_eq!(constant_type, 0);
+        assert_eq!(constant_type, const_tag::INTEGER);
 
         let sign = section_data[offset_index + 2];
 
@@ -5279,7 +5278,7 @@ mod tests {
 
         let constant_type = section_data[offset_index + 1];
 
-        assert_eq!(constant_type, 0);
+        assert_eq!(constant_type, const_tag::INTEGER);
 
         let sign = section_data[offset_index + 2];
 
@@ -5391,7 +5390,7 @@ mod tests {
 
         let constant_type = section_data[offset_index + 1];
 
-        assert_eq!(constant_type, 0);
+        assert_eq!(constant_type, const_tag::INTEGER);
 
         let sign = section_data[offset_index + 2];
 
@@ -5712,99 +5711,106 @@ mod tests {
 
     #[test]
     fn test_append_bytestring() {
-        // let thing = Cek::default();
+        let thing = Cek::default();
 
-        // // (apply (lambda x (force x)) (delay (error)))
-        // let term: Term<Name> = Term::less_than_integer()
-        //     .apply(
-        //         Term::append_bytearray()
-        //             .apply(Term::byte_string(vec![255, 255]))
-        //             .apply(Term::integer((5).into())),
-        //     )
-        //     .apply(Term::integer((4_999_999_995_i128).into()));
+        let term: Term<Name> = Term::append_bytearray()
+            .apply(Term::byte_string(vec![255, 255]))
+            .apply(Term::byte_string(vec![254, 245]));
 
-        // let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
 
-        // let program: Program<DeBruijn> = Program {
-        //     version: (1, 1, 0),
-        //     term: term_debruijn,
-        // };
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
 
-        // let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
 
-        // let gene = thing.cek_assembly(riscv_program);
+        let gene = thing.cek_assembly(riscv_program);
 
-        // gene.save_to_file("test_less_big_int.s").unwrap();
+        gene.save_to_file("test_append_bytes.s").unwrap();
 
-        // Command::new("riscv64-elf-as")
-        //     .args([
-        //         "-march=rv32i",
-        //         "-mabi=ilp32",
-        //         "-o",
-        //         "test_less_big_int.o",
-        //         "test_less_big_int.s",
-        //     ])
-        //     .status()
-        //     .unwrap();
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_append_bytes.o",
+                "test_append_bytes.s",
+            ])
+            .status()
+            .unwrap();
 
-        // Command::new("riscv64-elf-ld")
-        //     .args([
-        //         "-m",
-        //         "elf32lriscv",
-        //         "-o",
-        //         "test_less_big_int.elf",
-        //         "-T",
-        //         "../../linker/link.ld",
-        //         "test_less_big_int.o",
-        //     ])
-        //     .status()
-        //     .unwrap();
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_append_bytes.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_append_bytes.o",
+            ])
+            .status()
+            .unwrap();
 
-        // let v = verify_file("test_less_big_int.elf").unwrap();
+        let v = verify_file("test_append_bytes.elf").unwrap();
 
-        // // let mut file = File::create("bbbb.txt").unwrap();
-        // // write!(
-        // //     &mut file,
-        // //     "{}",
-        // //     v.1.iter()
-        // //         .map(|(item, _)| {
-        // //             format!(
-        // //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        // //                 item.step_number,
-        // //                 riscv_decode::decode(item.read_pc.opcode),
-        // //                 item.read_pc.opcode,
-        // //                 item,
-        // //             )
-        // //         })
-        // //         .collect::<Vec<String>>()
-        // //         .join("\n")
-        // // )
-        // // .unwrap();
-        // // file.flush().unwrap();
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
 
-        // let result_pointer = match v.0 {
-        //     ExecutionResult::Halt(result, _step) => result,
-        //     a => unreachable!("HOW? {:#?}", a),
-        // };
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            a => unreachable!("HOW? {:#?}", a),
+        };
 
-        // assert_ne!(result_pointer, u32::MAX);
+        assert_ne!(result_pointer, u32::MAX);
 
-        // let section = v.2.find_section(result_pointer).unwrap();
+        let section = v.2.find_section(result_pointer).unwrap();
 
-        // let section_data = u32_vec_to_u8_vec(section.data.clone());
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
 
-        // let offset_index = (result_pointer - section.start) as usize;
+        let offset_index = (result_pointer - section.start) as usize;
 
-        // let type_length = section_data[offset_index];
+        let type_length = section_data[offset_index];
 
-        // assert_eq!(type_length, 1);
+        assert_eq!(type_length, 1);
 
-        // let constant_type = section_data[offset_index + 1];
+        let constant_type = section_data[offset_index + 1];
 
-        // assert_eq!(constant_type, const_tag::BOOL);
+        assert_eq!(constant_type, const_tag::BYTESTRING);
 
-        // let boolean = section_data[offset_index + 2];
+        let byte_length = *section_data[(offset_index + 2)..(offset_index + 6)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
 
-        // assert_eq!(boolean, 1)
+        assert_eq!(byte_length, 4);
+
+        let value = section_data[(offset_index + 6)..(offset_index + 22)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>();
+
+        assert_eq!(value, vec![255, 255, 254, 245])
     }
 }
