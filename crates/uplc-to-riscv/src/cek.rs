@@ -2569,13 +2569,13 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::J("equals_integer".to_string()));
 
-        // 8 - less_than_equals_integer
-        self.generator
-            .add_instruction(Instruction::J("less_than_equals_integer".to_string()));
-
-        // 9 - less_than_integer
+        // 8 - less_than_integer
         self.generator
             .add_instruction(Instruction::J("less_than_integer".to_string()));
+
+        // 9 - less_than_equals_integer
+        self.generator
+            .add_instruction(Instruction::J("less_than_equals_integer".to_string()));
 
         // 10 - append_bytestring
         self.generator
@@ -3272,7 +3272,7 @@ impl Cek {
             .add_instruction(Instruction::Mv(y_integer, first_arg));
 
         // Overwrite first_arg
-        let x_sign = self.return_reg;
+        let x_sign = first_arg;
         self.generator
             .add_instruction(Instruction::Lbu(x_sign, 0, x_integer));
 
@@ -5565,6 +5565,104 @@ mod tests {
             .unwrap();
 
         let v = verify_file("test_less_big_int.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            a => unreachable!("HOW? {:#?}", a),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, const_tag::BOOL);
+
+        let boolean = section_data[offset_index + 2];
+
+        assert_eq!(boolean, 0)
+    }
+
+    #[test]
+    fn test_less_equals_numbers() {
+        let thing = Cek::default();
+
+        // (apply (lambda x (force x)) (delay (error)))
+        let term: Term<Name> = Term::less_than_equals_integer()
+            .apply(
+                Term::subtract_integer()
+                    .apply(Term::integer((5_000_000_000_i128).into()))
+                    .apply(Term::integer((5).into())),
+            )
+            .apply(Term::integer((4_999_999_995_i128).into()));
+
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
+
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_less_equals_big_int.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_less_equals_big_int.o",
+                "test_less_equals_big_int.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_less_equals_big_int.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_less_equals_big_int.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_less_equals_big_int.elf").unwrap();
 
         // let mut file = File::create("bbbb.txt").unwrap();
         // write!(
