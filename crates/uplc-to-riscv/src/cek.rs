@@ -1,5 +1,5 @@
 use risc_v_gen::{CodeGenerator, Instruction, Register};
-
+use uplc_serializer::constants::const_tag::{self, BOOL};
 // pub enum Value {
 //     Con(Rc<Constant>),
 //     Delay(Rc<Term<NamedDeBruijn>>, Env),
@@ -150,6 +150,7 @@ pub struct Cek {
     frames: Register,
     env: Register,
     heap: Register,
+    saved: Register,
     discard: Register,
     return_reg: Register,
     first_arg: Register,
@@ -176,7 +177,8 @@ impl Cek {
             frames: Register::Sp,
             env: Register::S1,
             heap: Register::S2,
-            discard: Register::T0,
+            saved: Register::S3,
+            discard: Register::Zero,
             return_reg: Register::A0,
             first_arg: Register::A0,
             second_arg: Register::A1,
@@ -230,8 +232,21 @@ impl Cek {
         self.reverse_clone_list();
         self.eval_builtin_app();
         self.unwrap_integer();
+        self.unwrap_bytestring();
+        self.allocate_integer_type();
+        self.allocate_bytestring_type();
         self.add_integer();
         self.sub_integer();
+        self.multiply_integer();
+        self.divide_integer();
+        self.quotient_integer();
+        self.remainder_integer();
+        self.mod_integer();
+        self.equals_integer();
+        self.less_than_integer();
+        self.less_than_equals_integer();
+        self.append_bytestring();
+        self.cons_bytestring();
         self.add_signed_integers();
         self.compare_magnitude();
         self.sub_signed_integers();
@@ -325,6 +340,7 @@ impl Cek {
         self.generator.add_instruction(Instruction::Comment(
             "Term address should be in A0".to_string(),
         ));
+
         self.generator
             .add_instruction(Instruction::Comment("Load term tag".to_string()));
 
@@ -2528,6 +2544,46 @@ impl Cek {
         // 1 - sub_integer
         self.generator
             .add_instruction(Instruction::J("sub_integer".to_string()));
+
+        // 2 - multiply_integer
+        self.generator
+            .add_instruction(Instruction::J("multiply_integer".to_string()));
+
+        // 3 - divide_integer
+        self.generator
+            .add_instruction(Instruction::J("divide_integer".to_string()));
+
+        // 4 - quotient_integer
+        self.generator
+            .add_instruction(Instruction::J("quotient_integer".to_string()));
+
+        // 5 - remainder_integer
+        self.generator
+            .add_instruction(Instruction::J("remainder_integer".to_string()));
+
+        // 6 - mod_integer
+        self.generator
+            .add_instruction(Instruction::J("mod_integer".to_string()));
+
+        // 7 - equals_integer
+        self.generator
+            .add_instruction(Instruction::J("equals_integer".to_string()));
+
+        // 8 - less_than_integer
+        self.generator
+            .add_instruction(Instruction::J("less_than_integer".to_string()));
+
+        // 9 - less_than_equals_integer
+        self.generator
+            .add_instruction(Instruction::J("less_than_equals_integer".to_string()));
+
+        // 10 - append_bytestring
+        self.generator
+            .add_instruction(Instruction::J("append_bytestring".to_string()));
+
+        // 11 - cons_bytestring
+        self.generator
+            .add_instruction(Instruction::J("cons_bytestring".to_string()));
     }
 
     pub fn unwrap_integer(&mut self) {
@@ -2542,7 +2598,7 @@ impl Cek {
 
         let value_tag = self.second_temp;
         self.generator
-            .add_instruction(Instruction::Lb(value_tag, 0, arg));
+            .add_instruction(Instruction::Lbu(value_tag, 0, arg));
 
         self.generator.add_instruction(Instruction::Bne(
             expected_tag,
@@ -2556,8 +2612,10 @@ impl Cek {
 
         // Overwrite expected_tag
         let expected_type = expected_tag;
-        self.generator
-            .add_instruction(Instruction::Li(expected_type, 1));
+        self.generator.add_instruction(Instruction::Li(
+            expected_type,
+            1 + 256 * (const_tag::INTEGER as i32),
+        ));
 
         // The type ends up being [0x01, 0x00] which in little endian is 1
         // Overwrite value_tag
@@ -2572,6 +2630,144 @@ impl Cek {
         ));
 
         // Return pointer to integer value
+        let ret = self.return_reg;
+        self.generator
+            .add_instruction(Instruction::Addi(ret, constant_value, 2));
+
+        self.generator
+            .add_instruction(Instruction::Jalr(self.discard, return_address, 0));
+    }
+
+    // purely allocate integer type + constant value on heap
+    pub fn allocate_integer_type(&mut self) {
+        let heap = self.heap;
+        let allocate_temp = self.saved;
+        let callback = self.eighth_arg;
+
+        self.generator
+            .add_instruction(Instruction::Label("allocate_integer_type".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Addi(heap, heap, 7));
+
+        // Overwrite allocate_temp
+        let value_tag = allocate_temp;
+        self.generator
+            .add_instruction(Instruction::Li(value_tag, 0));
+
+        self.generator
+            .add_instruction(Instruction::Sb(value_tag, -7, heap));
+
+        // Overwrite value_tag
+        let integer_pointer = value_tag;
+        // We store integer immediately after the pointer so we simply add 4 to point to the location
+        self.generator
+            .add_instruction(Instruction::Addi(integer_pointer, heap, -2));
+
+        self.generator
+            .add_instruction(Instruction::Sw(integer_pointer, -6, heap));
+
+        // Overwrite integer_pointer
+        let integer_type = integer_pointer;
+        self.generator.add_instruction(Instruction::Li(
+            integer_type,
+            1 + (const_tag::INTEGER as i32) * 256,
+        ));
+
+        self.generator
+            .add_instruction(Instruction::Sh(integer_type, -2, heap));
+
+        self.generator
+            .add_instruction(Instruction::Jalr(self.discard, callback, 0));
+    }
+
+    // purely allocate integer type + constant value on heap
+    pub fn allocate_bytestring_type(&mut self) {
+        let heap = self.heap;
+        let allocate_temp = self.saved;
+        let callback = self.eighth_arg;
+
+        self.generator
+            .add_instruction(Instruction::Label("allocate_bytestring_type".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Addi(heap, heap, 7));
+
+        // Overwrite allocate_temp
+        let value_tag = allocate_temp;
+        self.generator
+            .add_instruction(Instruction::Li(value_tag, 0));
+
+        self.generator
+            .add_instruction(Instruction::Sb(value_tag, -7, heap));
+
+        // Overwrite value_tag
+        let bytestring_pointer = value_tag;
+        // We store integer immediately after the pointer so we simply add 4 to point to the location
+        self.generator
+            .add_instruction(Instruction::Addi(bytestring_pointer, heap, -2));
+
+        self.generator
+            .add_instruction(Instruction::Sw(bytestring_pointer, -6, heap));
+
+        // Overwrite bytestring_pointer
+        let integer_type = bytestring_pointer;
+        self.generator.add_instruction(Instruction::Li(
+            integer_type,
+            1 + (const_tag::BYTESTRING as i32) * 256,
+        ));
+
+        self.generator
+            .add_instruction(Instruction::Sh(integer_type, -2, heap));
+
+        self.generator
+            .add_instruction(Instruction::Jalr(self.discard, callback, 0));
+    }
+
+    pub fn unwrap_bytestring(&mut self) {
+        let arg = self.first_arg;
+        let return_address = self.second_arg;
+        self.generator
+            .add_instruction(Instruction::Label("unwrap_bytestring".to_string()));
+
+        let expected_tag = self.first_temp;
+        self.generator
+            .add_instruction(Instruction::Li(expected_tag, 0));
+
+        let value_tag = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Lbu(value_tag, 0, arg));
+
+        self.generator.add_instruction(Instruction::Bne(
+            expected_tag,
+            value_tag,
+            "handle_error".to_string(),
+        ));
+
+        let constant_value = self.third_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(constant_value, 1, arg));
+
+        // Overwrite expected_tag
+        let expected_type = expected_tag;
+        self.generator.add_instruction(Instruction::Li(
+            expected_type,
+            1 + 256 * (const_tag::BYTESTRING as i32),
+        ));
+
+        // The type ends up being [0x01, 0x00] which in little endian is 1
+        // Overwrite value_tag
+        let arg_type = value_tag;
+        self.generator
+            .add_instruction(Instruction::Lhu(arg_type, 0, constant_value));
+
+        self.generator.add_instruction(Instruction::Bne(
+            expected_type,
+            arg_type,
+            "handle_error".to_string(),
+        ));
+
+        // Return pointer to bytestring value
         let ret = self.return_reg;
         self.generator
             .add_instruction(Instruction::Addi(ret, constant_value, 2));
@@ -2730,6 +2926,738 @@ impl Cek {
             .add_instruction(Instruction::J("add_signed_integers".to_string()));
     }
 
+    pub fn multiply_integer(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("multiply_integer".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn divide_integer(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("divide_integer".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn quotient_integer(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("quotient_integer".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn remainder_integer(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("remainder_integer".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn mod_integer(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("mod_integer".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn equals_integer(&mut self) {
+        let args = self.first_arg;
+        let heap = self.heap;
+        self.generator
+            .add_instruction(Instruction::Label("equals_integer".to_string()));
+
+        let x_value = self.first_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(x_value, 0, args));
+
+        let y_value = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(y_value, 4, args));
+
+        // Overwrite args
+        let first_arg = args;
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, x_value));
+
+        let store_y = self.third_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(store_y, y_value));
+
+        let callback = self.second_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+
+        // Overwrite x_value
+        let x_integer = x_value;
+        self.generator
+            .add_instruction(Instruction::Mv(x_integer, first_arg));
+
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, store_y));
+
+        // Overwrite store_y
+        let store_x = store_y;
+        self.generator
+            .add_instruction(Instruction::Mv(store_x, x_integer));
+
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+
+        // Now move things back
+        self.generator
+            .add_instruction(Instruction::Mv(x_integer, store_x));
+
+        // Overwrite y_value
+        let y_integer = y_value;
+        self.generator
+            .add_instruction(Instruction::Mv(y_integer, first_arg));
+
+        // Overwrite first_arg
+        let x_sign = self.return_reg;
+        self.generator
+            .add_instruction(Instruction::Lbu(x_sign, 0, x_integer));
+
+        // Overwrite callback
+        let y_sign = callback;
+        self.generator
+            .add_instruction(Instruction::Lbu(y_sign, 0, y_integer));
+
+        let x_magnitude = store_x;
+        self.generator
+            .add_instruction(Instruction::Addi(x_magnitude, x_integer, 1));
+
+        let y_magnitude = self.fourth_arg;
+        self.generator
+            .add_instruction(Instruction::Addi(y_magnitude, y_integer, 1));
+
+        let callback = self.fifth_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "compare_magnitude".to_string()));
+
+        // Overwrite first_arg
+        let equality = x_sign;
+        let bool_value = x_integer;
+        self.generator
+            .add_instruction(Instruction::Mv(bool_value, equality));
+
+        // heap allocation = 1 byte for value tag + 4 bytes for pointer + 1 byte for type length
+        // + 1 byte for type + 1 byte for bool value
+        // Overwrite equality
+        let ret = self.return_reg;
+        self.generator.add_instruction(Instruction::Mv(ret, heap));
+
+        self.generator
+            .add_instruction(Instruction::Addi(heap, heap, 8));
+
+        self.generator
+            .add_instruction(Instruction::Sb(Register::Zero, -8, heap));
+
+        // Overwrite y_integer
+        let constant_pointer = y_integer;
+        self.generator
+            .add_instruction(Instruction::Addi(constant_pointer, heap, -3));
+
+        self.generator
+            .add_instruction(Instruction::Sw(constant_pointer, -7, heap));
+
+        // Overwrite constant_pointer
+        let bool_type = constant_pointer;
+        self.generator
+            .add_instruction(Instruction::Li(bool_type, 1 + 256 * (BOOL as i32)));
+
+        self.generator
+            .add_instruction(Instruction::Sh(bool_type, -3, heap));
+
+        self.generator
+            .add_instruction(Instruction::Sb(bool_value, -1, heap));
+
+        self.generator
+            .add_instruction(Instruction::J("return".to_string()));
+    }
+
+    pub fn less_than_equals_integer(&mut self) {
+        let args = self.first_arg;
+        let heap = self.heap;
+        self.generator
+            .add_instruction(Instruction::Label("less_than_equals_integer".to_string()));
+
+        let x_value = self.first_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(x_value, 0, args));
+
+        let y_value = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(y_value, 4, args));
+
+        // Overwrite args
+        let first_arg = args;
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, x_value));
+
+        let store_y = self.third_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(store_y, y_value));
+
+        let callback = self.second_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+
+        // Overwrite x_value
+        let x_integer = x_value;
+        self.generator
+            .add_instruction(Instruction::Mv(x_integer, first_arg));
+
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, store_y));
+
+        // Overwrite store_y
+        let store_x = store_y;
+        self.generator
+            .add_instruction(Instruction::Mv(store_x, x_integer));
+
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+
+        // Now move things back
+        self.generator
+            .add_instruction(Instruction::Mv(x_integer, store_x));
+
+        // Overwrite y_value
+        let y_integer = y_value;
+        self.generator
+            .add_instruction(Instruction::Mv(y_integer, first_arg));
+
+        // Overwrite first_arg
+        let x_sign = self.return_reg;
+        self.generator
+            .add_instruction(Instruction::Lbu(x_sign, 0, x_integer));
+
+        // Overwrite callback
+        let y_sign = callback;
+        self.generator
+            .add_instruction(Instruction::Lbu(y_sign, 0, y_integer));
+
+        let x_magnitude = store_x;
+        self.generator
+            .add_instruction(Instruction::Addi(x_magnitude, x_integer, 1));
+
+        let first_magnitude = self.seventh_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(first_magnitude, x_magnitude));
+
+        let y_magnitude = self.fourth_arg;
+        self.generator
+            .add_instruction(Instruction::Addi(y_magnitude, y_integer, 1));
+
+        let callback = self.fifth_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "compare_magnitude".to_string()));
+
+        // Overwrite first_arg
+        let equality = x_sign;
+        let greater_magnitude_value = y_sign;
+        let bool_value = x_integer;
+        self.generator
+            .add_instruction(Instruction::Mv(bool_value, equality));
+
+        // heap allocation = 1 byte for value tag + 4 bytes for pointer + 1 byte for type length
+        // + 1 byte for type + 1 byte for bool value
+        // Overwrite equality
+        let ret = self.return_reg;
+        self.generator.add_instruction(Instruction::Mv(ret, heap));
+
+        self.generator
+            .add_instruction(Instruction::Addi(heap, heap, 8));
+
+        self.generator
+            .add_instruction(Instruction::Sb(Register::Zero, -8, heap));
+
+        // Overwrite y_integer
+        let constant_pointer = y_integer;
+        self.generator
+            .add_instruction(Instruction::Addi(constant_pointer, heap, -3));
+
+        self.generator
+            .add_instruction(Instruction::Sw(constant_pointer, -7, heap));
+
+        // Overwrite constant_pointer
+        let bool_type = constant_pointer;
+        self.generator
+            .add_instruction(Instruction::Li(bool_type, 1 + 256 * (BOOL as i32)));
+
+        self.generator
+            .add_instruction(Instruction::Sh(bool_type, -3, heap));
+
+        self.generator.add_instruction(Instruction::Bne(
+            greater_magnitude_value,
+            first_magnitude,
+            "less_than".to_string(),
+        ));
+
+        {
+            self.generator.add_instruction(Instruction::J(
+                "finish_less_than_equals_integer".to_string(),
+            ));
+        }
+        {
+            self.generator
+                .add_instruction(Instruction::Label("less_than".to_string()));
+
+            self.generator
+                .add_instruction(Instruction::Li(bool_value, 1));
+        }
+
+        self.generator.add_instruction(Instruction::Label(
+            "finish_less_than_equals_integer".to_string(),
+        ));
+
+        self.generator
+            .add_instruction(Instruction::Sb(bool_value, -1, heap));
+
+        self.generator
+            .add_instruction(Instruction::J("return".to_string()));
+    }
+
+    pub fn less_than_integer(&mut self) {
+        let args = self.first_arg;
+        let heap = self.heap;
+        self.generator
+            .add_instruction(Instruction::Label("less_than_integer".to_string()));
+
+        let x_value = self.first_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(x_value, 0, args));
+
+        let y_value = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(y_value, 4, args));
+
+        // Overwrite args
+        let first_arg = args;
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, x_value));
+
+        let store_y = self.third_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(store_y, y_value));
+
+        let callback = self.second_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+
+        // Overwrite x_value
+        let x_integer = x_value;
+        self.generator
+            .add_instruction(Instruction::Mv(x_integer, first_arg));
+
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, store_y));
+
+        // Overwrite store_y
+        let store_x = store_y;
+        self.generator
+            .add_instruction(Instruction::Mv(store_x, x_integer));
+
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+
+        // Now move things back
+        self.generator
+            .add_instruction(Instruction::Mv(x_integer, store_x));
+
+        // Overwrite y_value
+        let y_integer = y_value;
+        self.generator
+            .add_instruction(Instruction::Mv(y_integer, first_arg));
+
+        // Overwrite first_arg
+        let x_sign = first_arg;
+        self.generator
+            .add_instruction(Instruction::Lbu(x_sign, 0, x_integer));
+
+        // Overwrite callback
+        let y_sign = callback;
+        self.generator
+            .add_instruction(Instruction::Lbu(y_sign, 0, y_integer));
+
+        let x_magnitude = store_x;
+        self.generator
+            .add_instruction(Instruction::Addi(x_magnitude, x_integer, 1));
+
+        let first_magnitude = self.seventh_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(first_magnitude, x_magnitude));
+
+        let y_magnitude = self.fourth_arg;
+        self.generator
+            .add_instruction(Instruction::Addi(y_magnitude, y_integer, 1));
+
+        let callback = self.fifth_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "compare_magnitude".to_string()));
+
+        // Overwrite first_arg
+        let equality = x_sign;
+        let greater_magnitude_value = y_sign;
+        let bool_value = x_integer;
+        // Flip equality
+        self.generator
+            .add_instruction(Instruction::Xori(bool_value, equality, 1));
+
+        // heap allocation = 1 byte for value tag + 4 bytes for pointer + 1 byte for type length
+        // + 1 byte for type + 1 byte for bool value
+        // Overwrite equality
+        let ret = self.return_reg;
+        self.generator.add_instruction(Instruction::Mv(ret, heap));
+
+        self.generator
+            .add_instruction(Instruction::Addi(heap, heap, 8));
+
+        self.generator
+            .add_instruction(Instruction::Sb(Register::Zero, -8, heap));
+
+        // Overwrite y_integer
+        let constant_pointer = y_integer;
+        self.generator
+            .add_instruction(Instruction::Addi(constant_pointer, heap, -3));
+
+        self.generator
+            .add_instruction(Instruction::Sw(constant_pointer, -7, heap));
+
+        // Overwrite constant_pointer
+        let bool_type = constant_pointer;
+        self.generator
+            .add_instruction(Instruction::Li(bool_type, 1 + 256 * (BOOL as i32)));
+
+        self.generator
+            .add_instruction(Instruction::Sh(bool_type, -3, heap));
+
+        self.generator.add_instruction(Instruction::Bne(
+            greater_magnitude_value,
+            first_magnitude,
+            "less_than_int".to_string(),
+        ));
+
+        {
+            self.generator
+                .add_instruction(Instruction::J("finish_less_than_integer".to_string()));
+
+            self.generator
+                .add_instruction(Instruction::Li(bool_value, 0));
+        }
+        {
+            self.generator
+                .add_instruction(Instruction::Label("less_than_int".to_string()));
+        }
+
+        self.generator
+            .add_instruction(Instruction::Label("finish_less_than_integer".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Sb(bool_value, -1, heap));
+
+        self.generator
+            .add_instruction(Instruction::J("return".to_string()));
+    }
+
+    pub fn append_bytestring(&mut self) {
+        let args = self.first_arg;
+        let heap = self.heap;
+        self.generator
+            .add_instruction(Instruction::Label("append_bytestring".to_string()));
+
+        let x_value = self.first_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(x_value, 0, args));
+
+        let y_value = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(y_value, 4, args));
+
+        // Overwrite args
+        let first_arg = args;
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, x_value));
+
+        let store_y = self.third_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(store_y, y_value));
+
+        let callback = self.second_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_bytestring".to_string()));
+
+        // Overwrite x_value
+        let x_bytestring = x_value;
+        self.generator
+            .add_instruction(Instruction::Mv(x_bytestring, first_arg));
+
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, store_y));
+
+        // Overwrite store_y
+        let store_x = store_y;
+        self.generator
+            .add_instruction(Instruction::Mv(store_x, x_bytestring));
+
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_bytestring".to_string()));
+
+        // Now move things back
+        self.generator
+            .add_instruction(Instruction::Mv(x_bytestring, store_x));
+
+        // Overwrite y_value
+        let y_bytestring = y_value;
+        self.generator
+            .add_instruction(Instruction::Mv(y_bytestring, first_arg));
+
+        let x_length = self.third_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(x_length, 0, x_bytestring));
+
+        let y_length = self.fourth_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(y_length, 0, y_bytestring));
+
+        let total_length = self.fifth_temp;
+        self.generator
+            .add_instruction(Instruction::Add(total_length, x_length, y_length));
+
+        let ret = self.return_reg;
+        self.generator.add_instruction(Instruction::Mv(ret, heap));
+
+        let callback = self.eighth_arg;
+        // This function does not modify temps and only changes heap and s3
+        // and eighth arg
+        self.generator.add_instruction(Instruction::Jal(
+            callback,
+            "allocate_bytestring_type".to_string(),
+        ));
+
+        let value_builder = self.sixth_temp;
+        self.generator
+            .add_instruction(Instruction::Mv(value_builder, heap));
+
+        // Overwrite total_length
+        let total_allocation = self.seventh_temp;
+        self.generator
+            .add_instruction(Instruction::Slli(total_allocation, total_length, 2));
+
+        // heap allocation = 1 byte for value tag + 4 bytes for pointer + 1 byte for type length
+        // + 1 byte for type + 4 bytes for bytestring length + 4 * bytestring length bytes
+        self.generator
+            .add_instruction(Instruction::Addi(total_allocation, total_allocation, 4));
+
+        self.generator
+            .add_instruction(Instruction::Add(heap, heap, total_allocation));
+
+        self.generator
+            .add_instruction(Instruction::Sw(total_length, 0, value_builder));
+
+        self.generator
+            .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
+
+        let return_temp = self.seventh_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(return_temp, ret));
+
+        let second_list = self.sixth_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(second_list, y_bytestring));
+
+        let second_list_len = self.fifth_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(second_list_len, y_length));
+
+        let size = self.third_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(size, x_length));
+
+        let dst_list = self.second_arg;
+
+        self.generator
+            .add_instruction(Instruction::Mv(dst_list, value_builder));
+
+        let src_list = ret;
+        self.generator
+            .add_instruction(Instruction::Addi(src_list, x_bytestring, 4));
+
+        // clone x into heap
+        let callback = self.fourth_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "clone_list".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Mv(size, second_list_len));
+
+        self.generator
+            .add_instruction(Instruction::Addi(src_list, second_list, 4));
+
+        // clone y into heap
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "clone_list".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Mv(self.return_reg, return_temp));
+
+        self.generator
+            .add_instruction(Instruction::J("return".to_string()));
+    }
+
+    pub fn cons_bytestring(&mut self) {
+        let args = self.first_arg;
+        let heap = self.heap;
+        self.generator
+            .add_instruction(Instruction::Label("cons_bytestring".to_string()));
+
+        let x_value = self.first_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(x_value, 0, args));
+
+        let y_value = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(y_value, 4, args));
+
+        // Overwrite args
+        let first_arg = args;
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, x_value));
+
+        let store_y = self.third_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(store_y, y_value));
+
+        let callback = self.second_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+
+        // Overwrite x_value
+        let x_integer = x_value;
+        self.generator
+            .add_instruction(Instruction::Mv(x_integer, first_arg));
+
+        self.generator
+            .add_instruction(Instruction::Mv(first_arg, store_y));
+
+        // Overwrite store_y
+        let store_x = store_y;
+        self.generator
+            .add_instruction(Instruction::Mv(store_x, x_integer));
+
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "unwrap_bytestring".to_string()));
+
+        // Now move things back
+        self.generator
+            .add_instruction(Instruction::Mv(x_integer, store_x));
+
+        // Overwrite y_value
+        let y_bytestring = y_value;
+        self.generator
+            .add_instruction(Instruction::Mv(y_bytestring, first_arg));
+
+        let integer_size = self.third_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(integer_size, 1, x_integer));
+
+        let expected_size = self.fourth_temp;
+
+        self.generator
+            .add_instruction(Instruction::Li(expected_size, 1));
+
+        self.generator.add_instruction(Instruction::Bne(
+            expected_size,
+            integer_size,
+            "handle_error".to_string(),
+        ));
+
+        // Overwrite integer_size
+        let integer_word_value = integer_size;
+        self.generator
+            .add_instruction(Instruction::Lw(integer_word_value, 5, x_integer));
+
+        // Overwrite expected_size
+        let max_value = expected_size;
+        self.generator
+            .add_instruction(Instruction::Li(max_value, 255));
+
+        self.generator.add_instruction(Instruction::Bltu(
+            max_value,
+            integer_word_value,
+            "handle_error".to_string(),
+        ));
+
+        // Overwrite first_arg
+        let ret = self.return_reg;
+        self.generator.add_instruction(Instruction::Mv(ret, heap));
+
+        let callback = self.eighth_arg;
+        self.generator.add_instruction(Instruction::Jal(
+            callback,
+            "allocate_bytestring_type".to_string(),
+        ));
+
+        // Overwrite max_value
+        let value_builder = max_value;
+        self.generator
+            .add_instruction(Instruction::Mv(value_builder, heap));
+
+        let new_bytes_length = self.fifth_temp;
+        self.generator
+            .add_instruction(Instruction::Lw(new_bytes_length, 0, y_bytestring));
+
+        self.generator
+            .add_instruction(Instruction::Addi(new_bytes_length, new_bytes_length, 1));
+
+        let heap_allocation = self.sixth_temp;
+        self.generator
+            .add_instruction(Instruction::Slli(heap_allocation, new_bytes_length, 2));
+
+        // Add 4 for bytes length
+        self.generator
+            .add_instruction(Instruction::Addi(heap_allocation, heap_allocation, 4));
+
+        self.generator
+            .add_instruction(Instruction::Add(heap, heap, heap_allocation));
+
+        self.generator
+            .add_instruction(Instruction::Sw(new_bytes_length, 0, value_builder));
+
+        self.generator
+            .add_instruction(Instruction::Sw(integer_word_value, 4, value_builder));
+
+        self.generator
+            .add_instruction(Instruction::Addi(value_builder, value_builder, 8));
+
+        let store_ret = self.fifth_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(store_ret, ret));
+
+        let bytes_to_copy = self.third_arg;
+        self.generator
+            .add_instruction(Instruction::Addi(bytes_to_copy, new_bytes_length, -1));
+
+        let dst_list = self.second_arg;
+        self.generator
+            .add_instruction(Instruction::Mv(dst_list, value_builder));
+
+        let src_list = self.first_arg;
+        self.generator
+            .add_instruction(Instruction::Addi(src_list, y_bytestring, 4));
+
+        let callback = self.fourth_arg;
+        self.generator
+            .add_instruction(Instruction::Jal(callback, "clone_list".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::Mv(ret, store_ret));
+
+        self.generator
+            .add_instruction(Instruction::J("return".to_string()));
+    }
+
     pub fn add_signed_integers(&mut self) {
         let first_sign = self.first_arg;
         let second_sign = self.second_arg;
@@ -2827,59 +3755,32 @@ impl Cek {
         ));
 
         // Add fixed constant for creating a constant integer value on the heap
-        // 1 for value tag + 4 for constant pointer + 1 for type length + 1 for type integer
         // + 1 for sign + 4 for magnitude length + (4 * (largest magnitude length + 1))
         self.generator.add_instruction(Instruction::Addi(
             max_heap_allocation,
             max_heap_allocation,
-            12,
+            5,
+        ));
+
+        // Overwrite first_sign
+        let ret = self.return_reg;
+        self.generator.add_instruction(Instruction::Mv(ret, heap));
+
+        let callback = self.eighth_arg;
+        // This function does not modify temps and only changes heap and s3
+        // and eighth arg
+        self.generator.add_instruction(Instruction::Jal(
+            callback,
+            "allocate_integer_type".to_string(),
         ));
 
         let value_builder = self.fifth_temp;
         self.generator
             .add_instruction(Instruction::Mv(value_builder, heap));
 
-        // Overwrite first_sign
-        let ret = self.return_reg;
-        self.generator.add_instruction(Instruction::Mv(ret, heap));
-
         // Add maximum heap value needed possibly and reclaim later after addition
         self.generator
             .add_instruction(Instruction::Add(heap, heap, max_heap_allocation));
-
-        // Overwrite max_heap_allocation
-        let value_tag = max_heap_allocation;
-        self.generator
-            .add_instruction(Instruction::Li(value_tag, 0));
-
-        self.generator
-            .add_instruction(Instruction::Sb(value_tag, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
-
-        // Overwrite value_tag
-        let integer_pointer = value_tag;
-        // We store integer immediately after the pointer so we simply add 4 to point to the location
-        self.generator
-            .add_instruction(Instruction::Addi(integer_pointer, value_builder, 4));
-
-        self.generator
-            .add_instruction(Instruction::Sw(integer_pointer, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
-
-        // Overwrite integer_pointer
-        let integer_type = integer_pointer;
-        self.generator
-            .add_instruction(Instruction::Li(integer_type, 1));
-
-        self.generator
-            .add_instruction(Instruction::Sh(integer_type, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 2));
 
         // Store second sign. In this case the signs are the same
         self.generator
@@ -2888,8 +3789,8 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
 
-        // Overwrite integer_type
-        let length_pointer = integer_type;
+        // Overwrite max_heap_allocation
+        let length_pointer = max_heap_allocation;
         self.generator
             .add_instruction(Instruction::Mv(length_pointer, value_builder));
 
@@ -2937,9 +3838,9 @@ impl Cek {
                 .add_instruction(Instruction::Lw(bigger, 0, bigger_arg_word_location));
 
             let smaller = self.seventh_temp;
-            self.generator.add_instruction(Instruction::Bltu(
-                smaller_length,
+            self.generator.add_instruction(Instruction::Bge(
                 current_word_index,
+                smaller_length,
                 "smaller_length".to_string(),
             ));
 
@@ -3291,10 +4192,6 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Mv(equality_temp, equality));
 
-        let value_builder = self.second_temp;
-        self.generator
-            .add_instruction(Instruction::Mv(value_builder, heap));
-
         // Overwrite equality
         let ret = self.return_reg;
         self.generator.add_instruction(Instruction::Mv(ret, heap));
@@ -3317,45 +4214,24 @@ impl Cek {
         self.generator.add_instruction(Instruction::Addi(
             max_heap_allocation,
             max_heap_allocation,
-            12,
+            5,
         ));
+
+        let callback = self.eighth_arg;
+        // This function does not modify temps and only changes heap and s3
+        // and eighth arg
+        self.generator.add_instruction(Instruction::Jal(
+            callback,
+            "allocate_integer_type".to_string(),
+        ));
+
+        let value_builder = self.second_temp;
+        self.generator
+            .add_instruction(Instruction::Mv(value_builder, heap));
+
         // Add maximum heap value needed possibly and reclaim later after addition
         self.generator
             .add_instruction(Instruction::Add(heap, heap, max_heap_allocation));
-
-        // Overwrite max_heap_allocation
-        let value_tag = max_heap_allocation;
-        self.generator
-            .add_instruction(Instruction::Li(value_tag, 0));
-
-        self.generator
-            .add_instruction(Instruction::Sb(value_tag, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
-
-        // Overwrite value_tag
-        let integer_pointer = value_tag;
-        // We store integer immediately after the pointer so we simply add 4 to point to the location
-        self.generator
-            .add_instruction(Instruction::Addi(integer_pointer, value_builder, 4));
-
-        self.generator
-            .add_instruction(Instruction::Sw(integer_pointer, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
-
-        // Overwrite integer_pointer
-        let integer_type = integer_pointer;
-        self.generator
-            .add_instruction(Instruction::Li(integer_type, 1));
-
-        self.generator
-            .add_instruction(Instruction::Sh(integer_type, 0, value_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 2));
 
         // Store greater sign
         self.generator
@@ -3364,8 +4240,8 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
 
-        // Overwrite integer_type
-        let length_pointer = integer_type;
+        // Overwrite max_heap_allocation
+        let length_pointer = max_heap_allocation;
         self.generator
             .add_instruction(Instruction::Mv(length_pointer, value_builder));
 
@@ -3429,9 +4305,9 @@ impl Cek {
                 ));
 
                 let arg_word_smaller = self.seventh_temp;
-                self.generator.add_instruction(Instruction::Bltu(
-                    lesser_magnitude_len,
+                self.generator.add_instruction(Instruction::Bge(
                     current_word_index,
+                    lesser_magnitude_len,
                     "lesser".to_string(),
                 ));
 
@@ -3612,7 +4488,7 @@ mod tests {
     use emulator::ExecutionResult;
     use risc_v_gen::emulator::verify_file;
     use uplc::ast::{DeBruijn, Name, Program, Term};
-    use uplc_serializer::serialize;
+    use uplc_serializer::{constants::const_tag, serialize};
 
     use crate::cek::{u32_vec_to_u8_vec, Cek};
 
@@ -3650,8 +4526,21 @@ mod tests {
         cek.reverse_clone_list();
         cek.eval_builtin_app();
         cek.unwrap_integer();
+        cek.unwrap_bytestring();
+        cek.allocate_integer_type();
+        cek.allocate_bytestring_type();
         cek.add_integer();
         cek.sub_integer();
+        cek.multiply_integer();
+        cek.divide_integer();
+        cek.quotient_integer();
+        cek.remainder_integer();
+        cek.mod_integer();
+        cek.equals_integer();
+        cek.less_than_integer();
+        cek.less_than_equals_integer();
+        cek.append_bytestring();
+        cek.cons_bytestring();
         cek.add_signed_integers();
         cek.compare_magnitude();
         cek.sub_signed_integers();
@@ -3832,7 +4721,7 @@ mod tests {
 
         let constant_type = section_data[offset_index + 1];
 
-        assert_eq!(constant_type, 0);
+        assert_eq!(constant_type, const_tag::INTEGER);
 
         let sign = section_data[offset_index + 2];
 
@@ -3986,7 +4875,7 @@ mod tests {
 
         let constant_type = section_data[offset_index + 1];
 
-        assert_eq!(constant_type, 0);
+        assert_eq!(constant_type, const_tag::INTEGER);
 
         let sign = section_data[offset_index + 2];
 
@@ -4271,15 +5160,13 @@ mod tests {
 
         let offset_index = (result_pointer - section.start) as usize;
 
-        // println!("{:#?}", &section_data[offset_index..(offset_index + 100)]);
-
         let type_length = section_data[offset_index];
 
         assert_eq!(type_length, 1);
 
         let constant_type = section_data[offset_index + 1];
 
-        assert_eq!(constant_type, 0);
+        assert_eq!(constant_type, const_tag::INTEGER);
 
         let sign = section_data[offset_index + 2];
 
@@ -4391,7 +5278,7 @@ mod tests {
 
         let constant_type = section_data[offset_index + 1];
 
-        assert_eq!(constant_type, 0);
+        assert_eq!(constant_type, const_tag::INTEGER);
 
         let sign = section_data[offset_index + 2];
 
@@ -4503,7 +5390,7 @@ mod tests {
 
         let constant_type = section_data[offset_index + 1];
 
-        assert_eq!(constant_type, 0);
+        assert_eq!(constant_type, const_tag::INTEGER);
 
         let sign = section_data[offset_index + 2];
 
@@ -4526,5 +5413,404 @@ mod tests {
         let result = value[0] as u64 + value[1] as u64 * 256_u64.pow(4);
 
         assert_eq!(result, 4999999995);
+    }
+
+    #[test]
+    fn test_equals_numbers() {
+        let thing = Cek::default();
+
+        // (apply (lambda x (force x)) (delay (error)))
+        let term: Term<Name> = Term::equals_integer()
+            .apply(
+                Term::subtract_integer()
+                    .apply(Term::integer((5_000_000_000_i128).into()))
+                    .apply(Term::integer((5).into())),
+            )
+            .apply(Term::integer((4_999_999_995_i128).into()));
+
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
+
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_equal_big_int.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_equal_big_int.o",
+                "test_equal_big_int.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_equal_big_int.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_equal_big_int.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_equal_big_int.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            a => unreachable!("HOW? {:#?}", a),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, const_tag::BOOL);
+
+        let boolean = section_data[offset_index + 2];
+
+        assert_eq!(boolean, 1)
+    }
+
+    #[test]
+    fn test_less_numbers() {
+        let thing = Cek::default();
+
+        // (apply (lambda x (force x)) (delay (error)))
+        let term: Term<Name> = Term::less_than_integer()
+            .apply(
+                Term::subtract_integer()
+                    .apply(Term::integer((5_000_000_000_i128).into()))
+                    .apply(Term::integer((5).into())),
+            )
+            .apply(Term::integer((4_999_999_995_i128).into()));
+
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
+
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_less_big_int.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_less_big_int.o",
+                "test_less_big_int.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_less_big_int.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_less_big_int.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_less_big_int.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            a => unreachable!("HOW? {:#?}", a),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, const_tag::BOOL);
+
+        let boolean = section_data[offset_index + 2];
+
+        assert_eq!(boolean, 0)
+    }
+
+    #[test]
+    fn test_less_equals_numbers() {
+        let thing = Cek::default();
+
+        // (apply (lambda x (force x)) (delay (error)))
+        let term: Term<Name> = Term::less_than_equals_integer()
+            .apply(
+                Term::subtract_integer()
+                    .apply(Term::integer((5_000_000_000_i128).into()))
+                    .apply(Term::integer((5).into())),
+            )
+            .apply(Term::integer((4_999_999_995_i128).into()));
+
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
+
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_less_equals_big_int.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_less_equals_big_int.o",
+                "test_less_equals_big_int.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_less_equals_big_int.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_less_equals_big_int.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_less_equals_big_int.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            a => unreachable!("HOW? {:#?}", a),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, const_tag::BOOL);
+
+        let boolean = section_data[offset_index + 2];
+
+        assert_eq!(boolean, 1)
+    }
+
+    #[test]
+    fn test_append_bytestring() {
+        let thing = Cek::default();
+
+        let term: Term<Name> = Term::append_bytearray()
+            .apply(Term::byte_string(vec![255, 255]))
+            .apply(Term::byte_string(vec![254, 245]));
+
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
+
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_append_bytes.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_append_bytes.o",
+                "test_append_bytes.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_append_bytes.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_append_bytes.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_append_bytes.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            a => unreachable!("HOW? {:#?}", a),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, const_tag::BYTESTRING);
+
+        let byte_length = *section_data[(offset_index + 2)..(offset_index + 6)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(byte_length, 4);
+
+        let value = section_data[(offset_index + 6)..(offset_index + 22)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>();
+
+        assert_eq!(value, vec![255, 255, 254, 245])
     }
 }

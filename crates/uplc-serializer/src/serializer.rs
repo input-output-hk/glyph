@@ -217,8 +217,13 @@ fn serialize_bytestring_constant(bytes: &[u8]) -> Result<Vec<u8>> {
     // Write actual length in bytes
     x.write_u32::<LittleEndian>(bytes.len() as u32)?;
 
-    // Write bytes
-    x.write_all(bytes)?;
+    // Write each byte as a word
+    x.write_all(
+        &bytes
+            .iter()
+            .flat_map(|byte| (*byte as u32).to_le_bytes())
+            .collect::<Vec<u8>>(),
+    )?;
 
     Ok(x)
 }
