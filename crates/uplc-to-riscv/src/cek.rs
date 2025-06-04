@@ -1390,519 +1390,557 @@ impl Cek {
         self.register_map.free_all()
     }
 
-    pub fn handle_case(&mut self) {
-        let case = self.first_arg;
-        let frames = self.frames;
-        let env = self.env;
+    pub fn handle_case(&mut self) -> Freed {
+        argument!(self, case = self.first_arg);
+        var_argument!(self, frames = self.frames);
+        argument!(self, env = self.env);
         self.generator
-            .add_instruction(Instruction::Label("handle_case".to_string()));
+            .add_instruction(Instruction::label("handle_case".to_string()));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Load the term pointer of the constr of case into A4".to_string(),
         ));
 
         // Store constr to compute on in A4
-        let constr = self.fifth_arg;
+        constnt!(self, constr = self.fifth_arg);
         self.generator
-            .add_instruction(Instruction::Lw(constr, 1, case));
+            .add_instruction(Instruction::lw(&mut constr, 1, &case));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Load the length of the constr fields into T1".to_string(),
         ));
 
-        let size = self.first_temp;
+        constnt!(self, size = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lw(size, 5, constr));
+            .add_instruction(Instruction::lw(&mut size, 5, &constr));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Minimum size for FrameCase is 9 bytes".to_string(),
         ));
 
-        let min_bytes = self.second_temp;
+        constnt!(self, elements_byte_size = self.second_temp);
         self.generator
-            .add_instruction(Instruction::Li(min_bytes, 9));
+            .add_instruction(Instruction::slli(&mut elements_byte_size, &size, 2));
 
-        let elements_byte_size = self.third_temp;
-        self.generator
-            .add_instruction(Instruction::Slli(elements_byte_size, size, 2));
-
-        // Overwrite elements_byte_size
-        let total_byte_size = elements_byte_size;
-        self.generator.add_instruction(Instruction::Add(
-            total_byte_size,
-            min_bytes,
-            elements_byte_size,
+        constnt!(self, total_byte_size = self.third_temp);
+        self.generator.add_instruction(Instruction::addi(
+            &mut total_byte_size,
+            &elements_byte_size,
+            9,
         ));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Allocate 9 + 4 * cases length".to_string(),
         ));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "frame tag 1 byte + environment 4 bytes".to_string(),
         ));
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "+ cases length 4 bytes + 4 * cases length in bytes".to_string(),
         ));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Remember this is subtracting the above value".to_string(),
         ));
 
-        self.generator
-            .add_instruction(Instruction::Sub(frames, frames, total_byte_size));
+        self.generator.add_instruction(Instruction::sub(
+            &mut frames.clone(),
+            &frames,
+            &total_byte_size,
+        ));
 
-        let frames_builder = self.fourth_temp;
+        var!(self, frames_builder = self.fourth_temp);
         self.generator
-            .add_instruction(Instruction::Mv(frames_builder, frames));
+            .add_instruction(Instruction::mv(&mut frames_builder, &frames));
 
         // FrameCase tag
-        let frame_case_tag = self.fifth_temp;
+        constnt!(self, frame_case_tag = self.fifth_temp);
         self.generator
-            .add_instruction(Instruction::Li(frame_case_tag, 5));
+            .add_instruction(Instruction::li(&mut frame_case_tag, 5));
 
         self.generator
-            .add_instruction(Instruction::Sb(frame_case_tag, 0, frames_builder));
+            .add_instruction(Instruction::sb(&frame_case_tag, 0, &frames_builder));
+
+        self.generator.add_instruction(Instruction::addi(
+            &mut frames_builder.clone(),
+            &frames_builder,
+            1,
+        ));
 
         self.generator
-            .add_instruction(Instruction::Addi(frames_builder, frames_builder, 1));
+            .add_instruction(Instruction::sw(&env, 0, &frames_builder));
+
+        self.generator.add_instruction(Instruction::addi(
+            &mut frames_builder.clone(),
+            &frames_builder,
+            4,
+        ));
 
         self.generator
-            .add_instruction(Instruction::Sw(env, 0, frames_builder));
+            .add_instruction(Instruction::sw(&size, 0, &frames_builder));
 
-        self.generator
-            .add_instruction(Instruction::Addi(frames_builder, frames_builder, 4));
-
-        self.generator
-            .add_instruction(Instruction::Sw(size, 0, frames_builder));
-
-        self.generator
-            .add_instruction(Instruction::Addi(frames_builder, frames_builder, 4));
+        self.generator.add_instruction(Instruction::addi(
+            &mut frames_builder.clone(),
+            &frames_builder,
+            4,
+        ));
         // A0 pointer to terms array
         // A1 is new stack pointer
         // A2 is length of terms array
         // A3 holds return address
 
-        let list_size = self.third_arg;
+        constnt!(self, list_size = self.third_arg);
         self.generator
-            .add_instruction(Instruction::Mv(list_size, size));
+            .add_instruction(Instruction::mv(&mut list_size, &size));
 
-        let frames_arg = self.second_arg;
-
-        self.generator
-            .add_instruction(Instruction::Mv(frames_arg, frames_builder));
-
-        let branches = self.first_arg;
-        self.generator
-            .add_instruction(Instruction::Addi(branches, case, 9));
-
-        let callback = self.fourth_arg;
+        constnt!(self, frames_arg = self.second_arg);
 
         self.generator
-            .add_instruction(Instruction::Jal(callback, "clone_list".to_string()));
+            .add_instruction(Instruction::mv(&mut frames_arg, &frames_builder));
 
-        let ret = self.return_reg;
+        constnt!(self, case_temp = self.sixth_temp);
+
+        self.generator
+            .add_instruction(Instruction::mv(&mut case_temp, &case));
+
+        constnt_overwrite!(branches = case);
+        self.generator
+            .add_instruction(Instruction::addi(&mut branches, &case_temp, 9));
+
+        constnt!(self, callback = self.fourth_arg);
+        self.generator
+            .add_instruction(Instruction::jal(&mut callback, "clone_list".to_string()));
+
+        constnt_overwrite!(ret = branches);
         // Move term pointer into A0
-        self.generator.add_instruction(Instruction::Mv(ret, constr));
+        self.generator
+            .add_instruction(Instruction::mv(&mut ret, &constr));
 
         self.generator
-            .add_instruction(Instruction::J("compute".to_string()));
+            .add_instruction(Instruction::j("compute".to_string()));
+
+        self.register_map.free_all()
     }
 
-    pub fn handle_frame_await_arg(&mut self) {
-        let arg = self.first_arg;
-        let frames = self.frames;
+    pub fn handle_frame_await_arg(&mut self) -> Freed {
+        argument!(self, arg = self.first_arg);
+        var_argument!(self, frames = self.frames);
         self.generator
-            .add_instruction(Instruction::Label("handle_frame_await_arg".to_string()));
+            .add_instruction(Instruction::label("handle_frame_await_arg".to_string()));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "load function value pointer from stack".to_string(),
         ));
 
-        let function = self.first_temp;
+        constnt!(self, function = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lw(function, 1, frames));
+            .add_instruction(Instruction::lw(&mut function, 1, &frames));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "reset stack Kontinuation pointer".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Addi(frames, frames, 5));
+            .add_instruction(Instruction::addi(&mut frames.clone(), &frames, 5));
 
-        let second_eval_arg = self.second_arg;
-
-        self.generator
-            .add_instruction(Instruction::Mv(second_eval_arg, arg));
-
-        let ret = self.return_reg;
-        self.generator
-            .add_instruction(Instruction::Mv(ret, function));
+        constnt!(self, second_eval_arg = self.second_arg);
 
         self.generator
-            .add_instruction(Instruction::J("apply_evaluate".to_string()));
+            .add_instruction(Instruction::mv(&mut second_eval_arg, &arg));
+
+        constnt_overwrite!(ret = arg);
+        self.generator
+            .add_instruction(Instruction::mv(&mut ret, &function));
+
+        self.generator
+            .add_instruction(Instruction::j("apply_evaluate".to_string()));
+
+        self.register_map.free_all()
     }
 
     // Takes in a0 and passes it to apply_evaluate
-    pub fn handle_frame_await_fun_term(&mut self) {
-        let function = self.first_arg;
-        let frames = self.frames;
-        let env = self.env;
+    pub fn handle_frame_await_fun_term(&mut self) -> Freed {
+        argument!(self, function = self.first_arg);
+        var_argument!(self, frames = self.frames);
 
-        self.generator.add_instruction(Instruction::Label(
+        self.generator.add_instruction(Instruction::label(
             "handle_frame_await_fun_term".to_string(),
         ));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "load argument pointer from stack".to_string(),
         ));
 
-        let argument = self.first_temp;
+        constnt!(self, argument = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lw(argument, 1, frames));
+            .add_instruction(Instruction::lw(&mut argument, 1, &frames));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "load environment from stack".to_string(),
         ));
 
-        let environment = self.second_temp;
+        constnt!(self, environment = self.second_temp);
         self.generator
-            .add_instruction(Instruction::Lw(environment, 5, frames));
+            .add_instruction(Instruction::lw(&mut environment, 5, &frames));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "reset stack Kontinuation pointer".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(frames, frames, 9));
+            .add_instruction(Instruction::addi(&mut frames.clone(), &frames, 9));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "5 bytes for FrameAwaitArg allocation".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(frames, frames, -5));
+            .add_instruction(Instruction::addi(&mut frames.clone(), &frames, -5));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Tag is 0 for FrameAwaitArg".to_string(),
         ));
 
-        let frame_tag = self.third_temp;
+        constnt!(self, frame_tag = self.third_temp);
         self.generator
-            .add_instruction(Instruction::Li(frame_tag, 0));
+            .add_instruction(Instruction::li(&mut frame_tag, 0));
 
         self.generator
-            .add_instruction(Instruction::Comment("Push tag onto stack".to_string()));
+            .add_instruction(Instruction::comment("Push tag onto stack".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Sb(frame_tag, 0, frames));
+            .add_instruction(Instruction::sb(&frame_tag, 0, &frames));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Push function value pointer onto stack".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Sw(function, 1, frames));
+            .add_instruction(Instruction::sw(&function, 1, &frames));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Set new environment pointer".to_string(),
         ));
+        constnt!(self, env = self.env);
+        self.generator
+            .add_instruction(Instruction::mv(&mut env, &environment));
+
+        constnt_overwrite!(ret = function);
+        self.generator
+            .add_instruction(Instruction::mv(&mut ret, &argument));
 
         self.generator
-            .add_instruction(Instruction::Mv(env, environment));
+            .add_instruction(Instruction::j("compute".to_string()));
 
-        let ret = self.return_reg;
-        self.generator
-            .add_instruction(Instruction::Mv(ret, argument));
-
-        self.generator
-            .add_instruction(Instruction::J("compute".to_string()));
+        self.register_map.free_all()
     }
 
-    pub fn handle_frame_await_fun_value(&mut self) {
-        let function = self.first_arg;
-        let frames = self.frames;
+    pub fn handle_frame_await_fun_value(&mut self) -> Freed {
+        argument!(self, function = self.first_arg);
+        var_argument!(self, frames = self.frames);
 
-        self.generator.add_instruction(Instruction::Label(
+        self.generator.add_instruction(Instruction::label(
             "handle_frame_await_fun_value".to_string(),
         ));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "load function value pointer from stack".to_string(),
         ));
 
-        let arg = self.first_temp;
+        constnt!(self, arg = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lw(arg, 1, frames));
+            .add_instruction(Instruction::lw(&mut arg, 1, &frames));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "reset stack Kontinuation pointer".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Addi(frames, frames, 5));
+            .add_instruction(Instruction::addi(&mut frames.clone(), &frames, 5));
 
-        let second_eval_arg = self.second_arg;
-
-        self.generator
-            .add_instruction(Instruction::Mv(second_eval_arg, arg));
-
-        let ret = self.return_reg;
-        self.generator
-            .add_instruction(Instruction::Mv(ret, function));
+        constnt!(self, second_eval_arg = self.second_arg);
 
         self.generator
-            .add_instruction(Instruction::J("apply_evaluate".to_string()));
+            .add_instruction(Instruction::mv(&mut second_eval_arg, &arg));
+
+        self.generator
+            .add_instruction(Instruction::j("apply_evaluate".to_string()));
+
+        self.register_map.free_all()
     }
 
     // Takes in a0 and passes it to force_evaluate
-    pub fn handle_frame_force(&mut self) {
-        let frames = self.frames;
+    pub fn handle_frame_force(&mut self) -> Freed {
+        var_argument!(self, frames = self.frames);
         self.generator
-            .add_instruction(Instruction::Label("handle_frame_force".to_string()));
+            .add_instruction(Instruction::label("handle_frame_force".to_string()));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "reset stack Kontinuation pointer".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(frames, frames, 1));
+            .add_instruction(Instruction::addi(&mut frames.clone(), &frames, 1));
 
         self.generator
-            .add_instruction(Instruction::J("force_evaluate".to_string()));
+            .add_instruction(Instruction::j("force_evaluate".to_string()));
+
+        self.register_map.free_all()
     }
 
-    pub fn handle_frame_constr(&mut self) {
-        let computed_value = self.first_arg;
-        let frames = self.frames;
-        let env = self.env;
-        let heap = self.heap;
+    pub fn handle_frame_constr(&mut self) -> Freed {
+        argument!(self, computed_value = self.first_arg);
+        var_argument!(self, frames = self.frames);
+        var_argument!(self, heap = self.heap);
+        argument!(self, zero = Register::Zero);
         self.generator
-            .add_instruction(Instruction::Label("handle_frame_constr".to_string()));
+            .add_instruction(Instruction::label("handle_frame_constr".to_string()));
 
-        let constr_tag = self.first_temp;
-
+        constnt!(self, constr_tag = self.first_temp);
         // Load the constructor tag from the frame
         self.generator
-            .add_instruction(Instruction::Lw(constr_tag, 1, frames));
+            .add_instruction(Instruction::lw(&mut constr_tag, 1, &frames));
 
-        let environment = self.second_temp;
-
+        constnt!(self, environment = self.second_temp);
         // Load the environment from the frame
         self.generator
-            .add_instruction(Instruction::Lw(environment, 5, frames));
+            .add_instruction(Instruction::lw(&mut environment, 5, &frames));
 
-        let fields_len = self.third_temp;
-
+        constnt!(self, fields_len = self.third_temp);
         self.generator
-            .add_instruction(Instruction::Lw(fields_len, 9, frames));
+            .add_instruction(Instruction::lw(&mut fields_len, 9, &frames));
 
         // bytes offset from frame to values len based on fields length
-        let bytes_offset = self.fourth_temp;
+        var!(self, bytes_offset = self.fourth_temp);
+        self.generator
+            .add_instruction(Instruction::mv(&mut bytes_offset, &fields_len));
+
+        self.generator.add_instruction(Instruction::slli(
+            &mut bytes_offset.clone(),
+            &bytes_offset,
+            2,
+        ));
+
+        self.generator.add_instruction(Instruction::addi(
+            &mut bytes_offset.clone(),
+            &bytes_offset,
+            13,
+        ));
+
+        self.generator.add_instruction(Instruction::add(
+            &mut bytes_offset.clone(),
+            &bytes_offset,
+            &frames,
+        ));
+
+        var!(self, values_len = self.fifth_temp);
 
         self.generator
-            .add_instruction(Instruction::Mv(bytes_offset, fields_len));
+            .add_instruction(Instruction::lw(&mut values_len, 0, &bytes_offset));
 
         self.generator
-            .add_instruction(Instruction::Slli(bytes_offset, bytes_offset, 2));
+            .add_instruction(Instruction::addi(&mut values_len.clone(), &values_len, 1));
 
         self.generator
-            .add_instruction(Instruction::Addi(bytes_offset, bytes_offset, 13));
+            .add_instruction(Instruction::sw(&values_len, 0, &bytes_offset));
 
-        self.generator
-            .add_instruction(Instruction::Add(bytes_offset, bytes_offset, frames));
-
-        let values_len = self.fifth_temp;
-
-        self.generator
-            .add_instruction(Instruction::Lw(values_len, 0, bytes_offset));
-
-        self.generator
-            .add_instruction(Instruction::Addi(values_len, values_len, 1));
-
-        self.generator
-            .add_instruction(Instruction::Sw(values_len, 0, bytes_offset));
-
-        self.generator.add_instruction(Instruction::Beq(
-            fields_len,
-            Register::Zero,
+        self.generator.add_instruction(Instruction::beq(
+            &fields_len,
+            &zero,
             "handle_frame_constr_empty".to_string(),
         ));
 
-        {
+        create_block!(self, {
+            let mut computed_value = computed_value.clone();
             // Mutate fields length to be 1 less since we are popping from the front
-            let current_field_len = fields_len;
+            constnt!(self, current_field_len = self.sixth_temp);
 
-            self.generator.add_instruction(Instruction::Addi(
-                current_field_len,
-                current_field_len,
+            self.generator.add_instruction(Instruction::addi(
+                &mut current_field_len,
+                &fields_len,
                 -1,
             ));
 
             self.generator
-                .add_instruction(Instruction::Sw(current_field_len, 9, frames));
+                .add_instruction(Instruction::sw(&current_field_len, 9, &frames));
 
             // Field term to compute on in A5
-            let first_field = self.sixth_arg;
+            constnt!(self, first_field = self.sixth_arg);
             self.generator
-                .add_instruction(Instruction::Lw(first_field, 13, frames));
+                .add_instruction(Instruction::lw(&mut first_field, 13, &frames));
 
             // Value to push onto the frame in A4
-            let new_value = self.fifth_arg;
+            constnt!(self, new_value = self.fifth_arg);
             self.generator
-                .add_instruction(Instruction::Mv(new_value, computed_value));
+                .add_instruction(Instruction::mv(&mut new_value, &computed_value));
 
-            let length_arg = self.third_arg;
+            var!(self, length_arg = self.third_arg);
             self.generator
-                .add_instruction(Instruction::Mv(length_arg, current_field_len));
+                .add_instruction(Instruction::mv(&mut length_arg, &current_field_len));
 
-            self.generator
-                .add_instruction(Instruction::Add(length_arg, length_arg, values_len));
+            self.generator.add_instruction(Instruction::add(
+                &mut length_arg.clone(),
+                &length_arg,
+                &values_len,
+            ));
 
-            let new_list = self.second_arg;
+            constnt!(self, new_list = self.second_arg);
             self.generator
-                .add_instruction(Instruction::Addi(new_list, frames, 13));
+                .add_instruction(Instruction::addi(&mut new_list, &frames, 13));
 
-            let src_list = self.first_arg;
+            constnt_overwrite!(src_list = computed_value);
             self.generator
-                .add_instruction(Instruction::Addi(src_list, frames, 17));
+                .add_instruction(Instruction::addi(&mut src_list, &frames, 17));
 
-            let callback = self.fourth_arg;
+            constnt!(self, callback = self.fourth_arg);
             self.generator
-                .add_instruction(Instruction::Jal(callback, "clone_list".to_string()));
-
-            self.generator
-                .add_instruction(Instruction::Sw(new_value, 0, new_list));
-
-            self.generator
-                .add_instruction(Instruction::Mv(env, environment));
-
-            let ret = self.return_reg;
-            self.generator
-                .add_instruction(Instruction::Mv(ret, first_field));
+                .add_instruction(Instruction::jal(&mut callback, "clone_list".to_string()));
 
             self.generator
-                .add_instruction(Instruction::J("compute".to_string()));
-        }
+                .add_instruction(Instruction::sw(&new_value, 0, &new_list));
 
-        {
+            constnt!(self, env = self.env);
             self.generator
-                .add_instruction(Instruction::Label("handle_frame_constr_empty".to_string()));
+                .add_instruction(Instruction::mv(&mut env, &environment));
+
+            constnt_overwrite!(ret = src_list);
+            self.generator
+                .add_instruction(Instruction::mv(&mut ret, &first_field));
+
+            self.generator
+                .add_instruction(Instruction::j("compute".to_string()));
+        });
+
+        create_block!(self, {
+            self.generator
+                .add_instruction(Instruction::label("handle_frame_constr_empty".to_string()));
 
             // fields length is 0 and not needed
             // allocation amount in bytes is 4 * value length + 9
             // 1 for frame tag, 4 for constr tag, and 4 for value length
             // Overwrite fields_len
-            let allocation_amount = fields_len;
+            var_overwrite!(allocation_amount = fields_len);
             self.generator
-                .add_instruction(Instruction::Mv(allocation_amount, values_len));
+                .add_instruction(Instruction::mv(&mut allocation_amount, &values_len));
 
-            self.generator.add_instruction(Instruction::Slli(
-                allocation_amount,
-                allocation_amount,
+            self.generator.add_instruction(Instruction::slli(
+                &mut allocation_amount.clone(),
+                &allocation_amount,
                 2,
             ));
 
-            self.generator.add_instruction(Instruction::Addi(
-                allocation_amount,
-                allocation_amount,
+            self.generator.add_instruction(Instruction::addi(
+                &mut allocation_amount.clone(),
+                &allocation_amount,
                 9,
             ));
 
             // Overwrite environment
             // since it is not used in return compute
-            let allocator_space = environment;
+            var_overwrite!(allocator_space = environment);
             self.generator
-                .add_instruction(Instruction::Mv(allocator_space, heap));
+                .add_instruction(Instruction::mv(&mut allocator_space, &heap));
 
             // Allocate VConstr on the heap
             // 9 + 4 * value length
-            self.generator
-                .add_instruction(Instruction::Add(heap, heap, allocation_amount));
+            self.generator.add_instruction(Instruction::add(
+                &mut heap.clone(),
+                &heap,
+                &allocation_amount,
+            ));
 
-            let value_tag = self.sixth_temp;
-
-            self.generator
-                .add_instruction(Instruction::Li(value_tag, 4));
-
-            self.generator
-                .add_instruction(Instruction::Sb(value_tag, 0, allocator_space));
+            constnt!(self, value_tag = self.sixth_temp);
 
             self.generator
-                .add_instruction(Instruction::Sw(constr_tag, 1, allocator_space));
+                .add_instruction(Instruction::li(&mut value_tag, 4));
 
             self.generator
-                .add_instruction(Instruction::Sw(values_len, 5, allocator_space));
+                .add_instruction(Instruction::sb(&value_tag, 0, &allocator_space));
+
+            self.generator
+                .add_instruction(Instruction::sw(&constr_tag, 1, &allocator_space));
+
+            self.generator
+                .add_instruction(Instruction::sw(&values_len, 5, &allocator_space));
 
             // Value to return compute in A5
-            let return_value = self.sixth_arg;
+            constnt!(self, return_value = self.sixth_arg);
             self.generator
-                .add_instruction(Instruction::Mv(return_value, allocator_space));
+                .add_instruction(Instruction::mv(&mut return_value, &allocator_space));
 
+            self.generator.add_instruction(Instruction::addi(
+                &mut allocator_space.clone(),
+                &allocator_space,
+                9,
+            ));
+
+            self.generator.add_instruction(Instruction::addi(
+                &mut values_len.clone(),
+                &values_len,
+                -1,
+            ));
+
+            var_overwrite!(list_byte_length = constr_tag);
             self.generator
-                .add_instruction(Instruction::Addi(allocator_space, allocator_space, 9));
+                .add_instruction(Instruction::mv(&mut list_byte_length, &values_len));
 
-            self.generator
-                .add_instruction(Instruction::Addi(values_len, values_len, -1));
-
-            // Overwrite constr_tag
-            let list_byte_length = constr_tag;
-            self.generator
-                .add_instruction(Instruction::Mv(list_byte_length, values_len));
-
-            self.generator.add_instruction(Instruction::Slli(
-                list_byte_length,
-                list_byte_length,
+            self.generator.add_instruction(Instruction::slli(
+                &mut list_byte_length.clone(),
+                &list_byte_length,
                 2,
             ));
 
-            // Overwrite list_byte_length
-            let tail_list = list_byte_length;
-            self.generator.add_instruction(Instruction::Add(
-                tail_list,
-                list_byte_length,
-                bytes_offset,
+            constnt_overwrite!(tail_list = value_tag);
+            self.generator.add_instruction(Instruction::add(
+                &mut tail_list,
+                &list_byte_length,
+                &bytes_offset,
             ));
 
-            let next_frame = self.seventh_arg;
+            constnt!(self, next_frame = self.seventh_arg);
             self.generator
-                .add_instruction(Instruction::Addi(next_frame, tail_list, 4));
+                .add_instruction(Instruction::addi(&mut next_frame, &tail_list, 4));
 
-            let new_value = self.fifth_arg;
+            constnt!(self, new_value = self.fifth_arg);
             self.generator
-                .add_instruction(Instruction::Mv(new_value, computed_value));
+                .add_instruction(Instruction::mv(&mut new_value, &computed_value));
 
-            let list_to_reverse = self.first_arg;
-
-            self.generator
-                .add_instruction(Instruction::Mv(list_to_reverse, tail_list));
-
-            let dest = self.second_arg;
-            self.generator
-                .add_instruction(Instruction::Mv(dest, allocator_space));
+            constnt_overwrite!(list_to_reverse = computed_value);
 
             self.generator
-                .add_instruction(Instruction::Sw(new_value, 0, dest));
+                .add_instruction(Instruction::mv(&mut list_to_reverse, &tail_list));
+
+            var!(self, dest = self.second_arg);
+            self.generator
+                .add_instruction(Instruction::mv(&mut dest, &allocator_space));
 
             self.generator
-                .add_instruction(Instruction::Addi(dest, dest, 4));
+                .add_instruction(Instruction::sw(&new_value, 0, &dest));
 
-            let size = self.third_arg;
             self.generator
-                .add_instruction(Instruction::Mv(size, values_len));
+                .add_instruction(Instruction::addi(&mut dest.clone(), &dest, 4));
 
-            let callback = self.fourth_arg;
+            constnt!(self, size = self.third_arg);
             self.generator
-                .add_instruction(Instruction::Jal(callback, "reverse_clone_list".to_string()));
+                .add_instruction(Instruction::mv(&mut size, &values_len));
 
-            let ret = self.return_reg;
+            constnt!(self, callback = self.fourth_arg);
+            self.generator.add_instruction(Instruction::jal(
+                &mut callback,
+                "reverse_clone_list".to_string(),
+            ));
+
+            constnt_overwrite!(ret = list_to_reverse);
             self.generator
-                .add_instruction(Instruction::Mv(ret, return_value));
+                .add_instruction(Instruction::mv(&mut ret, &return_value));
 
             // Reset frame stack by moving to next frame
             self.generator
-                .add_instruction(Instruction::Mv(frames, next_frame));
+                .add_instruction(Instruction::mv(&mut frames, &next_frame));
 
             self.generator
-                .add_instruction(Instruction::J("return".to_string()));
-        }
+                .add_instruction(Instruction::j("return".to_string()));
+        });
+
+        self.register_map.free_all()
     }
 
     pub fn handle_frame_case(&mut self) {
