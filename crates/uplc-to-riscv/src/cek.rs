@@ -159,13 +159,15 @@ macro_rules! constnt {
 
 macro_rules! argument {
     ($cek:expr, $var:ident = $value:expr) => {
-        let $var = $cek.register_map.argument(stringify!($var), $value);
+        let mut $var = $cek.register_map.argument(stringify!($var), $value);
+        $var.assigned = true;
     };
 }
 
 macro_rules! var_argument {
     ($cek:expr, $var:ident = $value:expr) => {
         let mut $var = $cek.register_map.var_argument(stringify!($var), $value);
+        $var.assigned = true;
     };
 }
 
@@ -245,7 +247,7 @@ impl RegisterMap {
         Freed {}
     }
 
-    // Useful for functions that use Jalr
+    // Useful for branching in functions
     pub fn free_assigns(&mut self, assigns: Vec<Assign>) -> Freed {
         for assign in assigns {
             if let Some(register) = assign.register {
@@ -394,6 +396,7 @@ impl Cek {
         var_argument!(self, frames = self.frames);
         constnt!(self, env = self.env);
         argument!(self, zero = Register::Zero);
+
         self.generator
             .add_instruction(Instruction::section("text".to_string()));
 
@@ -695,218 +698,228 @@ impl Cek {
         self.register_map.free_all()
     }
 
-    pub fn handle_var(&mut self) {
-        let var = self.first_arg;
+    pub fn handle_var(&mut self) -> Freed {
+        argument!(self, var = self.first_arg);
         self.generator
-            .add_instruction(Instruction::Label("handle_var".to_string()));
+            .add_instruction(Instruction::label("handle_var".to_string()));
 
         self.generator.add_instruction(Instruction::comment(
             "load debruijn index into temp".to_string(),
         ));
 
-        let var_index = self.first_temp;
+        constnt!(self, var_index = self.first_temp);
 
         self.generator
-            .add_instruction(Instruction::Lw(var_index, 1, var));
+            .add_instruction(Instruction::lw(&mut var_index, 1, &var));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Put debruijn index into A0".to_string(),
         ));
 
-        let ret = self.return_reg;
+        constnt_overwrite!(ret = var);
         self.generator
-            .add_instruction(Instruction::Mv(ret, var_index));
+            .add_instruction(Instruction::mv(&mut ret, &var_index));
 
         self.generator
-            .add_instruction(Instruction::J("lookup".to_string()));
+            .add_instruction(Instruction::j("lookup".to_string()));
+
+        self.register_map.free_all()
     }
 
-    pub fn handle_delay(&mut self) {
-        let delay_term = self.first_arg;
-        let heap = self.heap;
-        let env = self.env;
+    pub fn handle_delay(&mut self) -> Freed {
+        argument!(self, delay_term = self.first_arg);
+        var_argument!(self, heap = self.heap);
+        argument!(self, env = self.env);
         self.generator
-            .add_instruction(Instruction::Label("handle_delay".to_string()));
-
-        self.generator
-            .add_instruction(Instruction::Comment("Term body is next byte".to_string()));
-
-        let body = self.first_temp;
+            .add_instruction(Instruction::label("handle_delay".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Addi(body, delay_term, 1));
+            .add_instruction(Instruction::comment("Term body is next byte".to_string()));
 
-        self.generator.add_instruction(Instruction::Comment(
+        constnt!(self, body = self.first_temp);
+
+        self.generator
+            .add_instruction(Instruction::addi(&mut body, &delay_term, 1));
+
+        self.generator.add_instruction(Instruction::comment(
             "9 bytes for DelayValue allocation".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(heap, heap, 9));
+            .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 9));
 
         self.generator
-            .add_instruction(Instruction::Comment("tag is 1 in rust".to_string()));
+            .add_instruction(Instruction::comment("tag is 1 in rust".to_string()));
 
-        let vdelay_tag = self.second_temp;
-
-        self.generator
-            .add_instruction(Instruction::Li(vdelay_tag, 1));
+        constnt!(self, vdelay_tag = self.second_temp);
 
         self.generator
-            .add_instruction(Instruction::Comment("first byte is tag".to_string()));
+            .add_instruction(Instruction::li(&mut vdelay_tag, 1));
 
         self.generator
-            .add_instruction(Instruction::Sb(vdelay_tag, -9, heap));
+            .add_instruction(Instruction::comment("first byte is tag".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Comment("Store body pointer".to_string()));
+            .add_instruction(Instruction::sb(&vdelay_tag, -9, &heap));
 
         self.generator
-            .add_instruction(Instruction::Sw(body, -8, heap));
+            .add_instruction(Instruction::comment("Store body pointer".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Comment("Store environment".to_string()));
+            .add_instruction(Instruction::sw(&body, -8, &heap));
 
         self.generator
-            .add_instruction(Instruction::Sw(env, -4, heap));
+            .add_instruction(Instruction::comment("Store environment".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Comment("Put return value into A0".to_string()));
-
-        let ret = self.return_reg;
-        self.generator
-            .add_instruction(Instruction::Addi(ret, heap, -9));
+            .add_instruction(Instruction::sw(&env, -4, &heap));
 
         self.generator
-            .add_instruction(Instruction::J("return".to_string()));
+            .add_instruction(Instruction::comment("Put return value into A0".to_string()));
+
+        constnt_overwrite!(ret = delay_term);
+        self.generator
+            .add_instruction(Instruction::addi(&mut ret, &heap, -9));
+
+        self.generator
+            .add_instruction(Instruction::j("return".to_string()));
+
+        self.register_map.free_all()
     }
 
-    pub fn handle_lambda(&mut self) {
-        let lambda_term = self.first_arg;
-        let heap = self.heap;
-        let env = self.env;
-        self.generator
-            .add_instruction(Instruction::Label("handle_lambda".to_string()));
+    pub fn handle_lambda(&mut self) -> Freed {
+        argument!(self, lambda_term = self.first_arg);
+        var_argument!(self, heap = self.heap);
+        argument!(self, env = self.env);
 
         self.generator
-            .add_instruction(Instruction::Comment("Term body is next byte".to_string()));
-
-        let body = self.first_temp;
+            .add_instruction(Instruction::label("handle_lambda".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Addi(body, lambda_term, 1));
+            .add_instruction(Instruction::comment("Term body is next byte".to_string()));
 
-        self.generator.add_instruction(Instruction::Comment(
+        constnt!(self, body = self.first_temp);
+
+        self.generator
+            .add_instruction(Instruction::addi(&mut body, &lambda_term, 1));
+
+        self.generator.add_instruction(Instruction::comment(
             "9 bytes for LambdaValue allocation".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Addi(heap, heap, 9));
+            .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 9));
 
         self.generator
-            .add_instruction(Instruction::Comment("tag is 2 in rust".to_string()));
+            .add_instruction(Instruction::comment("tag is 2 in rust".to_string()));
 
-        let vlambda_tag = self.second_temp;
-
-        self.generator
-            .add_instruction(Instruction::Li(vlambda_tag, 2));
+        constnt!(self, vlambda_tag = self.second_temp);
 
         self.generator
-            .add_instruction(Instruction::Comment("first byte is tag".to_string()));
+            .add_instruction(Instruction::li(&mut vlambda_tag, 2));
 
         self.generator
-            .add_instruction(Instruction::Sb(vlambda_tag, -9, heap));
+            .add_instruction(Instruction::comment("first byte is tag".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Comment("Store body".to_string()));
+            .add_instruction(Instruction::sb(&vlambda_tag, -9, &heap));
 
         self.generator
-            .add_instruction(Instruction::Sw(body, -8, heap));
+            .add_instruction(Instruction::comment("Store body".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Comment("Store environment".to_string()));
+            .add_instruction(Instruction::sw(&body, -8, &heap));
 
         self.generator
-            .add_instruction(Instruction::Sw(env, -4, heap));
+            .add_instruction(Instruction::comment("Store environment".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Comment("Put return value into A0".to_string()));
-
-        let ret = self.return_reg;
-        self.generator
-            .add_instruction(Instruction::Addi(ret, heap, -9));
+            .add_instruction(Instruction::sw(&env, -4, &heap));
 
         self.generator
-            .add_instruction(Instruction::J("return".to_string()));
+            .add_instruction(Instruction::comment("Put return value into A0".to_string()));
+
+        constnt_overwrite!(ret = lambda_term);
+        self.generator
+            .add_instruction(Instruction::addi(&mut ret, &heap, -9));
+
+        self.generator
+            .add_instruction(Instruction::j("return".to_string()));
+
+        self.register_map.free_all()
     }
 
     pub fn handle_apply(&mut self) {
-        let apply_term = self.first_arg;
-        let frames = self.frames;
-        let env = self.env;
-        self.generator
-            .add_instruction(Instruction::Label("handle_apply".to_string()));
+        argument!(self, apply_term = self.first_arg);
+        var_argument!(self, frames = self.frames);
+        argument!(self, env = self.env);
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator
+            .add_instruction(Instruction::label("handle_apply".to_string()));
+
+        self.generator.add_instruction(Instruction::comment(
             "Apply is tag |argument address| function".to_string(),
         ));
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Function is 5 bytes after tag location".to_string(),
         ));
 
-        let function = self.first_temp;
+        constnt!(self, function = self.first_temp);
 
         self.generator
-            .add_instruction(Instruction::Addi(function, apply_term, 5));
+            .add_instruction(Instruction::addi(&mut function, &apply_term, 5));
 
         self.generator
-            .add_instruction(Instruction::Comment("Load argument into temp".to_string()));
+            .add_instruction(Instruction::comment("Load argument into temp".to_string()));
 
-        let argument = self.second_temp;
+        constnt!(self, argument = self.second_temp);
+
         self.generator
-            .add_instruction(Instruction::Lw(argument, 1, apply_term));
+            .add_instruction(Instruction::lw(&mut argument, 1, &apply_term));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "9 bytes for FrameAwaitFunTerm allocation".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(frames, frames, -9));
+            .add_instruction(Instruction::addi(&mut frames.clone(), &frames, -9));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Tag is 1 for FrameAwaitFunTerm".to_string(),
         ));
-        let frame_tag = self.third_temp;
+
+        constnt!(self, frame_tag = self.third_temp);
 
         self.generator
-            .add_instruction(Instruction::Li(frame_tag, 1));
+            .add_instruction(Instruction::li(&mut frame_tag, 1));
 
         self.generator
-            .add_instruction(Instruction::Comment("Push tag onto stack".to_string()));
+            .add_instruction(Instruction::comment("Push tag onto stack".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Sb(frame_tag, 0, frames));
+            .add_instruction(Instruction::sb(&frame_tag, 0, &frames));
 
         self.generator
-            .add_instruction(Instruction::Comment("Push argument onto stack".to_string()));
+            .add_instruction(Instruction::comment("Push argument onto stack".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Sw(argument, 1, frames));
+            .add_instruction(Instruction::sw(&argument, 1, &frames));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Push environment onto stack".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Sw(env, 5, frames));
+            .add_instruction(Instruction::sw(&env, 5, &frames));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Put function address into A0".to_string(),
         ));
 
-        let ret = self.return_reg;
+        constnt_overwrite!(ret = apply_term);
         self.generator
-            .add_instruction(Instruction::Mv(ret, function));
+            .add_instruction(Instruction::mv(&mut ret, &function));
 
         self.generator
-            .add_instruction(Instruction::J("compute".to_string()));
+            .add_instruction(Instruction::j("compute".to_string()));
     }
 
     pub fn handle_constant(&mut self) {
