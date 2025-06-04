@@ -4,6 +4,7 @@
 
 use std::{fs::File, io::Write};
 
+use strum_macros::EnumIter;
 use thiserror::Error;
 
 // pub mod elf;
@@ -26,7 +27,7 @@ pub enum CodeGenError {
 pub type Result<T> = std::result::Result<T, CodeGenError>;
 
 /// RISC-V register
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumIter)]
 pub enum Register {
     #[default]
     Zero,
@@ -61,6 +62,107 @@ pub enum Register {
     T4,
     T5,
     T6,
+}
+
+#[derive(Debug, Clone)]
+pub struct Assign {
+    pub name: String,
+    pub register: Option<Register>,
+    pub assigned: bool,
+    pub mutable: bool,
+}
+
+/// RISC-V instruction
+#[derive(Debug, Clone)]
+pub enum Instruction {
+    // R-type instructions
+    Add(Register, Register, Register),
+    Sub(Register, Register, Register),
+    Xor(Register, Register, Register),
+    Or(Register, Register, Register),
+    And(Register, Register, Register),
+    Sll(Register, Register, Register),
+    Srl(Register, Register, Register),
+    Sra(Register, Register, Register),
+    Slt(Register, Register, Register),
+    Sltu(Register, Register, Register),
+
+    // M-extension instructions
+    Mul(Register, Register, Register),
+    Mulh(Register, Register, Register),
+    Mulhsu(Register, Register, Register),
+    Mulhu(Register, Register, Register),
+    Div(Register, Register, Register),
+    Divu(Register, Register, Register),
+    Rem(Register, Register, Register),
+    Remu(Register, Register, Register),
+
+    // I-type instructions
+    Addi(Register, Register, i32),
+    Andi(Register, Register, i32),
+    Ori(Register, Register, i32),
+    Xori(Register, Register, i32),
+    Slti(Register, Register, i32),
+    Sltiu(Register, Register, i32),
+    Slli(Register, Register, i32),
+    Srli(Register, Register, i32),
+    Srai(Register, Register, i32),
+    Lw(Register, i32, Register),
+    Lh(Register, i32, Register),
+    Lb(Register, i32, Register),
+    Lhu(Register, i32, Register),
+    Lbu(Register, i32, Register),
+    Jalr(Register, Register, i32),
+
+    // S-type instructions
+    Sw(Register, i32, Register),
+    Sh(Register, i32, Register),
+    Sb(Register, i32, Register),
+
+    // B-type instructions
+    Beq(Register, Register, String),
+    Bne(Register, Register, String),
+    Blt(Register, Register, String),
+    Bge(Register, Register, String),
+    Bltu(Register, Register, String),
+    Bgeu(Register, Register, String),
+
+    // U-type instructions
+    Lui(Register, i32),
+    Auipc(Register, i32),
+
+    // J-type instructions
+    Jal(Register, String),
+
+    // Pseudo-instructions
+    J(String),
+    Li(Register, i32),
+    La(Register, String),
+    Mv(Register, Register),
+    Not(Register, Register),
+    Neg(Register, Register),
+    Seqz(Register, Register),
+    Snez(Register, Register),
+    Nop,
+
+    // Label
+    Label(String),
+
+    // Directives
+    Global(String),
+    Section(String),
+    Align(i32),
+    Word(String),
+    Byte(Vec<u8>),
+    Ascii(String),
+    Asciiz(String),
+    Space(i32),
+
+    // Comments
+    Comment(String),
+
+    // Exit
+    Ecall,
 }
 
 impl Register {
@@ -141,97 +243,429 @@ impl Register {
     }
 }
 
-/// RISC-V instruction
-#[derive(Debug, Clone)]
-pub enum Instruction {
+impl Assign {
+    pub fn make_var(name: impl ToString, register: Register) -> Assign {
+        Assign {
+            name: name.to_string(),
+            register: Some(register),
+            assigned: false,
+            mutable: true,
+        }
+    }
+
+    pub fn make_constant(name: impl ToString, register: Register) -> Assign {
+        Assign {
+            name: name.to_string(),
+            register: Some(register),
+            assigned: false,
+            mutable: false,
+        }
+    }
+
+    pub fn var_overwrite(&mut self, name: impl ToString) -> Assign {
+        let Some(register) = self.register else {
+            panic!(
+                "Var already overwritten\n\nVar: {}, New Name: {}",
+                self.name,
+                name.to_string()
+            )
+        };
+
+        self.register = None;
+        Assign {
+            name: name.to_string(),
+            register: Some(register),
+            assigned: false,
+            mutable: true,
+        }
+    }
+
+    pub fn constnt_overwrite(&mut self, name: impl ToString) -> Assign {
+        let mut assign = self.var_overwrite(name);
+        assign.mutable = false;
+        assign
+    }
+
+    pub fn register_assign(&mut self) -> Register {
+        let Some(register) = self.register else {
+            panic!("Using Overwritten Var\n\nVar: {}", self.name)
+        };
+
+        if self.assigned && !self.mutable {
+            panic!(
+                "Assigning Constant\n\nVar: {}, Register: {}",
+                self.name,
+                register.name()
+            );
+        }
+
+        self.assigned = true;
+
+        register
+    }
+
+    pub fn register_value(&self) -> Register {
+        let Some(register) = self.register else {
+            panic!("Using Overwritten Var\n\nVar: {}", self.name);
+        };
+
+        if !self.assigned {
+            panic!(
+                "Var Not Assigned\n\nVar: {}, Register: {}",
+                self.name,
+                register.name()
+            );
+        }
+
+        register
+    }
+}
+
+impl Instruction {
     // R-type instructions
-    Add(Register, Register, Register),
-    Sub(Register, Register, Register),
-    And(Register, Register, Register),
-    Or(Register, Register, Register),
-    Xor(Register, Register, Register),
-    Slt(Register, Register, Register),
-    Sltu(Register, Register, Register),
-    Sll(Register, Register, Register),
-    Srl(Register, Register, Register),
-    Sra(Register, Register, Register),
+    pub fn add(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Add(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn sub(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Sub(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn xor(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Xor(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn or(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Or(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn and(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::And(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn sll(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Sll(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn srl(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Srl(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn sra(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Sra(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn slt(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Slt(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn sltu(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Sltu(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
 
     // M-extension instructions
-    Mul(Register, Register, Register),
-    Mulh(Register, Register, Register),
-    Mulhsu(Register, Register, Register),
-    Mulhu(Register, Register, Register),
-    Div(Register, Register, Register),
-    Divu(Register, Register, Register),
-    Rem(Register, Register, Register),
-    Remu(Register, Register, Register),
+    pub fn mul(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Mul(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn mulh(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Mulh(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn mulhsu(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Mulhsu(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn mulhu(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Mulhu(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn div(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Div(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn divu(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Divu(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn rem(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Rem(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
+
+    pub fn remu(rd: &mut Assign, rs1: &Assign, rs2: &Assign) -> Self {
+        Self::Remu(
+            rd.register_assign(),
+            rs1.register_value(),
+            rs2.register_value(),
+        )
+    }
 
     // I-type instructions
-    Addi(Register, Register, i32),
-    Andi(Register, Register, i32),
-    Ori(Register, Register, i32),
-    Xori(Register, Register, i32),
-    Slti(Register, Register, i32),
-    Sltiu(Register, Register, i32),
-    Slli(Register, Register, i32),
-    Srli(Register, Register, i32),
-    Srai(Register, Register, i32),
-    Lw(Register, i32, Register),
-    Lh(Register, i32, Register),
-    Lb(Register, i32, Register),
-    Lhu(Register, i32, Register),
-    Lbu(Register, i32, Register),
-    Jalr(Register, Register, i32),
+    pub fn addi(rd: &mut Assign, rs1: &Assign, imm: i32) -> Self {
+        Self::Addi(rd.register_assign(), rs1.register_value(), imm)
+    }
+
+    pub fn andi(rd: &mut Assign, rs1: &Assign, imm: i32) -> Self {
+        Self::Andi(rd.register_assign(), rs1.register_value(), imm)
+    }
+
+    pub fn ori(rd: &mut Assign, rs1: &Assign, imm: i32) -> Self {
+        Self::Ori(rd.register_assign(), rs1.register_value(), imm)
+    }
+
+    pub fn xori(rd: &mut Assign, rs1: &Assign, imm: i32) -> Self {
+        Self::Xori(rd.register_assign(), rs1.register_value(), imm)
+    }
+
+    pub fn slti(rd: &mut Assign, rs1: &Assign, imm: i32) -> Self {
+        Self::Slti(rd.register_assign(), rs1.register_value(), imm)
+    }
+
+    pub fn sltiu(rd: &mut Assign, rs1: &Assign, imm: i32) -> Self {
+        Self::Sltiu(rd.register_assign(), rs1.register_value(), imm)
+    }
+
+    pub fn slli(rd: &mut Assign, rs1: &Assign, imm: i32) -> Self {
+        Self::Slli(rd.register_assign(), rs1.register_value(), imm)
+    }
+
+    pub fn srli(rd: &mut Assign, rs1: &Assign, imm: i32) -> Self {
+        Self::Srli(rd.register_assign(), rs1.register_value(), imm)
+    }
+
+    pub fn srai(rd: &mut Assign, rs1: &Assign, imm: i32) -> Self {
+        Self::Srai(rd.register_assign(), rs1.register_value(), imm)
+    }
+
+    pub fn lw(rd: &mut Assign, offset: i32, rs1: &Assign) -> Self {
+        Self::Lw(rd.register_assign(), offset, rs1.register_value())
+    }
+
+    pub fn lh(rd: &mut Assign, offset: i32, rs1: &Assign) -> Self {
+        Self::Lh(rd.register_assign(), offset, rs1.register_value())
+    }
+
+    pub fn lb(rd: &mut Assign, offset: i32, rs1: &Assign) -> Self {
+        Self::Lb(rd.register_assign(), offset, rs1.register_value())
+    }
+
+    pub fn lhu(rd: &mut Assign, offset: i32, rs1: &Assign) -> Self {
+        Self::Lhu(rd.register_assign(), offset, rs1.register_value())
+    }
+
+    pub fn lbu(rd: &mut Assign, offset: i32, rs1: &Assign) -> Self {
+        Self::Lbu(rd.register_assign(), offset, rs1.register_value())
+    }
+
+    pub fn jalr(rd: &mut Assign, rs1: &Assign, imm: i32) -> Self {
+        Self::Jalr(rd.register_assign(), rs1.register_value(), imm)
+    }
 
     // S-type instructions
-    Sw(Register, i32, Register),
-    Sh(Register, i32, Register),
-    Sb(Register, i32, Register),
+    pub fn sw(rs2: &Assign, offset: i32, rs1: &Assign) -> Self {
+        Self::Sw(rs2.register_value(), offset, rs1.register_value())
+    }
+
+    pub fn sh(rs2: &Assign, offset: i32, rs1: &Assign) -> Self {
+        Self::Sh(rs2.register_value(), offset, rs1.register_value())
+    }
+
+    pub fn sb(rs2: &Assign, offset: i32, rs1: &Assign) -> Self {
+        Self::Sb(rs2.register_value(), offset, rs1.register_value())
+    }
 
     // B-type instructions
-    Beq(Register, Register, String),
-    Bne(Register, Register, String),
-    Blt(Register, Register, String),
-    Bge(Register, Register, String),
-    Bltu(Register, Register, String),
-    Bgeu(Register, Register, String),
+    pub fn beq(rs1: &Assign, rs2: &Assign, label: String) -> Self {
+        Self::Beq(rs1.register_value(), rs2.register_value(), label)
+    }
+
+    pub fn bne(rs1: &Assign, rs2: &Assign, label: String) -> Self {
+        Self::Bne(rs1.register_value(), rs2.register_value(), label)
+    }
+
+    pub fn blt(rs1: &Assign, rs2: &Assign, label: String) -> Self {
+        Self::Blt(rs1.register_value(), rs2.register_value(), label)
+    }
+
+    pub fn bge(rs1: &Assign, rs2: &Assign, label: String) -> Self {
+        Self::Bge(rs1.register_value(), rs2.register_value(), label)
+    }
+
+    pub fn bltu(rs1: &Assign, rs2: &Assign, label: String) -> Self {
+        Self::Bltu(rs1.register_value(), rs2.register_value(), label)
+    }
+
+    pub fn bgeu(rs1: &Assign, rs2: &Assign, label: String) -> Self {
+        Self::Bgeu(rs1.register_value(), rs2.register_value(), label)
+    }
 
     // U-type instructions
-    Lui(Register, i32),
-    Auipc(Register, i32),
+    pub fn lui(rd: &mut Assign, imm: i32) -> Self {
+        Self::Lui(rd.register_assign(), imm)
+    }
+
+    pub fn auipc(rd: &mut Assign, imm: i32) -> Self {
+        Self::Auipc(rd.register_assign(), imm)
+    }
 
     // J-type instructions
-    Jal(Register, String),
+    pub fn jal(rd: &mut Assign, label: String) -> Self {
+        Self::Jal(rd.register_assign(), label)
+    }
 
     // Pseudo-instructions
-    J(String),
-    Li(Register, i32),
-    La(Register, String),
-    Mv(Register, Register),
-    Not(Register, Register),
-    Neg(Register, Register),
-    Seqz(Register, Register),
-    Snez(Register, Register),
-    Nop,
+    pub fn li(rd: &mut Assign, imm: i32) -> Self {
+        Self::Li(rd.register_assign(), imm)
+    }
+
+    pub fn la(rd: &mut Assign, label: String) -> Self {
+        Self::La(rd.register_assign(), label)
+    }
+
+    pub fn mv(rd: &mut Assign, rs: &Assign) -> Self {
+        Self::Mv(rd.register_assign(), rs.register_value())
+    }
+
+    pub fn not(rd: &mut Assign, rs: &Assign) -> Self {
+        Self::Not(rd.register_assign(), rs.register_value())
+    }
+
+    pub fn neg(rd: &mut Assign, rs: &Assign) -> Self {
+        Self::Neg(rd.register_assign(), rs.register_value())
+    }
+
+    pub fn seqz(rd: &mut Assign, rs: &Assign) -> Self {
+        Self::Seqz(rd.register_assign(), rs.register_value())
+    }
+
+    pub fn snez(rd: &mut Assign, rs: &Assign) -> Self {
+        Self::Snez(rd.register_assign(), rs.register_value())
+    }
+
+    // Pseudo-instructions (additional)
+    pub fn j(label: String) -> Self {
+        Self::J(label)
+    }
+
+    pub fn nop() -> Self {
+        Self::Nop
+    }
 
     // Label
-    Label(String),
+    pub fn label(name: String) -> Self {
+        Self::Label(name)
+    }
 
     // Directives
-    Global(String),
-    Section(String),
-    Align(i32),
-    Word(String),
-    Byte(Vec<u8>),
-    Ascii(String),
-    Asciiz(String),
-    Space(i32),
+    pub fn global(symbol: String) -> Self {
+        Self::Global(symbol)
+    }
+
+    pub fn section(name: String) -> Self {
+        Self::Section(name)
+    }
+
+    pub fn align(boundary: i32) -> Self {
+        Self::Align(boundary)
+    }
+
+    pub fn word(value: String) -> Self {
+        Self::Word(value)
+    }
+
+    pub fn byte(data: Vec<u8>) -> Self {
+        Self::Byte(data)
+    }
+
+    pub fn ascii(text: String) -> Self {
+        Self::Ascii(text)
+    }
+
+    pub fn asciiz(text: String) -> Self {
+        Self::Asciiz(text)
+    }
+
+    pub fn space(size: i32) -> Self {
+        Self::Space(size)
+    }
 
     // Comments
-    Comment(String),
+    pub fn comment(text: String) -> Self {
+        Self::Comment(text)
+    }
 
     // Exit
-    Ecall,
+    pub fn ecall() -> Self {
+        Self::Ecall
+    }
 }
 
 /// Code gene.rator for RISC-V assembly
@@ -528,16 +962,20 @@ impl CodeGenerator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::{Assign, CodeGenerator, Instruction, Register};
 
     #[test]
     fn test_code_generation() {
         let mut gene = CodeGenerator::new();
 
-        gene.add_instruction(Instruction::Label("main".to_string()));
-        gene.add_instruction(Instruction::Li(Register::A0, 42));
-        gene.add_instruction(Instruction::Li(Register::A1, 58));
-        gene.add_instruction(Instruction::Add(Register::A2, Register::A0, Register::A1));
+        let mut a0 = Assign::make_var("a0", Register::A0);
+        let mut a1 = Assign::make_var("a1", Register::A1);
+        let mut a2 = Assign::make_var("a2", Register::A2);
+
+        gene.add_instruction(Instruction::label("main".to_string()));
+        gene.add_instruction(Instruction::li(&mut a0, 42));
+        gene.add_instruction(Instruction::li(&mut a1, 58));
+        gene.add_instruction(Instruction::add(&mut a2, &a0, &a1));
 
         let asm = gene.generate();
         assert!(asm.contains("main:"));
@@ -550,9 +988,13 @@ mod tests {
     fn test_memory_instructions() {
         let mut gene = CodeGenerator::new();
 
-        gene.add_instruction(Instruction::Li(Register::A0, 42));
-        gene.add_instruction(Instruction::Sw(Register::A0, 0, Register::Sp));
-        gene.add_instruction(Instruction::Lw(Register::A1, 0, Register::Sp));
+        let mut a0 = Assign::make_var("a0", Register::A0);
+        let mut a1 = Assign::make_var("a1", Register::A1);
+
+        gene.add_instruction(Instruction::label("main".to_string()));
+        gene.add_instruction(Instruction::li(&mut a0, 42));
+        gene.add_instruction(Instruction::Sw(a0.register_value(), 0, Register::Sp));
+        gene.add_instruction(Instruction::Lw(a1.register_assign(), 0, Register::Sp));
 
         let asm = gene.generate();
         assert!(asm.contains("li a0, 42"));
@@ -564,14 +1006,13 @@ mod tests {
     fn test_branch_instructions() {
         let mut gene = CodeGenerator::new();
 
-        gene.add_instruction(Instruction::Li(Register::A0, 42));
-        gene.add_instruction(Instruction::Li(Register::A1, 58));
-        gene.add_instruction(Instruction::Blt(
-            Register::A0,
-            Register::A1,
-            "label".to_string(),
-        ));
-        gene.add_instruction(Instruction::Label("label".to_string()));
+        let mut a0 = Assign::make_var("a0", Register::A0);
+        let mut a1 = Assign::make_var("a1", Register::A1);
+
+        gene.add_instruction(Instruction::li(&mut a0, 42));
+        gene.add_instruction(Instruction::li(&mut a1, 58));
+        gene.add_instruction(Instruction::blt(&a0, &a1, "label".to_string()));
+        gene.add_instruction(Instruction::label("label".to_string()));
 
         let asm = gene.generate();
         assert!(asm.contains("li a0, 42"));
@@ -584,10 +1025,10 @@ mod tests {
     fn test_directives() {
         let mut gene = CodeGenerator::new();
 
-        gene.add_instruction(Instruction::Section("text".to_string()));
-        gene.add_instruction(Instruction::Global("main".to_string()));
-        gene.add_instruction(Instruction::Label("main".to_string()));
-        gene.add_instruction(Instruction::Comment("This is a comment".to_string()));
+        gene.add_instruction(Instruction::section("text".to_string()));
+        gene.add_instruction(Instruction::global("main".to_string()));
+        gene.add_instruction(Instruction::label("main".to_string()));
+        gene.add_instruction(Instruction::comment("This is a comment".to_string()));
 
         let asm = gene.generate();
         assert!(asm.contains(".text"));
@@ -600,15 +1041,15 @@ mod tests {
     fn test_directives2() {
         let mut gene = CodeGenerator::new();
 
-        gene.add_instruction(Instruction::Section("text".to_string()));
-        gene.add_instruction(Instruction::Global("_start".to_string()));
-        gene.add_instruction(Instruction::Label("_start".to_string()));
-        gene.add_instruction(Instruction::Comment("This is a comment".to_string()));
+        gene.add_instruction(Instruction::section("text".to_string()));
+        gene.add_instruction(Instruction::global("_start".to_string()));
+        gene.add_instruction(Instruction::label("_start".to_string()));
+        gene.add_instruction(Instruction::comment("This is a comment".to_string()));
 
         gene.add_instruction(Instruction::Addi(Register::A0, Register::A1, 43));
         gene.add_instruction(Instruction::Li(Register::A7, 93));
         gene.add_instruction(Instruction::Ecall);
 
-        gene.save_to_file("test.s").unwrap();
+        // gene.save_to_file("test.s").unwrap();
     }
 }

@@ -1,4 +1,5 @@
-use risc_v_gen::{CodeGenerator, Instruction, Register};
+use risc_v_gen::{Assign, CodeGenerator, Instruction, Register};
+use strum::IntoEnumIterator;
 use uplc_serializer::constants::const_tag::{self, BOOL};
 // pub enum Value {
 //     Con(Rc<Constant>),
@@ -144,9 +145,133 @@ const ARITIES: [u8; 88] = [
     1, 2, 2, 1, 1, 2, 2, 2, 2, 3, 2, 3, 3, 3, 1, 2, 3, 2, 2, 2, 1, 1, 1, 3,
 ];
 
+macro_rules! var {
+    ($cek:expr, $var:ident = $value:expr) => {
+        let mut $var = $cek.register_map.var(stringify!($var), $value);
+    };
+}
+
+macro_rules! constnt {
+    ($cek:expr, $var:ident = $value:expr) => {
+        let mut $var = $cek.register_map.constnt(stringify!($var), $value);
+    };
+}
+
+macro_rules! argument {
+    ($cek:expr, $var:ident = $value:expr) => {
+        let $var = $cek.register_map.argument(stringify!($var), $value);
+    };
+}
+
+macro_rules! var_argument {
+    ($cek:expr, $var:ident = $value:expr) => {
+        let mut $var = $cek.register_map.var_argument(stringify!($var), $value);
+    };
+}
+
+macro_rules! var_overwrite {
+    ($var:ident = $value:expr) => {
+        let mut $var = $value.var_overwrite(stringify!($var));
+    };
+}
+
+macro_rules! constnt_overwrite {
+    ($var:ident = $value:expr) => {
+        let mut $var = $value.constnt_overwrite(stringify!($var));
+    };
+}
+
+#[derive(Debug)]
+pub struct RegisterMap {
+    free: Vec<Register>,
+    used: Vec<Register>,
+}
+
+pub struct Freed {}
+
+impl RegisterMap {
+    pub fn new() -> RegisterMap {
+        RegisterMap {
+            free: Register::iter().collect::<Vec<_>>(),
+            used: vec![],
+        }
+    }
+
+    pub fn var(&mut self, name: impl ToString, register: Register) -> Assign {
+        let Some(index) = self.free.iter().position(|item| item == &register) else {
+            panic!(
+                "Assigning Used Register\n\nVar: {}, Register: {}",
+                name.to_string(),
+                register.name()
+            )
+        };
+
+        self.free.remove(index);
+
+        self.used.push(register);
+
+        Assign {
+            name: name.to_string(),
+            assigned: false,
+            mutable: true,
+            register: Some(register),
+        }
+    }
+
+    pub fn constnt(&mut self, name: impl ToString, register: Register) -> Assign {
+        let mut assign = self.var(name, register);
+        assign.mutable = false;
+        assign
+    }
+
+    pub fn argument(&mut self, name: impl ToString, register: Register) -> Assign {
+        let mut assign = self.var(name, register);
+        assign.assigned = true;
+        assign.mutable = false;
+        assign
+    }
+
+    pub fn var_argument(&mut self, name: impl ToString, register: Register) -> Assign {
+        let mut assign = self.var(name, register);
+        assign.assigned = true;
+        assign
+    }
+
+    // Useful for top level functions
+    pub fn free_all(&mut self) -> Freed {
+        self.free = Register::iter().collect::<Vec<_>>();
+        self.used = vec![];
+
+        Freed {}
+    }
+
+    // Useful for functions that use Jalr
+    pub fn free_assigns(&mut self, assigns: Vec<Assign>) -> Freed {
+        for assign in assigns {
+            if let Some(register) = assign.register {
+                let Some(index) = self.used.iter().position(|item| item == &register) else {
+                    unreachable!("Likely you generated an Assign outside of the normal interface");
+                };
+
+                self.used.remove(index);
+                self.free.push(register);
+            }
+        }
+
+        Freed {}
+    }
+}
+
+impl Default for RegisterMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
 pub struct Cek {
     generator: CodeGenerator,
+    register_map: RegisterMap,
     frames: Register,
     env: Register,
     heap: Register,
@@ -174,6 +299,7 @@ impl Cek {
     pub fn new() -> Cek {
         Cek {
             generator: CodeGenerator::default(),
+            register_map: RegisterMap::default(),
             frames: Register::Sp,
             env: Register::S1,
             heap: Register::S2,
@@ -201,9 +327,9 @@ impl Cek {
     pub fn cek_assembly(mut self, bytes: Vec<u8>) -> CodeGenerator {
         // Generate the core CEK implementation
         self.generator
-            .add_instruction(Instruction::Global("_start".to_string()));
+            .add_instruction(Instruction::global("_start".to_string()));
         self.generator
-            .add_instruction(Instruction::Label("_start".to_string()));
+            .add_instruction(Instruction::label("_start".to_string()));
         self.init();
         self.compute();
         self.return_compute();
@@ -263,297 +389,310 @@ impl Cek {
         self.generator
     }
 
-    pub fn init(&mut self) {
+    pub fn init(&mut self) -> Freed {
+        constnt!(self, heap = self.heap);
+        var_argument!(self, frames = self.frames);
+        constnt!(self, env = self.env);
+        argument!(self, zero = Register::Zero);
         self.generator
-            .add_instruction(Instruction::Section("text".to_string()));
+            .add_instruction(Instruction::section("text".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Label("init".to_string()));
+            .add_instruction(Instruction::label("init".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Lui(self.heap, 0xc0000));
+            .add_instruction(Instruction::lui(&mut heap, 0xc0000));
 
         // self.generator
         //     .add_instruction(Instruction::Lui(self.frames, 0xe0000));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "1 byte for NoFrame allocation".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Addi(self.frames, self.frames, -1));
+            .add_instruction(Instruction::addi(&mut frames.clone(), &frames, -1));
 
         self.generator
-            .add_instruction(Instruction::Comment("Tag is 6 for NoFrame".to_string()));
+            .add_instruction(Instruction::comment("Tag is 6 for NoFrame".to_string()));
 
-        let frame_tag = self.first_temp;
+        constnt!(self, frame_tag = self.first_temp);
 
         self.generator
-            .add_instruction(Instruction::Li(frame_tag, 6));
+            .add_instruction(Instruction::li(&mut frame_tag, 6));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Push NoFrame tag onto stack".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Sb(frame_tag, 0, self.frames));
+            .add_instruction(Instruction::sb(&frame_tag, 0, &frames));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Environment stack pointer".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Mv(self.env, Register::Zero));
+            .add_instruction(Instruction::mv(&mut env, &zero));
 
         self.generator
-            .add_instruction(Instruction::Comment("A0 is return register".to_string()));
+            .add_instruction(Instruction::comment("A0 is return register".to_string()));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Load address of initial_term".to_string(),
         ));
 
-        let ret = self.return_reg;
+        constnt!(self, ret = self.first_arg);
         self.generator
-            .add_instruction(Instruction::La(ret, "initial_term".to_string()));
+            .add_instruction(Instruction::la(&mut ret, "initial_term".to_string()));
 
         self.generator
-            .add_instruction(Instruction::J("compute".to_string()));
+            .add_instruction(Instruction::j("compute".to_string()));
+
+        self.register_map.free_all()
     }
 
     // TODO: for both compute and return_compute, We can compute the jump via term offset
-    pub fn compute(&mut self) {
-        let term = self.first_arg;
-        self.generator.add_instruction(Instruction::Comment(
+    pub fn compute(&mut self) -> Freed {
+        argument!(self, term = self.first_arg);
+        argument!(self, zero = Register::Zero);
+        self.generator.add_instruction(Instruction::comment(
             "  s0: KP - Continuation stack pointer (points to top of K stack)".to_string(),
         ));
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "  s1: E  - Environment pointer (points to current environment linked list)"
                 .to_string(),
         ));
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "  s2: HP - Heap pointer (points to next free heap address)".to_string(),
         ));
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "  a0: Storage for C (control) pointer".to_string(),
         ));
         self.generator
             .add_instruction(Instruction::Label("compute".to_string()));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Term address should be in A0".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("Load term tag".to_string()));
+            .add_instruction(Instruction::comment("Load term tag".to_string()));
 
-        let term_tag = self.first_temp;
-
-        self.generator
-            .add_instruction(Instruction::Lbu(term_tag, 0, term));
+        constnt!(self, term_tag = self.first_temp);
 
         self.generator
-            .add_instruction(Instruction::Comment("Var".to_string()));
+            .add_instruction(Instruction::lbu(&mut term_tag, 0, &term));
 
-        self.generator.add_instruction(Instruction::Beq(
-            term_tag,
-            Register::Zero,
+        self.generator
+            .add_instruction(Instruction::comment("Var".to_string()));
+
+        self.generator.add_instruction(Instruction::beq(
+            &term_tag,
+            &zero,
             "handle_var".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("Delay".to_string()));
+            .add_instruction(Instruction::comment("Delay".to_string()));
 
-        let match_tag = self.second_temp;
+        var!(self, match_tag = self.second_temp);
 
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 1));
+            .add_instruction(Instruction::li(&mut match_tag, 1));
 
-        self.generator.add_instruction(Instruction::Beq(
-            term_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &term_tag,
+            &match_tag,
             "handle_delay".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("Lambda".to_string()));
+            .add_instruction(Instruction::comment("Lambda".to_string()));
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 2));
+            .add_instruction(Instruction::li(&mut match_tag, 2));
 
-        self.generator.add_instruction(Instruction::Beq(
-            term_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &term_tag,
+            &match_tag,
             "handle_lambda".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("Apply".to_string()));
+            .add_instruction(Instruction::comment("Apply".to_string()));
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 3));
+            .add_instruction(Instruction::li(&mut match_tag, 3));
 
-        self.generator.add_instruction(Instruction::Beq(
-            term_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &term_tag,
+            &match_tag,
             "handle_apply".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("Constant".to_string()));
+            .add_instruction(Instruction::comment("Constant".to_string()));
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 4));
+            .add_instruction(Instruction::li(&mut match_tag, 4));
 
-        self.generator.add_instruction(Instruction::Beq(
-            term_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &term_tag,
+            &match_tag,
             "handle_constant".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("Force".to_string()));
+            .add_instruction(Instruction::comment("Force".to_string()));
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 5));
+            .add_instruction(Instruction::li(&mut match_tag, 5));
 
-        self.generator.add_instruction(Instruction::Beq(
-            term_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &term_tag,
+            &match_tag,
             "handle_force".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("Error".to_string()));
+            .add_instruction(Instruction::comment("Error".to_string()));
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 6));
+            .add_instruction(Instruction::li(&mut match_tag, 6));
 
-        self.generator.add_instruction(Instruction::Beq(
-            term_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &term_tag,
+            &match_tag,
             "handle_error".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("Builtin".to_string()));
+            .add_instruction(Instruction::comment("Builtin".to_string()));
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 7));
+            .add_instruction(Instruction::li(&mut match_tag, 7));
 
-        self.generator.add_instruction(Instruction::Beq(
-            term_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &term_tag,
+            &match_tag,
             "handle_builtin".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("Constr".to_string()));
+            .add_instruction(Instruction::comment("Constr".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 8));
+            .add_instruction(Instruction::li(&mut match_tag, 8));
 
-        self.generator.add_instruction(Instruction::Beq(
-            term_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &term_tag,
+            &match_tag,
             "handle_constr".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("Case".to_string()));
+            .add_instruction(Instruction::comment("Case".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 9));
+            .add_instruction(Instruction::li(&mut match_tag, 9));
 
-        self.generator.add_instruction(Instruction::Beq(
-            term_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &term_tag,
+            &match_tag,
             "handle_case".to_string(),
         ));
+
+        self.register_map.free_all()
     }
 
-    pub fn return_compute(&mut self) {
+    pub fn return_compute(&mut self) -> Freed {
+        argument!(self, zero = Register::Zero);
+        argument!(self, frames = self.frames);
         self.generator
-            .add_instruction(Instruction::Label("return".to_string()));
+            .add_instruction(Instruction::label("return".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Comment("Load Frame from S0".to_string()));
+            .add_instruction(Instruction::comment("Load Frame from S0".to_string()));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "Frame tag is first byte of frame".to_string(),
         ));
 
-        let frame_tag = self.first_temp;
+        constnt!(self, frame_tag = self.first_temp);
 
         self.generator
-            .add_instruction(Instruction::Lbu(frame_tag, 0, self.frames));
+            .add_instruction(Instruction::lbu(&mut frame_tag, 0, &frames));
 
         self.generator
-            .add_instruction(Instruction::Comment("FrameAwaitArg".to_string()));
+            .add_instruction(Instruction::comment("FrameAwaitArg".to_string()));
 
-        self.generator.add_instruction(Instruction::Beq(
-            frame_tag,
-            Register::Zero,
+        self.generator.add_instruction(Instruction::beq(
+            &frame_tag,
+            &zero,
             "handle_frame_await_arg".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("FrameAwaitFunTerm".to_string()));
+            .add_instruction(Instruction::comment("FrameAwaitFunTerm".to_string()));
 
-        let match_tag = self.second_temp;
+        var!(self, match_tag = self.second_temp);
 
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 1));
+            .add_instruction(Instruction::li(&mut match_tag, 1));
 
-        self.generator.add_instruction(Instruction::Beq(
-            frame_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &frame_tag,
+            &match_tag,
             "handle_frame_await_fun_term".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("FrameAwaitFunValue".to_string()));
+            .add_instruction(Instruction::comment("FrameAwaitFunValue".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 2));
+            .add_instruction(Instruction::li(&mut match_tag, 2));
 
-        self.generator.add_instruction(Instruction::Beq(
-            frame_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &frame_tag,
+            &match_tag,
             "handle_frame_await_fun_value".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("FrameForce".to_string()));
+            .add_instruction(Instruction::comment("FrameForce".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 3));
+            .add_instruction(Instruction::li(&mut match_tag, 3));
 
-        self.generator.add_instruction(Instruction::Beq(
-            frame_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &frame_tag,
+            &match_tag,
             "handle_frame_force".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 4));
+            .add_instruction(Instruction::li(&mut match_tag, 4));
 
-        self.generator.add_instruction(Instruction::Beq(
-            frame_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &frame_tag,
+            &match_tag,
             "handle_frame_constr".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 5));
+            .add_instruction(Instruction::li(&mut match_tag, 5));
 
-        self.generator.add_instruction(Instruction::Beq(
-            frame_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &frame_tag,
+            &match_tag,
             "handle_frame_case".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Comment("NoFrame".to_string()));
+            .add_instruction(Instruction::comment("NoFrame".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Li(match_tag, 6));
+            .add_instruction(Instruction::li(&mut match_tag, 6));
 
-        self.generator.add_instruction(Instruction::Beq(
-            frame_tag,
-            match_tag,
+        self.generator.add_instruction(Instruction::beq(
+            &frame_tag,
+            &match_tag,
             "handle_no_frame".to_string(),
         ));
+
+        self.register_map.free_all()
     }
 
     pub fn handle_var(&mut self) {
@@ -561,7 +700,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::Label("handle_var".to_string()));
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator.add_instruction(Instruction::comment(
             "load debruijn index into temp".to_string(),
         ));
 
