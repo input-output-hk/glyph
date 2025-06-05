@@ -146,27 +146,27 @@ const ARITIES: [u8; 88] = [
 ];
 
 macro_rules! var {
-    ($cek:expr, $var:ident = $value:expr) => {
-        let mut $var = $cek.register_map.var(stringify!($var), $value);
+    ($var:ident = $cek:ident . $register:ident) => {
+        let mut $var = $cek.register_map.var(stringify!($var), $cek.$register);
     };
 }
 
 macro_rules! constnt {
-    ($cek:expr, $var:ident = $value:expr) => {
-        let mut $var = $cek.register_map.constnt(stringify!($var), $value);
+    ($var:ident = $cek:ident . $register:ident) => {
+        let mut $var = $cek.register_map.constnt(stringify!($var), $cek.$register);
     };
 }
 
 macro_rules! argument {
-    ($cek:expr, $var:ident = $value:expr) => {
-        let mut $var = $cek.register_map.constnt(stringify!($var), $value);
+    ($var:ident = $cek:ident . $register:ident) => {
+        let mut $var = $cek.register_map.constnt(stringify!($var), $cek.$register);
         $var.assigned = true;
     };
 }
 
 macro_rules! var_argument {
-    ($cek:expr, $var:ident = $value:expr) => {
-        let mut $var = $cek.register_map.var(stringify!($var), $value);
+    ($var:ident = $cek:ident . $register:ident) => {
+        let mut $var = $cek.register_map.var(stringify!($var), $cek.$register);
         $var.assigned = true;
     };
 }
@@ -203,12 +203,17 @@ macro_rules! create_block {
     };
 
     ($vec:ident, @process constnt ! $inner:tt; $($rest:tt)*) => {
-        create_block!($vec, @parse_var $inner);
+        create_block!($vec, @parse_constnt $inner);
         create_block!($vec, @process $($rest)*);
     };
 
-    ($vec:ident, @parse_var ($cek:ident, $name:ident = $register:expr)) => {
-        var!($cek, $name = $register);
+    ($vec:ident, @parse_var ($name:ident = $cek:ident . $register:ident)) => {
+        var!($name = $cek.$register);
+        $vec.push($name.clone());
+    };
+
+    ($vec:ident, @parse_constnt ($name:ident = $cek:ident . $register:ident)) => {
+        constnt!($name = $cek.$register);
         $vec.push($name.clone());
     };
 
@@ -321,6 +326,7 @@ pub struct Cek {
     fifth_temp: Register,
     sixth_temp: Register,
     seventh_temp: Register,
+    zero: Register,
 }
 
 impl Cek {
@@ -349,6 +355,7 @@ impl Cek {
             fifth_temp: Register::T4,
             sixth_temp: Register::T5,
             seventh_temp: Register::T6,
+            zero: Register::Zero,
         }
     }
 
@@ -418,10 +425,10 @@ impl Cek {
     }
 
     pub fn init(&mut self) -> Freed {
-        constnt!(self, heap = self.heap);
-        var_argument!(self, frames = self.frames);
-        constnt!(self, env = self.env);
-        argument!(self, zero = Register::Zero);
+        constnt!(heap = self.heap);
+        var_argument!(frames = self.frames);
+        constnt!(env = self.env);
+        argument!(zero = self.zero);
 
         self.generator
             .add_instruction(Instruction::section("text".to_string()));
@@ -444,7 +451,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::comment("Tag is 6 for NoFrame".to_string()));
 
-        constnt!(self, frame_tag = self.first_temp);
+        constnt!(frame_tag = self.first_temp);
 
         self.generator
             .add_instruction(Instruction::li(&mut frame_tag, 6));
@@ -469,7 +476,7 @@ impl Cek {
             "Load address of initial_term".to_string(),
         ));
 
-        constnt!(self, ret = self.first_arg);
+        constnt!(ret = self.first_arg);
         self.generator
             .add_instruction(Instruction::la(&mut ret, "initial_term".to_string()));
 
@@ -481,8 +488,8 @@ impl Cek {
 
     // TODO: for both compute and return_compute, We can compute the jump via term offset
     pub fn compute(&mut self) -> Freed {
-        argument!(self, term = self.first_arg);
-        argument!(self, zero = Register::Zero);
+        argument!(term = self.first_arg);
+        argument!(zero = self.zero);
         self.generator.add_instruction(Instruction::comment(
             "  s0: KP - Continuation stack pointer (points to top of K stack)".to_string(),
         ));
@@ -506,7 +513,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::comment("Load term tag".to_string()));
 
-        constnt!(self, term_tag = self.first_temp);
+        constnt!(term_tag = self.first_temp);
 
         self.generator
             .add_instruction(Instruction::lbu(&mut term_tag, 0, &term));
@@ -523,7 +530,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::comment("Delay".to_string()));
 
-        var!(self, match_tag = self.second_temp);
+        var!(match_tag = self.second_temp);
 
         self.generator
             .add_instruction(Instruction::li(&mut match_tag, 1));
@@ -628,8 +635,8 @@ impl Cek {
     }
 
     pub fn return_compute(&mut self) -> Freed {
-        argument!(self, zero = Register::Zero);
-        argument!(self, frames = self.frames);
+        argument!(zero = self.zero);
+        argument!(frames = self.frames);
         self.generator
             .add_instruction(Instruction::label("return".to_string()));
 
@@ -640,7 +647,7 @@ impl Cek {
             "Frame tag is first byte of frame".to_string(),
         ));
 
-        constnt!(self, frame_tag = self.first_temp);
+        constnt!(frame_tag = self.first_temp);
 
         self.generator
             .add_instruction(Instruction::lbu(&mut frame_tag, 0, &frames));
@@ -657,7 +664,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::comment("FrameAwaitFunTerm".to_string()));
 
-        var!(self, match_tag = self.second_temp);
+        var!(match_tag = self.second_temp);
 
         self.generator
             .add_instruction(Instruction::li(&mut match_tag, 1));
@@ -725,7 +732,7 @@ impl Cek {
     }
 
     pub fn handle_var(&mut self) -> Freed {
-        argument!(self, var = self.first_arg);
+        argument!(var = self.first_arg);
         self.generator
             .add_instruction(Instruction::label("handle_var".to_string()));
 
@@ -733,7 +740,7 @@ impl Cek {
             "load debruijn index into temp".to_string(),
         ));
 
-        constnt!(self, var_index = self.first_temp);
+        constnt!(var_index = self.first_temp);
 
         self.generator
             .add_instruction(Instruction::lw(&mut var_index, 1, &var));
@@ -753,16 +760,16 @@ impl Cek {
     }
 
     pub fn handle_delay(&mut self) -> Freed {
-        argument!(self, delay_term = self.first_arg);
-        var_argument!(self, heap = self.heap);
-        argument!(self, env = self.env);
+        argument!(delay_term = self.first_arg);
+        var_argument!(heap = self.heap);
+        argument!(env = self.env);
         self.generator
             .add_instruction(Instruction::label("handle_delay".to_string()));
 
         self.generator
             .add_instruction(Instruction::comment("Term body is next byte".to_string()));
 
-        constnt!(self, body = self.first_temp);
+        constnt!(body = self.first_temp);
 
         self.generator
             .add_instruction(Instruction::addi(&mut body, &delay_term, 1));
@@ -776,7 +783,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::comment("tag is 1 in rust".to_string()));
 
-        constnt!(self, vdelay_tag = self.second_temp);
+        constnt!(vdelay_tag = self.second_temp);
 
         self.generator
             .add_instruction(Instruction::li(&mut vdelay_tag, 1));
@@ -813,9 +820,9 @@ impl Cek {
     }
 
     pub fn handle_lambda(&mut self) -> Freed {
-        argument!(self, lambda_term = self.first_arg);
-        var_argument!(self, heap = self.heap);
-        argument!(self, env = self.env);
+        argument!(lambda_term = self.first_arg);
+        var_argument!(heap = self.heap);
+        argument!(env = self.env);
 
         self.generator
             .add_instruction(Instruction::label("handle_lambda".to_string()));
@@ -823,7 +830,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::comment("Term body is next byte".to_string()));
 
-        constnt!(self, body = self.first_temp);
+        constnt!(body = self.first_temp);
 
         self.generator
             .add_instruction(Instruction::addi(&mut body, &lambda_term, 1));
@@ -838,7 +845,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::comment("tag is 2 in rust".to_string()));
 
-        constnt!(self, vlambda_tag = self.second_temp);
+        constnt!(vlambda_tag = self.second_temp);
 
         self.generator
             .add_instruction(Instruction::li(&mut vlambda_tag, 2));
@@ -875,9 +882,9 @@ impl Cek {
     }
 
     pub fn handle_apply(&mut self) -> Freed {
-        argument!(self, apply_term = self.first_arg);
-        var_argument!(self, frames = self.frames);
-        argument!(self, env = self.env);
+        argument!(apply_term = self.first_arg);
+        var_argument!(frames = self.frames);
+        argument!(env = self.env);
 
         self.generator
             .add_instruction(Instruction::label("handle_apply".to_string()));
@@ -889,7 +896,7 @@ impl Cek {
             "Function is 5 bytes after tag location".to_string(),
         ));
 
-        constnt!(self, function = self.first_temp);
+        constnt!(function = self.first_temp);
 
         self.generator
             .add_instruction(Instruction::addi(&mut function, &apply_term, 5));
@@ -897,7 +904,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::comment("Load argument into temp".to_string()));
 
-        constnt!(self, argument = self.second_temp);
+        constnt!(argument = self.second_temp);
 
         self.generator
             .add_instruction(Instruction::lw(&mut argument, 1, &apply_term));
@@ -912,7 +919,7 @@ impl Cek {
             "Tag is 1 for FrameAwaitFunTerm".to_string(),
         ));
 
-        constnt!(self, frame_tag = self.third_temp);
+        constnt!(frame_tag = self.third_temp);
 
         self.generator
             .add_instruction(Instruction::li(&mut frame_tag, 1));
@@ -951,14 +958,14 @@ impl Cek {
     }
 
     pub fn handle_constant(&mut self) -> Freed {
-        argument!(self, constant_term = self.first_arg);
-        var_argument!(self, heap = self.heap);
+        argument!(constant_term = self.first_arg);
+        var_argument!(heap = self.heap);
 
         self.generator
             .add_instruction(Instruction::label("handle_constant".to_string()));
 
         // store pointer to constant in T0
-        constnt!(self, constant = self.first_temp);
+        constnt!(constant = self.first_temp);
 
         self.generator
             .add_instruction(Instruction::addi(&mut constant, &constant_term, 1));
@@ -967,7 +974,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 5));
 
-        constnt!(self, constant_tag = self.second_temp);
+        constnt!(constant_tag = self.second_temp);
 
         self.generator
             .add_instruction(Instruction::li(&mut constant_tag, 0));
@@ -989,8 +996,8 @@ impl Cek {
     }
 
     pub fn handle_force(&mut self) -> Freed {
-        argument!(self, force_term = self.first_arg);
-        var_argument!(self, frames = self.frames);
+        argument!(force_term = self.first_arg);
+        var_argument!(frames = self.frames);
 
         self.generator
             .add_instruction(Instruction::label("handle_force".to_string()));
@@ -998,7 +1005,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::comment("Load term body".to_string()));
 
-        constnt!(self, body = self.first_temp);
+        constnt!(body = self.first_temp);
         self.generator
             .add_instruction(Instruction::addi(&mut body, &force_term, 1));
 
@@ -1012,7 +1019,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::comment("Tag is 3 for FrameForce".to_string()));
 
-        constnt!(self, tag = self.second_temp);
+        constnt!(tag = self.second_temp);
 
         self.generator.add_instruction(Instruction::li(&mut tag, 3));
 
@@ -1043,7 +1050,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::comment("Load -1 into A0".to_string()));
 
-        constnt!(self, ret = self.return_reg);
+        constnt!(ret = self.return_reg);
         self.generator
             .add_instruction(Instruction::li(&mut ret, -1));
 
@@ -1054,14 +1061,14 @@ impl Cek {
     }
 
     pub fn handle_builtin(&mut self) -> Freed {
-        argument!(self, builtin = self.first_arg);
-        var_argument!(self, heap = self.heap);
-        argument!(self, zero = Register::Zero);
+        argument!(builtin = self.first_arg);
+        var_argument!(heap = self.heap);
+        argument!(zero = self.zero);
 
         self.generator
             .add_instruction(Instruction::label("handle_builtin".to_string()));
 
-        constnt!(self, builtin_func_index = self.first_temp);
+        constnt!(builtin_func_index = self.first_temp);
 
         self.generator
             .add_instruction(Instruction::lbu(&mut builtin_func_index, 1, &builtin));
@@ -1074,7 +1081,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 7));
 
-        constnt!(self, value_tag = self.second_temp);
+        constnt!(value_tag = self.second_temp);
         self.generator
             .add_instruction(Instruction::li(&mut value_tag, 3));
 
@@ -1084,7 +1091,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::sb(&builtin_func_index, -6, &heap));
 
-        var!(self, force_lookup = self.third_temp);
+        var!(force_lookup = self.third_temp);
         self.generator.add_instruction(Instruction::la(
             &mut force_lookup,
             "force_counts".to_string(),
@@ -1096,7 +1103,7 @@ impl Cek {
             &builtin_func_index,
         ));
 
-        constnt!(self, forces = self.fourth_temp);
+        constnt!(forces = self.fourth_temp);
         self.generator
             .add_instruction(Instruction::lbu(&mut forces, 0, &force_lookup));
 
@@ -1117,11 +1124,11 @@ impl Cek {
     }
 
     pub fn handle_constr(&mut self) -> Freed {
-        argument!(self, constr = self.first_arg);
-        var_argument!(self, heap = self.heap);
-        argument!(self, env = self.env);
-        var_argument!(self, frames = self.frames);
-        argument!(self, zero = Register::Zero);
+        argument!(constr = self.first_arg);
+        var_argument!(heap = self.heap);
+        argument!(env = self.env);
+        var_argument!(frames = self.frames);
+        argument!(zero = self.zero);
 
         self.generator
             .add_instruction(Instruction::label("handle_constr".to_string()));
@@ -1130,7 +1137,7 @@ impl Cek {
             "Load the tag of the constr into T0".to_string(),
         ));
 
-        constnt!(self, constr_tag = self.first_temp);
+        constnt!(constr_tag = self.first_temp);
 
         self.generator
             .add_instruction(Instruction::lw(&mut constr_tag, 1, &constr));
@@ -1139,7 +1146,7 @@ impl Cek {
             "Load the length of the constr fields into T1".to_string(),
         ));
 
-        constnt!(self, constr_len = self.second_temp);
+        constnt!(constr_len = self.second_temp);
 
         self.generator
             .add_instruction(Instruction::lw(&mut constr_len, 5, &constr));
@@ -1158,7 +1165,7 @@ impl Cek {
                 "-- Fields is not empty --".to_string(),
             ));
 
-            constnt!(self, constr_len_popped = self.third_temp);
+            constnt!(constr_len_popped = self.third_temp);
             self.generator.add_instruction(Instruction::addi(
                 &mut constr_len_popped,
                 &constr_len,
@@ -1169,7 +1176,7 @@ impl Cek {
                 "Minimum size for FrameConstr is 17 bytes".to_string(),
             ));
 
-            constnt!(self, elements_byte_size = self.fourth_temp);
+            constnt!(elements_byte_size = self.fourth_temp);
             self.generator.add_instruction(Instruction::slli(
                 &mut elements_byte_size,
                 &constr_len_popped,
@@ -1208,7 +1215,7 @@ impl Cek {
                 &total_byte_size,
             ));
 
-            var!(self, frame_builder = self.fifth_temp);
+            var!(frame_builder = self.fifth_temp);
             self.generator
                 .add_instruction(Instruction::mv(&mut frame_builder, &frames));
 
@@ -1280,7 +1287,7 @@ impl Cek {
             self.generator
                 .add_instruction(Instruction::comment("Load first field to A4".to_string()));
 
-            constnt!(self, first_field = self.fifth_arg);
+            constnt!(first_field = self.fifth_arg);
 
             self.generator
                 .add_instruction(Instruction::lw(&mut first_field, 9, &constr));
@@ -1289,7 +1296,7 @@ impl Cek {
                 "move fields length - 1 to A2".to_string(),
             ));
 
-            constnt!(self, size = self.third_arg);
+            constnt!(size = self.third_arg);
 
             self.generator
                 .add_instruction(Instruction::mv(&mut size, &constr_len_popped));
@@ -1298,7 +1305,7 @@ impl Cek {
                 "move current stack pointer to A1".to_string(),
             ));
 
-            constnt!(self, frames_arg = self.second_arg);
+            constnt!(frames_arg = self.second_arg);
 
             self.generator
                 .add_instruction(Instruction::mv(&mut frames_arg, &frame_builder));
@@ -1308,7 +1315,7 @@ impl Cek {
                     .to_string(),
             ));
 
-            var!(self, constr_temp = self.sixth_temp);
+            var!(constr_temp = self.sixth_temp);
 
             self.generator
                 .add_instruction(Instruction::mv(&mut constr_temp, &constr));
@@ -1321,7 +1328,7 @@ impl Cek {
             // Takes in A0 - elements pointer, A1 - destination pointer, A2 - length
             // A3 - return address
 
-            constnt!(self, callback = self.fourth_arg);
+            constnt!(callback = self.fourth_arg);
 
             self.generator
                 .add_instruction(Instruction::jal(&mut callback, "clone_list".to_string()));
@@ -1365,7 +1372,7 @@ impl Cek {
             self.generator
                 .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 9));
 
-            constnt!(self, vconstr_tag = self.third_temp);
+            constnt!(vconstr_tag = self.third_temp);
 
             self.generator
                 .add_instruction(Instruction::li(&mut vconstr_tag, 4));
@@ -1391,9 +1398,9 @@ impl Cek {
     }
 
     pub fn handle_case(&mut self) -> Freed {
-        argument!(self, case = self.first_arg);
-        var_argument!(self, frames = self.frames);
-        argument!(self, env = self.env);
+        argument!(case = self.first_arg);
+        var_argument!(frames = self.frames);
+        argument!(env = self.env);
         self.generator
             .add_instruction(Instruction::label("handle_case".to_string()));
 
@@ -1402,7 +1409,7 @@ impl Cek {
         ));
 
         // Store constr to compute on in A4
-        constnt!(self, constr = self.fifth_arg);
+        constnt!(constr = self.fifth_arg);
         self.generator
             .add_instruction(Instruction::lw(&mut constr, 1, &case));
 
@@ -1410,7 +1417,7 @@ impl Cek {
             "Load the length of the constr fields into T1".to_string(),
         ));
 
-        constnt!(self, size = self.first_temp);
+        constnt!(size = self.first_temp);
         self.generator
             .add_instruction(Instruction::lw(&mut size, 5, &constr));
 
@@ -1418,11 +1425,11 @@ impl Cek {
             "Minimum size for FrameCase is 9 bytes".to_string(),
         ));
 
-        constnt!(self, elements_byte_size = self.second_temp);
+        constnt!(elements_byte_size = self.second_temp);
         self.generator
             .add_instruction(Instruction::slli(&mut elements_byte_size, &size, 2));
 
-        constnt!(self, total_byte_size = self.third_temp);
+        constnt!(total_byte_size = self.third_temp);
         self.generator.add_instruction(Instruction::addi(
             &mut total_byte_size,
             &elements_byte_size,
@@ -1450,12 +1457,12 @@ impl Cek {
             &total_byte_size,
         ));
 
-        var!(self, frames_builder = self.fourth_temp);
+        var!(frames_builder = self.fourth_temp);
         self.generator
             .add_instruction(Instruction::mv(&mut frames_builder, &frames));
 
         // FrameCase tag
-        constnt!(self, frame_case_tag = self.fifth_temp);
+        constnt!(frame_case_tag = self.fifth_temp);
         self.generator
             .add_instruction(Instruction::li(&mut frame_case_tag, 5));
 
@@ -1490,16 +1497,16 @@ impl Cek {
         // A2 is length of terms array
         // A3 holds return address
 
-        constnt!(self, list_size = self.third_arg);
+        constnt!(list_size = self.third_arg);
         self.generator
             .add_instruction(Instruction::mv(&mut list_size, &size));
 
-        constnt!(self, frames_arg = self.second_arg);
+        constnt!(frames_arg = self.second_arg);
 
         self.generator
             .add_instruction(Instruction::mv(&mut frames_arg, &frames_builder));
 
-        constnt!(self, case_temp = self.sixth_temp);
+        constnt!(case_temp = self.sixth_temp);
 
         self.generator
             .add_instruction(Instruction::mv(&mut case_temp, &case));
@@ -1508,7 +1515,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::addi(&mut branches, &case_temp, 9));
 
-        constnt!(self, callback = self.fourth_arg);
+        constnt!(callback = self.fourth_arg);
         self.generator
             .add_instruction(Instruction::jal(&mut callback, "clone_list".to_string()));
 
@@ -1524,8 +1531,8 @@ impl Cek {
     }
 
     pub fn handle_frame_await_arg(&mut self) -> Freed {
-        argument!(self, arg = self.first_arg);
-        var_argument!(self, frames = self.frames);
+        argument!(arg = self.first_arg);
+        var_argument!(frames = self.frames);
         self.generator
             .add_instruction(Instruction::label("handle_frame_await_arg".to_string()));
 
@@ -1533,7 +1540,7 @@ impl Cek {
             "load function value pointer from stack".to_string(),
         ));
 
-        constnt!(self, function = self.first_temp);
+        constnt!(function = self.first_temp);
         self.generator
             .add_instruction(Instruction::lw(&mut function, 1, &frames));
 
@@ -1544,7 +1551,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::addi(&mut frames.clone(), &frames, 5));
 
-        constnt!(self, second_eval_arg = self.second_arg);
+        constnt!(second_eval_arg = self.second_arg);
 
         self.generator
             .add_instruction(Instruction::mv(&mut second_eval_arg, &arg));
@@ -1561,8 +1568,8 @@ impl Cek {
 
     // Takes in a0 and passes it to apply_evaluate
     pub fn handle_frame_await_fun_term(&mut self) -> Freed {
-        argument!(self, function = self.first_arg);
-        var_argument!(self, frames = self.frames);
+        argument!(function = self.first_arg);
+        var_argument!(frames = self.frames);
 
         self.generator.add_instruction(Instruction::label(
             "handle_frame_await_fun_term".to_string(),
@@ -1572,7 +1579,7 @@ impl Cek {
             "load argument pointer from stack".to_string(),
         ));
 
-        constnt!(self, argument = self.first_temp);
+        constnt!(argument = self.first_temp);
         self.generator
             .add_instruction(Instruction::lw(&mut argument, 1, &frames));
 
@@ -1580,7 +1587,7 @@ impl Cek {
             "load environment from stack".to_string(),
         ));
 
-        constnt!(self, environment = self.second_temp);
+        constnt!(environment = self.second_temp);
         self.generator
             .add_instruction(Instruction::lw(&mut environment, 5, &frames));
 
@@ -1600,7 +1607,7 @@ impl Cek {
             "Tag is 0 for FrameAwaitArg".to_string(),
         ));
 
-        constnt!(self, frame_tag = self.third_temp);
+        constnt!(frame_tag = self.third_temp);
         self.generator
             .add_instruction(Instruction::li(&mut frame_tag, 0));
 
@@ -1620,7 +1627,7 @@ impl Cek {
         self.generator.add_instruction(Instruction::comment(
             "Set new environment pointer".to_string(),
         ));
-        constnt!(self, env = self.env);
+        constnt!(env = self.env);
         self.generator
             .add_instruction(Instruction::mv(&mut env, &environment));
 
@@ -1635,8 +1642,8 @@ impl Cek {
     }
 
     pub fn handle_frame_await_fun_value(&mut self) -> Freed {
-        argument!(self, function = self.first_arg);
-        var_argument!(self, frames = self.frames);
+        argument!(function = self.first_arg);
+        var_argument!(frames = self.frames);
 
         self.generator.add_instruction(Instruction::label(
             "handle_frame_await_fun_value".to_string(),
@@ -1646,7 +1653,7 @@ impl Cek {
             "load function value pointer from stack".to_string(),
         ));
 
-        constnt!(self, arg = self.first_temp);
+        constnt!(arg = self.first_temp);
         self.generator
             .add_instruction(Instruction::lw(&mut arg, 1, &frames));
 
@@ -1657,7 +1664,7 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::addi(&mut frames.clone(), &frames, 5));
 
-        constnt!(self, second_eval_arg = self.second_arg);
+        constnt!(second_eval_arg = self.second_arg);
 
         self.generator
             .add_instruction(Instruction::mv(&mut second_eval_arg, &arg));
@@ -1670,7 +1677,7 @@ impl Cek {
 
     // Takes in a0 and passes it to force_evaluate
     pub fn handle_frame_force(&mut self) -> Freed {
-        var_argument!(self, frames = self.frames);
+        var_argument!(frames = self.frames);
         self.generator
             .add_instruction(Instruction::label("handle_frame_force".to_string()));
 
@@ -1687,29 +1694,29 @@ impl Cek {
     }
 
     pub fn handle_frame_constr(&mut self) -> Freed {
-        argument!(self, computed_value = self.first_arg);
-        var_argument!(self, frames = self.frames);
-        var_argument!(self, heap = self.heap);
-        argument!(self, zero = Register::Zero);
+        argument!(computed_value = self.first_arg);
+        var_argument!(frames = self.frames);
+        var_argument!(heap = self.heap);
+        argument!(zero = self.zero);
         self.generator
             .add_instruction(Instruction::label("handle_frame_constr".to_string()));
 
-        constnt!(self, constr_tag = self.first_temp);
+        constnt!(constr_tag = self.first_temp);
         // Load the constructor tag from the frame
         self.generator
             .add_instruction(Instruction::lw(&mut constr_tag, 1, &frames));
 
-        constnt!(self, environment = self.second_temp);
+        constnt!(environment = self.second_temp);
         // Load the environment from the frame
         self.generator
             .add_instruction(Instruction::lw(&mut environment, 5, &frames));
 
-        constnt!(self, fields_len = self.third_temp);
+        constnt!(fields_len = self.third_temp);
         self.generator
             .add_instruction(Instruction::lw(&mut fields_len, 9, &frames));
 
         // bytes offset from frame to values len based on fields length
-        var!(self, bytes_offset = self.fourth_temp);
+        var!(bytes_offset = self.fourth_temp);
         self.generator
             .add_instruction(Instruction::mv(&mut bytes_offset, &fields_len));
 
@@ -1731,7 +1738,7 @@ impl Cek {
             &frames,
         ));
 
-        var!(self, values_len = self.fifth_temp);
+        var!(values_len = self.fifth_temp);
 
         self.generator
             .add_instruction(Instruction::lw(&mut values_len, 0, &bytes_offset));
@@ -1751,7 +1758,7 @@ impl Cek {
         create_block!(self, {
             let mut computed_value = computed_value.clone();
             // Mutate fields length to be 1 less since we are popping from the front
-            constnt!(self, current_field_len = self.sixth_temp);
+            constnt!(current_field_len = self.sixth_temp);
 
             self.generator.add_instruction(Instruction::addi(
                 &mut current_field_len,
@@ -1763,16 +1770,16 @@ impl Cek {
                 .add_instruction(Instruction::sw(&current_field_len, 9, &frames));
 
             // Field term to compute on in A5
-            constnt!(self, first_field = self.sixth_arg);
+            constnt!(first_field = self.sixth_arg);
             self.generator
                 .add_instruction(Instruction::lw(&mut first_field, 13, &frames));
 
             // Value to push onto the frame in A4
-            constnt!(self, new_value = self.fifth_arg);
+            constnt!(new_value = self.fifth_arg);
             self.generator
                 .add_instruction(Instruction::mv(&mut new_value, &computed_value));
 
-            var!(self, length_arg = self.third_arg);
+            var!(length_arg = self.third_arg);
             self.generator
                 .add_instruction(Instruction::mv(&mut length_arg, &current_field_len));
 
@@ -1782,7 +1789,7 @@ impl Cek {
                 &values_len,
             ));
 
-            constnt!(self, new_list = self.second_arg);
+            constnt!(new_list = self.second_arg);
             self.generator
                 .add_instruction(Instruction::addi(&mut new_list, &frames, 13));
 
@@ -1790,14 +1797,14 @@ impl Cek {
             self.generator
                 .add_instruction(Instruction::addi(&mut src_list, &frames, 17));
 
-            constnt!(self, callback = self.fourth_arg);
+            constnt!(callback = self.fourth_arg);
             self.generator
                 .add_instruction(Instruction::jal(&mut callback, "clone_list".to_string()));
 
             self.generator
                 .add_instruction(Instruction::sw(&new_value, 0, &new_list));
 
-            constnt!(self, env = self.env);
+            constnt!(env = self.env);
             self.generator
                 .add_instruction(Instruction::mv(&mut env, &environment));
 
@@ -1847,7 +1854,7 @@ impl Cek {
                 &allocation_amount,
             ));
 
-            constnt!(self, value_tag = self.sixth_temp);
+            constnt!(value_tag = self.sixth_temp);
 
             self.generator
                 .add_instruction(Instruction::li(&mut value_tag, 4));
@@ -1862,7 +1869,7 @@ impl Cek {
                 .add_instruction(Instruction::sw(&values_len, 5, &allocator_space));
 
             // Value to return compute in A5
-            constnt!(self, return_value = self.sixth_arg);
+            constnt!(return_value = self.sixth_arg);
             self.generator
                 .add_instruction(Instruction::mv(&mut return_value, &allocator_space));
 
@@ -1895,11 +1902,11 @@ impl Cek {
                 &bytes_offset,
             ));
 
-            constnt!(self, next_frame = self.seventh_arg);
+            constnt!(next_frame = self.seventh_arg);
             self.generator
                 .add_instruction(Instruction::addi(&mut next_frame, &tail_list, 4));
 
-            constnt!(self, new_value = self.fifth_arg);
+            constnt!(new_value = self.fifth_arg);
             self.generator
                 .add_instruction(Instruction::mv(&mut new_value, &computed_value));
 
@@ -1908,7 +1915,7 @@ impl Cek {
             self.generator
                 .add_instruction(Instruction::mv(&mut list_to_reverse, &tail_list));
 
-            var!(self, dest = self.second_arg);
+            var!(dest = self.second_arg);
             self.generator
                 .add_instruction(Instruction::mv(&mut dest, &allocator_space));
 
@@ -1918,11 +1925,11 @@ impl Cek {
             self.generator
                 .add_instruction(Instruction::addi(&mut dest.clone(), &dest, 4));
 
-            constnt!(self, size = self.third_arg);
+            constnt!(size = self.third_arg);
             self.generator
                 .add_instruction(Instruction::mv(&mut size, &values_len));
 
-            constnt!(self, callback = self.fourth_arg);
+            constnt!(callback = self.fourth_arg);
             self.generator.add_instruction(Instruction::jal(
                 &mut callback,
                 "reverse_clone_list".to_string(),
@@ -1944,22 +1951,22 @@ impl Cek {
     }
 
     pub fn handle_frame_case(&mut self) -> Freed {
-        argument!(self, first_arg = self.first_arg);
-        var_argument!(self, frames = self.frames);
-        argument!(self, zero = Register::Zero);
+        argument!(first_arg = self.first_arg);
+        var_argument!(frames = self.frames);
+        argument!(zero = self.zero);
 
         self.generator
             .add_instruction(Instruction::label("handle_frame_case".to_string()));
 
-        constnt!(self, constr = self.first_temp);
+        constnt!(constr = self.first_temp);
         self.generator
             .add_instruction(Instruction::mv(&mut constr, &first_arg));
 
-        constnt!(self, constr_term_tag = self.second_temp);
+        constnt!(constr_term_tag = self.second_temp);
         self.generator
             .add_instruction(Instruction::lbu(&mut constr_term_tag, 0, &constr));
 
-        constnt!(self, expected_tag = self.third_temp);
+        constnt!(expected_tag = self.third_temp);
 
         self.generator
             .add_instruction(Instruction::li(&mut expected_tag, 4));
@@ -1971,7 +1978,7 @@ impl Cek {
         ));
 
         {
-            var!(self, constr_tag = self.fourth_temp);
+            var!(constr_tag = self.fourth_temp);
             self.generator
                 .add_instruction(Instruction::lw(&mut constr_tag, 1, &constr));
 
@@ -1987,7 +1994,7 @@ impl Cek {
             ));
 
             // set env
-            constnt!(self, env = self.env);
+            constnt!(env = self.env);
             self.generator
                 .add_instruction(Instruction::lw(&mut env, 1, &frames));
 
@@ -2041,11 +2048,11 @@ impl Cek {
             self.generator
                 .add_instruction(Instruction::lw(&mut constr_fields_len, 5, &constr));
 
-            var!(self, current_index = self.fifth_temp);
+            var!(current_index = self.fifth_temp);
             self.generator
                 .add_instruction(Instruction::mv(&mut current_index, &zero));
 
-            var!(self, current_offset = self.sixth_temp);
+            var!(current_offset = self.sixth_temp);
             // 9 for constant offset
             // 1 for frame tag + 4 for constr tag + 4 for constr fields len
             self.generator
@@ -2115,12 +2122,12 @@ impl Cek {
     }
 
     pub fn handle_no_frame(&mut self) -> Freed {
-        argument!(self, value = self.first_arg);
-        argument!(self, zero = Register::Zero);
+        argument!(value = self.first_arg);
+        argument!(zero = self.zero);
         self.generator
             .add_instruction(Instruction::label("handle_no_frame".to_string()));
 
-        constnt!(self, value_tag = self.first_temp);
+        constnt!(value_tag = self.first_temp);
         self.generator
             .add_instruction(Instruction::lbu(&mut value_tag, 0, &value));
 
@@ -2131,7 +2138,7 @@ impl Cek {
             "handle_error".to_string(),
         ));
 
-        constnt!(self, ret_temp = self.second_temp);
+        constnt!(ret_temp = self.second_temp);
         self.generator
             .add_instruction(Instruction::lw(&mut ret_temp, 1, &value));
 
@@ -2150,7 +2157,7 @@ impl Cek {
             .add_instruction(Instruction::label("halt".to_string()));
 
         // exit code
-        constnt!(self, exit_code = self.eighth_arg);
+        constnt!(exit_code = self.eighth_arg);
         self.generator
             .add_instruction(Instruction::li(&mut exit_code, 93));
 
@@ -2160,9 +2167,9 @@ impl Cek {
     }
 
     pub fn force_evaluate(&mut self) -> Freed {
-        argument!(self, function = self.first_arg);
-        argument!(self, zero = Register::Zero);
-        var_argument!(self, heap = self.heap);
+        argument!(function = self.first_arg);
+        argument!(zero = self.zero);
+        var_argument!(heap = self.heap);
 
         self.generator
             .add_instruction(Instruction::label("force_evaluate".to_string()));
@@ -2173,14 +2180,14 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::comment("Load value tag".to_string()));
 
-        constnt!(self, tag = self.first_temp);
+        constnt!(tag = self.first_temp);
         self.generator
             .add_instruction(Instruction::lbu(&mut tag, 0, &function));
 
         self.generator
             .add_instruction(Instruction::comment("Delay".to_string()));
 
-        constnt!(self, delay_value_tag = self.second_temp);
+        constnt!(delay_value_tag = self.second_temp);
         self.generator
             .add_instruction(Instruction::li(&mut delay_value_tag, 1));
 
@@ -2211,7 +2218,7 @@ impl Cek {
             self.generator
                 .add_instruction(Instruction::lw(&mut environment, 5, &function));
 
-            constnt!(self, env = self.env);
+            constnt!(env = self.env);
             self.generator
                 .add_instruction(Instruction::mv(&mut env, &environment));
 
@@ -2263,7 +2270,7 @@ impl Cek {
                 self.generator
                     .add_instruction(Instruction::sb(&tag, -7, &heap));
 
-                constnt!(self, builtin_func_index = self.third_temp);
+                constnt!(builtin_func_index = self.third_temp);
                 self.generator.add_instruction(Instruction::lbu(
                     &mut builtin_func_index,
                     1,
@@ -2306,7 +2313,7 @@ impl Cek {
                     &builtin_func_index,
                 ));
 
-                constnt!(self, arity = self.fourth_temp);
+                constnt!(arity = self.fourth_temp);
                 self.generator
                     .add_instruction(Instruction::lbu(&mut arity, 0, &arity_lookup));
 
@@ -2317,7 +2324,7 @@ impl Cek {
                     "return".to_string(),
                 ));
 
-                constnt!(self, function_index = self.second_arg);
+                constnt!(function_index = self.second_arg);
                 self.generator
                     .add_instruction(Instruction::mv(&mut function_index, &builtin_func_index));
 
@@ -2450,7 +2457,7 @@ impl Cek {
                     .add_instruction(Instruction::Lbu(force_count, 2, function));
 
                 self.generator.add_instruction(Instruction::Bne(
-                    Register::Zero,
+                    self.zero,
                     force_count,
                     "apply_evaluate_error".to_string(),
                 ));
@@ -2523,7 +2530,7 @@ impl Cek {
 
                 // Forces was checked to be 0 above
                 self.generator
-                    .add_instruction(Instruction::Sb(Register::Zero, 2, cloned_value));
+                    .add_instruction(Instruction::Sb(self.zero, 2, cloned_value));
 
                 // Arguments is now the new_args_length
                 self.generator
@@ -2610,7 +2617,7 @@ impl Cek {
 
         self.generator.add_instruction(Instruction::Beq(
             current_index,
-            Register::Zero,
+            self.zero,
             "lookup_return".to_string(),
         ));
 
@@ -2663,7 +2670,7 @@ impl Cek {
 
         self.generator.add_instruction(Instruction::Beq(
             length,
-            Register::Zero,
+            self.zero,
             "clone_list_return".to_string(),
         ));
 
@@ -2722,7 +2729,7 @@ impl Cek {
 
         self.generator.add_instruction(Instruction::Beq(
             length,
-            Register::Zero,
+            self.zero,
             "reverse_clone_list_return".to_string(),
         ));
 
@@ -3334,7 +3341,7 @@ impl Cek {
             .add_instruction(Instruction::Addi(heap, heap, 8));
 
         self.generator
-            .add_instruction(Instruction::Sb(Register::Zero, -8, heap));
+            .add_instruction(Instruction::Sb(self.zero, -8, heap));
 
         // Overwrite y_integer
         let constant_pointer = y_integer;
@@ -3454,7 +3461,7 @@ impl Cek {
             .add_instruction(Instruction::Addi(heap, heap, 8));
 
         self.generator
-            .add_instruction(Instruction::Sb(Register::Zero, -8, heap));
+            .add_instruction(Instruction::Sb(self.zero, -8, heap));
 
         // Overwrite y_integer
         let constant_pointer = y_integer;
@@ -3598,7 +3605,7 @@ impl Cek {
             .add_instruction(Instruction::Addi(heap, heap, 8));
 
         self.generator
-            .add_instruction(Instruction::Sb(Register::Zero, -8, heap));
+            .add_instruction(Instruction::Sb(self.zero, -8, heap));
 
         // Overwrite y_integer
         let constant_pointer = y_integer;
@@ -4193,7 +4200,7 @@ impl Cek {
 
         self.generator.add_instruction(Instruction::Bne(
             carry,
-            Register::Zero,
+            self.zero,
             "handle_final_carry".to_string(),
         ));
         {
@@ -4298,7 +4305,7 @@ impl Cek {
 
                 self.generator.add_instruction(Instruction::Beq(
                     magnitude_len,
-                    Register::Zero,
+                    self.zero,
                     "equal_values".to_string(),
                 ));
 
@@ -4383,7 +4390,7 @@ impl Cek {
 
             self.generator.add_instruction(Instruction::Bne(
                 comparison_check,
-                Register::Zero,
+                self.zero,
                 "first_value_smaller".to_string(),
             ));
 
@@ -4396,7 +4403,7 @@ impl Cek {
                 let equality = self.return_reg;
                 // Values are not equal so return 0
                 self.generator
-                    .add_instruction(Instruction::Mv(equality, Register::Zero));
+                    .add_instruction(Instruction::Mv(equality, self.zero));
 
                 // Overwrite second_sign
                 let greater_value = second_sign;
@@ -4428,7 +4435,7 @@ impl Cek {
                 let equality = self.return_reg;
                 // Values are not equal so return 0
                 self.generator
-                    .add_instruction(Instruction::Mv(equality, Register::Zero));
+                    .add_instruction(Instruction::Mv(equality, self.zero));
 
                 // Overwrite second_sign
                 let greater_value = second_sign;
@@ -4533,7 +4540,7 @@ impl Cek {
 
         self.generator.add_instruction(Instruction::Bne(
             equality_temp,
-            Register::Zero,
+            self.zero,
             "equal_value_subtraction".to_string(),
         ));
         {
@@ -4669,7 +4676,7 @@ impl Cek {
                 ));
 
                 self.generator.add_instruction(Instruction::Beq(
-                    Register::Zero,
+                    self.zero,
                     result,
                     "can_reclaim_heap_word".to_string(),
                 ));
@@ -4739,7 +4746,7 @@ impl Cek {
                 .add_instruction(Instruction::Sw(equality_temp, 0, length_pointer));
 
             self.generator
-                .add_instruction(Instruction::Sw(Register::Zero, 0, value_builder));
+                .add_instruction(Instruction::Sw(self.zero, 0, value_builder));
 
             // reclaim heap since value is 0 and length is 1
             self.generator
@@ -6101,11 +6108,11 @@ mod tests {
     fn blocks() {
         let mut thing = Cek::default();
 
-        argument!(thing, yes = thing.first_arg);
+        argument!(yes = thing.first_arg);
 
         create_block!(thing, {
-            var!(thing, no = thing.second_arg);
-            constnt!(thing, sure = thing.third_arg);
+            var!(no = thing.second_arg);
+            constnt!(sure = thing.third_arg);
 
             thing
                 .generator
