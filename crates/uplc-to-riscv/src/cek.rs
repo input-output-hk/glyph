@@ -2684,118 +2684,132 @@ impl Cek {
     // A1 is new stack pointer
     // A2 is length of terms array
     // A3 is the return address
-    pub fn clone_list(&mut self) {
-        let src_list = self.first_arg;
-        let dest_list = self.second_arg;
-        let length = self.third_arg;
-        let callback = self.fourth_arg;
+    pub fn clone_list(&mut self) -> Freed {
+        var_argument!(src_list = self.first_arg);
+        var_argument!(dest_list = self.second_arg);
+        var_argument!(length = self.third_arg);
+        argument!(callback = self.fourth_arg);
+        argument!(zero = self.zero);
         self.generator
-            .add_instruction(Instruction::Label("clone_list".to_string()));
+            .add_instruction(Instruction::label("clone_list".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Comment("A2 contains terms length".to_string()));
+            .add_instruction(Instruction::comment("A2 contains terms length".to_string()));
 
-        self.generator.add_instruction(Instruction::Beq(
-            length,
-            self.zero,
+        self.generator.add_instruction(Instruction::beq(
+            &length,
+            &zero,
             "clone_list_return".to_string(),
         ));
 
         {
-            let list_item = self.first_temp;
+            constnt!(list_item = self.first_temp);
             self.generator
-                .add_instruction(Instruction::Lw(list_item, 0, src_list));
+                .add_instruction(Instruction::lw(&mut list_item, 0, &src_list));
 
             // Store term in new storage
             self.generator
-                .add_instruction(Instruction::Sw(list_item, 0, dest_list));
+                .add_instruction(Instruction::sw(&list_item, 0, &dest_list));
 
             // move fields up by 4 bytes
             self.generator
-                .add_instruction(Instruction::Addi(src_list, src_list, 4));
+                .add_instruction(Instruction::addi(&mut src_list.clone(), &src_list, 4));
 
             // move pointer up by 4 bytes
-            self.generator
-                .add_instruction(Instruction::Addi(dest_list, dest_list, 4));
+            self.generator.add_instruction(Instruction::addi(
+                &mut dest_list.clone(),
+                &dest_list,
+                4,
+            ));
 
             // decrement terms length
             self.generator
-                .add_instruction(Instruction::Addi(length, length, -1));
+                .add_instruction(Instruction::addi(&mut length.clone(), &length, -1));
 
             self.generator
-                .add_instruction(Instruction::J("clone_list".to_string()));
-        }
+                .add_instruction(Instruction::j("clone_list".to_string()));
+        };
 
         {
             self.generator
-                .add_instruction(Instruction::Label("clone_list_return".to_string()));
+                .add_instruction(Instruction::label("clone_list_return".to_string()));
 
-            self.generator.add_instruction(Instruction::Comment(
+            self.generator.add_instruction(Instruction::comment(
                 "A3 contains return address".to_string(),
             ));
 
+            var_overwrite!(discard = zero);
             self.generator
-                .add_instruction(Instruction::Jalr(self.discard, callback, 0));
-        }
+                .add_instruction(Instruction::jalr(&mut discard, &callback, 0));
+        };
+
+        self.register_map.free_all()
     }
 
     // A0 pointer to terms array to decrement from
     // A1 is new stack pointer
     // A2 is length of terms array
     // A3 is the return address
-    pub fn reverse_clone_list(&mut self) {
-        let src_list = self.first_arg;
-        let dest_list = self.second_arg;
-        let length = self.third_arg;
-        let callback = self.fourth_arg;
+    pub fn reverse_clone_list(&mut self) -> Freed {
+        var_argument!(src_list = self.first_arg);
+        var_argument!(dest_list = self.second_arg);
+        var_argument!(length = self.third_arg);
+        argument!(callback = self.fourth_arg);
+        argument!(zero = self.zero);
         self.generator
-            .add_instruction(Instruction::Label("reverse_clone_list".to_string()));
+            .add_instruction(Instruction::label("reverse_clone_list".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Comment("A2 contains terms length".to_string()));
+            .add_instruction(Instruction::comment("A2 contains terms length".to_string()));
 
-        self.generator.add_instruction(Instruction::Beq(
-            length,
-            self.zero,
+        self.generator.add_instruction(Instruction::beq(
+            &length,
+            &zero,
             "reverse_clone_list_return".to_string(),
         ));
 
         {
-            let list_item = self.first_temp;
+            constnt!(list_item = self.first_temp);
             self.generator
-                .add_instruction(Instruction::Lw(list_item, 0, src_list));
+                .add_instruction(Instruction::lw(&mut list_item, 0, &src_list));
 
             // Store term in new storage
             self.generator
-                .add_instruction(Instruction::Sw(list_item, 0, dest_list));
+                .add_instruction(Instruction::sw(&list_item, 0, &dest_list));
 
             // move backwards by 4 bytes
             self.generator
-                .add_instruction(Instruction::Addi(src_list, src_list, -4));
+                .add_instruction(Instruction::addi(&mut src_list.clone(), &src_list, -4));
 
             // move pointer up by 4 bytes
-            self.generator
-                .add_instruction(Instruction::Addi(dest_list, dest_list, 4));
+            self.generator.add_instruction(Instruction::addi(
+                &mut dest_list.clone(),
+                &dest_list,
+                4,
+            ));
 
             // decrement terms length
             self.generator
-                .add_instruction(Instruction::Addi(length, length, -1));
+                .add_instruction(Instruction::addi(&mut length.clone(), &length, -1));
 
             self.generator
-                .add_instruction(Instruction::J("reverse_clone_list".to_string()));
+                .add_instruction(Instruction::j("reverse_clone_list".to_string()));
         }
 
         {
             self.generator
-                .add_instruction(Instruction::Label("reverse_clone_list_return".to_string()));
+                .add_instruction(Instruction::label("reverse_clone_list_return".to_string()));
 
-            self.generator.add_instruction(Instruction::Comment(
+            self.generator.add_instruction(Instruction::comment(
                 "A3 contains return address".to_string(),
             ));
 
+            constnt_overwrite!(discard = zero);
             self.generator
-                .add_instruction(Instruction::Jalr(self.discard, callback, 0));
-        }
+                .add_instruction(Instruction::jalr(&mut discard, &callback, 0));
+        };
+
+        self.register_map.free_all()
     }
 
     pub fn initial_term(&mut self, bytes: Vec<u8>) {
@@ -2818,352 +2832,384 @@ impl Cek {
             .add_instruction(Instruction::Byte(ARITIES.to_vec()));
     }
 
-    pub fn eval_builtin_app(&mut self) {
-        let builtin_value = self.first_arg;
-        let builtin_func_index = self.second_arg;
+    pub fn eval_builtin_app(&mut self) -> Freed {
+        argument!(builtin_value = self.first_arg);
+        argument!(builtin_func_index = self.second_arg);
         self.generator
-            .add_instruction(Instruction::Label("eval_builtin_app".to_string()));
+            .add_instruction(Instruction::label("eval_builtin_app".to_string()));
 
         // offset to actual args for the builtin call
-        let builtin_args = self.first_arg;
-        self.generator
-            .add_instruction(Instruction::Addi(builtin_args, builtin_value, 7));
+        constnt!(builtin_args_temp = self.first_temp);
+        self.generator.add_instruction(Instruction::addi(
+            &mut builtin_args_temp,
+            &builtin_value,
+            7,
+        ));
 
-        let builtin_call_jump = self.first_temp;
-        self.generator.add_instruction(Instruction::La(
-            builtin_call_jump,
+        constnt_overwrite!(builtin_args = builtin_value);
+        self.generator
+            .add_instruction(Instruction::mv(&mut builtin_args, &builtin_args_temp));
+
+        var_overwrite!(builtin_call_jump = builtin_args_temp);
+        self.generator.add_instruction(Instruction::la(
+            &mut builtin_call_jump,
             "eval_builtin_call".to_string(),
         ));
 
-        let builtin_index_offset = self.second_temp;
-        self.generator.add_instruction(Instruction::Slli(
-            builtin_index_offset,
-            builtin_func_index,
+        constnt!(builtin_index_offset = self.second_temp);
+        self.generator.add_instruction(Instruction::slli(
+            &mut builtin_index_offset,
+            &builtin_func_index,
             2,
         ));
 
-        self.generator.add_instruction(Instruction::Add(
-            builtin_call_jump,
-            builtin_call_jump,
-            builtin_index_offset,
+        self.generator.add_instruction(Instruction::add(
+            &mut builtin_call_jump.clone(),
+            &builtin_call_jump,
+            &builtin_index_offset,
         ));
 
+        constnt!(discard = self.discard);
         self.generator
-            .add_instruction(Instruction::Jalr(self.discard, builtin_call_jump, 0));
+            .add_instruction(Instruction::jalr(&mut discard, &builtin_call_jump, 0));
 
         self.generator
-            .add_instruction(Instruction::Label("eval_builtin_call".to_string()));
+            .add_instruction(Instruction::label("eval_builtin_call".to_string()));
 
         // 0 - add_integer
         self.generator
-            .add_instruction(Instruction::J("add_integer".to_string()));
+            .add_instruction(Instruction::j("add_integer".to_string()));
 
         // 1 - sub_integer
         self.generator
-            .add_instruction(Instruction::J("sub_integer".to_string()));
+            .add_instruction(Instruction::j("sub_integer".to_string()));
 
         // 2 - multiply_integer
         self.generator
-            .add_instruction(Instruction::J("multiply_integer".to_string()));
+            .add_instruction(Instruction::j("multiply_integer".to_string()));
 
         // 3 - divide_integer
         self.generator
-            .add_instruction(Instruction::J("divide_integer".to_string()));
+            .add_instruction(Instruction::j("divide_integer".to_string()));
 
         // 4 - quotient_integer
         self.generator
-            .add_instruction(Instruction::J("quotient_integer".to_string()));
+            .add_instruction(Instruction::j("quotient_integer".to_string()));
 
         // 5 - remainder_integer
         self.generator
-            .add_instruction(Instruction::J("remainder_integer".to_string()));
+            .add_instruction(Instruction::j("remainder_integer".to_string()));
 
         // 6 - mod_integer
         self.generator
-            .add_instruction(Instruction::J("mod_integer".to_string()));
+            .add_instruction(Instruction::j("mod_integer".to_string()));
 
         // 7 - equals_integer
         self.generator
-            .add_instruction(Instruction::J("equals_integer".to_string()));
+            .add_instruction(Instruction::j("equals_integer".to_string()));
 
         // 8 - less_than_integer
         self.generator
-            .add_instruction(Instruction::J("less_than_integer".to_string()));
+            .add_instruction(Instruction::j("less_than_integer".to_string()));
 
         // 9 - less_than_equals_integer
         self.generator
-            .add_instruction(Instruction::J("less_than_equals_integer".to_string()));
+            .add_instruction(Instruction::j("less_than_equals_integer".to_string()));
 
         // 10 - append_bytestring
         self.generator
-            .add_instruction(Instruction::J("append_bytestring".to_string()));
+            .add_instruction(Instruction::j("append_bytestring".to_string()));
 
         // 11 - cons_bytestring
         self.generator
-            .add_instruction(Instruction::J("cons_bytestring".to_string()));
+            .add_instruction(Instruction::j("cons_bytestring".to_string()));
+
+        self.register_map.free_all()
     }
 
-    pub fn unwrap_integer(&mut self) {
-        let arg = self.first_arg;
-        let return_address = self.second_arg;
-        self.generator
-            .add_instruction(Instruction::Label("unwrap_integer".to_string()));
+    pub fn unwrap_integer(&mut self) -> Freed {
+        argument!(arg = self.first_arg);
+        argument!(callback = self.second_arg);
 
-        let expected_tag = self.first_temp;
         self.generator
-            .add_instruction(Instruction::Li(expected_tag, 0));
+            .add_instruction(Instruction::label("unwrap_integer".to_string()));
 
-        let value_tag = self.second_temp;
+        constnt!(expected_tag = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lbu(value_tag, 0, arg));
+            .add_instruction(Instruction::li(&mut expected_tag, 0));
 
-        self.generator.add_instruction(Instruction::Bne(
-            expected_tag,
-            value_tag,
+        constnt!(value_tag = self.second_temp);
+        self.generator
+            .add_instruction(Instruction::lbu(&mut value_tag, 0, &arg));
+
+        self.generator.add_instruction(Instruction::bne(
+            &expected_tag,
+            &value_tag,
             "handle_error".to_string(),
         ));
 
-        let constant_value = self.third_temp;
+        constnt!(constant_value = self.third_temp);
         self.generator
-            .add_instruction(Instruction::Lw(constant_value, 1, arg));
+            .add_instruction(Instruction::lw(&mut constant_value, 1, &arg));
 
         // Overwrite expected_tag
-        let expected_type = expected_tag;
-        self.generator.add_instruction(Instruction::Li(
-            expected_type,
+        constnt_overwrite!(expected_type = expected_tag);
+        self.generator.add_instruction(Instruction::li(
+            &mut expected_type,
             1 + 256 * (const_tag::INTEGER as i32),
         ));
 
         // The type ends up being [0x01, 0x00] which in little endian is 1
         // Overwrite value_tag
-        let arg_type = value_tag;
+        constnt_overwrite!(arg_type = value_tag);
         self.generator
-            .add_instruction(Instruction::Lhu(arg_type, 0, constant_value));
+            .add_instruction(Instruction::lhu(&mut arg_type, 0, &constant_value));
 
-        self.generator.add_instruction(Instruction::Bne(
-            expected_type,
-            arg_type,
+        self.generator.add_instruction(Instruction::bne(
+            &expected_type,
+            &arg_type,
             "handle_error".to_string(),
         ));
 
         // Return pointer to integer value
-        let ret = self.return_reg;
+        constnt_overwrite!(ret = arg);
         self.generator
-            .add_instruction(Instruction::Addi(ret, constant_value, 2));
+            .add_instruction(Instruction::addi(&mut ret, &constant_value, 2));
 
+        constnt!(discard = self.discard);
         self.generator
-            .add_instruction(Instruction::Jalr(self.discard, return_address, 0));
+            .add_instruction(Instruction::jalr(&mut discard, &callback, 0));
+
+        self.register_map.free_all()
     }
 
     // purely allocate integer type + constant value on heap
-    pub fn allocate_integer_type(&mut self) {
-        let heap = self.heap;
-        let allocate_temp = self.saved;
-        let callback = self.eighth_arg;
+    pub fn allocate_integer_type(&mut self) -> Freed {
+        var_argument!(heap = self.heap);
+        argument!(allocate_temp = self.saved);
+        argument!(callback = self.eighth_arg);
 
         self.generator
-            .add_instruction(Instruction::Label("allocate_integer_type".to_string()));
+            .add_instruction(Instruction::label("allocate_integer_type".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Addi(heap, heap, 7));
+            .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 7));
 
         // Overwrite allocate_temp
-        let value_tag = allocate_temp;
+        constnt_overwrite!(value_tag = allocate_temp);
         self.generator
-            .add_instruction(Instruction::Li(value_tag, 0));
+            .add_instruction(Instruction::li(&mut value_tag, 0));
 
         self.generator
-            .add_instruction(Instruction::Sb(value_tag, -7, heap));
+            .add_instruction(Instruction::sb(&value_tag, -7, &heap));
 
         // Overwrite value_tag
-        let integer_pointer = value_tag;
+        constnt_overwrite!(integer_pointer = value_tag);
         // We store integer immediately after the pointer so we simply add 4 to point to the location
         self.generator
-            .add_instruction(Instruction::Addi(integer_pointer, heap, -2));
+            .add_instruction(Instruction::addi(&mut integer_pointer, &heap, -2));
 
         self.generator
-            .add_instruction(Instruction::Sw(integer_pointer, -6, heap));
+            .add_instruction(Instruction::sw(&integer_pointer, -6, &heap));
 
         // Overwrite integer_pointer
-        let integer_type = integer_pointer;
-        self.generator.add_instruction(Instruction::Li(
-            integer_type,
+        constnt_overwrite!(integer_type = integer_pointer);
+        self.generator.add_instruction(Instruction::li(
+            &mut integer_type,
             1 + (const_tag::INTEGER as i32) * 256,
         ));
 
         self.generator
-            .add_instruction(Instruction::Sh(integer_type, -2, heap));
+            .add_instruction(Instruction::sh(&integer_type, -2, &heap));
 
+        constnt!(discard = self.discard);
         self.generator
-            .add_instruction(Instruction::Jalr(self.discard, callback, 0));
+            .add_instruction(Instruction::jalr(&mut discard, &callback, 0));
+
+        self.register_map.free_all()
     }
 
     // purely allocate integer type + constant value on heap
-    pub fn allocate_bytestring_type(&mut self) {
-        let heap = self.heap;
-        let allocate_temp = self.saved;
-        let callback = self.eighth_arg;
+    pub fn allocate_bytestring_type(&mut self) -> Freed {
+        var_argument!(heap = self.heap);
+        argument!(allocate_temp = self.saved);
+        argument!(callback = self.eighth_arg);
 
         self.generator
-            .add_instruction(Instruction::Label("allocate_bytestring_type".to_string()));
+            .add_instruction(Instruction::label("allocate_bytestring_type".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Addi(heap, heap, 7));
+            .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 7));
 
         // Overwrite allocate_temp
-        let value_tag = allocate_temp;
+        constnt_overwrite!(value_tag = allocate_temp);
         self.generator
-            .add_instruction(Instruction::Li(value_tag, 0));
+            .add_instruction(Instruction::li(&mut value_tag, 0));
 
         self.generator
-            .add_instruction(Instruction::Sb(value_tag, -7, heap));
+            .add_instruction(Instruction::sb(&value_tag, -7, &heap));
 
         // Overwrite value_tag
-        let bytestring_pointer = value_tag;
+        constnt_overwrite!(bytestring_pointer = value_tag);
         // We store integer immediately after the pointer so we simply add 4 to point to the location
         self.generator
-            .add_instruction(Instruction::Addi(bytestring_pointer, heap, -2));
+            .add_instruction(Instruction::addi(&mut bytestring_pointer, &heap, -2));
 
         self.generator
-            .add_instruction(Instruction::Sw(bytestring_pointer, -6, heap));
+            .add_instruction(Instruction::sw(&bytestring_pointer, -6, &heap));
 
         // Overwrite bytestring_pointer
-        let integer_type = bytestring_pointer;
-        self.generator.add_instruction(Instruction::Li(
-            integer_type,
+        constnt_overwrite!(integer_type = bytestring_pointer);
+        self.generator.add_instruction(Instruction::li(
+            &mut integer_type,
             1 + (const_tag::BYTESTRING as i32) * 256,
         ));
 
         self.generator
-            .add_instruction(Instruction::Sh(integer_type, -2, heap));
+            .add_instruction(Instruction::sh(&integer_type, -2, &heap));
 
+        constnt!(discard = self.discard);
         self.generator
-            .add_instruction(Instruction::Jalr(self.discard, callback, 0));
+            .add_instruction(Instruction::jalr(&mut discard, &callback, 0));
+
+        self.register_map.free_all()
     }
 
-    pub fn unwrap_bytestring(&mut self) {
-        let arg = self.first_arg;
-        let return_address = self.second_arg;
+    pub fn unwrap_bytestring(&mut self) -> Freed {
+        argument!(arg = self.first_arg);
+        argument!(callback = self.second_arg);
         self.generator
-            .add_instruction(Instruction::Label("unwrap_bytestring".to_string()));
+            .add_instruction(Instruction::label("unwrap_bytestring".to_string()));
 
-        let expected_tag = self.first_temp;
+        constnt!(expected_tag = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Li(expected_tag, 0));
+            .add_instruction(Instruction::li(&mut expected_tag, 0));
 
-        let value_tag = self.second_temp;
+        constnt!(value_tag = self.second_temp);
         self.generator
-            .add_instruction(Instruction::Lbu(value_tag, 0, arg));
+            .add_instruction(Instruction::lbu(&mut value_tag, 0, &arg));
 
-        self.generator.add_instruction(Instruction::Bne(
-            expected_tag,
-            value_tag,
+        self.generator.add_instruction(Instruction::bne(
+            &expected_tag,
+            &value_tag,
             "handle_error".to_string(),
         ));
 
-        let constant_value = self.third_temp;
+        constnt!(constant_value = self.third_temp);
         self.generator
-            .add_instruction(Instruction::Lw(constant_value, 1, arg));
+            .add_instruction(Instruction::lw(&mut constant_value, 1, &arg));
 
         // Overwrite expected_tag
-        let expected_type = expected_tag;
-        self.generator.add_instruction(Instruction::Li(
-            expected_type,
+        constnt_overwrite!(expected_type = expected_tag);
+        self.generator.add_instruction(Instruction::li(
+            &mut expected_type,
             1 + 256 * (const_tag::BYTESTRING as i32),
         ));
 
         // The type ends up being [0x01, 0x00] which in little endian is 1
         // Overwrite value_tag
-        let arg_type = value_tag;
+        constnt_overwrite!(arg_type = value_tag);
         self.generator
-            .add_instruction(Instruction::Lhu(arg_type, 0, constant_value));
+            .add_instruction(Instruction::lhu(&mut arg_type, 0, &constant_value));
 
-        self.generator.add_instruction(Instruction::Bne(
-            expected_type,
-            arg_type,
+        self.generator.add_instruction(Instruction::bne(
+            &expected_type,
+            &arg_type,
             "handle_error".to_string(),
         ));
 
         // Return pointer to bytestring value
-        let ret = self.return_reg;
+        constnt_overwrite!(ret = arg);
         self.generator
-            .add_instruction(Instruction::Addi(ret, constant_value, 2));
+            .add_instruction(Instruction::addi(&mut ret, &constant_value, 2));
 
+        constnt!(discard = self.discard);
         self.generator
-            .add_instruction(Instruction::Jalr(self.discard, return_address, 0));
+            .add_instruction(Instruction::jalr(&mut discard, &callback, 0));
+
+        self.register_map.free_all()
     }
 
-    pub fn add_integer(&mut self) {
-        let args = self.first_arg;
+    pub fn add_integer(&mut self) -> Freed {
+        argument!(args = self.first_arg);
         self.generator
-            .add_instruction(Instruction::Label("add_integer".to_string()));
+            .add_instruction(Instruction::label("add_integer".to_string()));
 
-        let x_value = self.first_temp;
+        constnt!(x_value = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lw(x_value, 0, args));
+            .add_instruction(Instruction::lw(&mut x_value, 0, &args));
 
-        let y_value = self.second_temp;
+        constnt!(y_value = self.second_temp);
         self.generator
-            .add_instruction(Instruction::Lw(y_value, 4, args));
+            .add_instruction(Instruction::lw(&mut y_value, 4, &args));
 
         // Overwrite args
-        let first_arg = args;
+        constnt_overwrite!(first_arg = args);
         self.generator
-            .add_instruction(Instruction::Mv(first_arg, x_value));
+            .add_instruction(Instruction::mv(&mut first_arg, &x_value));
 
-        let store_y = self.third_arg;
+        constnt!(store_y = self.third_arg);
         self.generator
-            .add_instruction(Instruction::Mv(store_y, y_value));
+            .add_instruction(Instruction::mv(&mut store_y, &y_value));
 
-        let callback = self.second_arg;
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+        constnt!(callback = self.second_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
 
         // Overwrite x_value
-        let x_integer = x_value;
+        constnt_overwrite!(x_integer = x_value);
         self.generator
-            .add_instruction(Instruction::Mv(x_integer, first_arg));
+            .add_instruction(Instruction::mv(&mut x_integer, &first_arg));
 
+        constnt_overwrite!(first_arg = first_arg);
         self.generator
-            .add_instruction(Instruction::Mv(first_arg, store_y));
+            .add_instruction(Instruction::mv(&mut first_arg, &store_y));
 
         // Overwrite store_y
-        let store_x = store_y;
+        constnt_overwrite!(store_x = store_y);
         self.generator
-            .add_instruction(Instruction::Mv(store_x, x_integer));
+            .add_instruction(Instruction::mv(&mut store_x, &x_integer));
 
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+        constnt_overwrite!(callback = callback);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
 
         // Now move things back
+        constnt_overwrite!(x_integer = x_integer);
         self.generator
-            .add_instruction(Instruction::Mv(x_integer, store_x));
+            .add_instruction(Instruction::mv(&mut x_integer, &store_x));
 
         // Overwrite y_value
-        let y_integer = y_value;
+        constnt_overwrite!(y_integer = y_value);
         self.generator
-            .add_instruction(Instruction::Mv(y_integer, first_arg));
+            .add_instruction(Instruction::mv(&mut y_integer, &first_arg));
 
         // Overwrite first_arg
-        let x_sign = self.return_reg;
+        constnt_overwrite!(x_sign = first_arg);
         self.generator
-            .add_instruction(Instruction::Lbu(x_sign, 0, x_integer));
+            .add_instruction(Instruction::lbu(&mut x_sign, 0, &x_integer));
 
         // Overwrite callback
-        let y_sign = callback;
+        constnt_overwrite!(y_sign = callback);
         self.generator
-            .add_instruction(Instruction::Lbu(y_sign, 0, y_integer));
+            .add_instruction(Instruction::lbu(&mut y_sign, 0, &y_integer));
 
-        let x_magnitude = store_x;
+        constnt_overwrite!(x_magnitude = store_x);
         self.generator
-            .add_instruction(Instruction::Addi(x_magnitude, x_integer, 1));
+            .add_instruction(Instruction::addi(&mut x_magnitude, &x_integer, 1));
 
-        let y_magnitude = self.fourth_arg;
+        constnt!(y_magnitude = self.fourth_arg);
         self.generator
-            .add_instruction(Instruction::Addi(y_magnitude, y_integer, 1));
+            .add_instruction(Instruction::addi(&mut y_magnitude, &y_integer, 1));
 
         self.generator
-            .add_instruction(Instruction::J("add_signed_integers".to_string()));
+            .add_instruction(Instruction::j("add_signed_integers".to_string()));
+
+        self.register_map.free_all()
     }
 
     pub fn sub_integer(&mut self) {

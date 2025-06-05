@@ -293,7 +293,7 @@ impl Assign {
 
         if self.assigned && !self.mutable {
             panic!(
-                "Assigning Constant\n\nVar: {}, Register: {}",
+                "Mutating a Constant\n\nVar: {}, Register: {}",
                 self.name,
                 register.name()
             );
