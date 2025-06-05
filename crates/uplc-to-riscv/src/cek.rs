@@ -183,6 +183,20 @@ macro_rules! constnt_overwrite {
     };
 }
 
+// macro_rules! var_arg_overwrite {
+//     ($var:ident = $value:expr) => {
+//         let mut $var = $value.var_overwrite(stringify!($var));
+//         $var.assigned = true;
+//     };
+// }
+
+macro_rules! constnt_arg_overwrite {
+    ($var:ident = $value:expr) => {
+        let mut $var = $value.constnt_overwrite(stringify!($var));
+        $var.assigned = true;
+    };
+}
+
 // This is used to automatically free up registers that
 // are only used with vars in blocks
 macro_rules! create_block {
@@ -4558,304 +4572,340 @@ impl Cek {
         }
     }
 
-    pub fn sub_signed_integers(&mut self) {
-        let first_sign = self.first_arg;
-        let second_sign = self.second_arg;
-        let first_value = self.third_arg;
-        let second_value = self.fourth_arg;
-        let heap = self.heap;
-        self.generator
-            .add_instruction(Instruction::Label("sub_signed_integers".to_string()));
+    pub fn sub_signed_integers(&mut self) -> Freed {
+        argument!(first_sign = self.first_arg);
+        argument!(second_sign = self.second_arg);
+        argument!(first_value = self.third_arg);
+        argument!(second_value = self.fourth_arg);
+        var_argument!(heap = self.heap);
+        argument!(zero = self.zero);
 
-        let callback = self.fifth_arg;
         self.generator
-            .add_instruction(Instruction::Jal(callback, "compare_magnitude".to_string()));
-        // Overwrite first_sign
-        let equality = first_sign;
-        // Overwrite second_sign
-        let greater_value = second_sign;
-        // Overwrite first_value
-        let lesser_value = first_value;
-        // Overwrite second_value
-        let greater_sign = second_value;
+            .add_instruction(Instruction::label("sub_signed_integers".to_string()));
 
-        let equality_temp = self.first_temp;
+        constnt!(callback = self.fifth_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "compare_magnitude".to_string(),
+        ));
+
+        // Compare magnitude overwrites these arguments
+        constnt_arg_overwrite!(equality = first_sign);
+        constnt_arg_overwrite!(greater_value = second_sign);
+        constnt_arg_overwrite!(lesser_value = first_value);
+        constnt_arg_overwrite!(greater_sign = second_value);
+
+        constnt!(equality_temp = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Mv(equality_temp, equality));
+            .add_instruction(Instruction::mv(&mut equality_temp, &equality));
 
         // Overwrite equality
-        let ret = self.return_reg;
-        self.generator.add_instruction(Instruction::Mv(ret, heap));
-
-        let greater_magnitude_len = self.third_temp;
+        constnt_overwrite!(ret = equality);
         self.generator
-            .add_instruction(Instruction::Lw(greater_magnitude_len, 0, greater_value));
+            .add_instruction(Instruction::mv(&mut ret, &heap));
 
-        let lesser_magnitude_len = self.seventh_arg;
-        self.generator
-            .add_instruction(Instruction::Lw(lesser_magnitude_len, 0, lesser_value));
+        constnt!(greater_magnitude_len = self.second_temp);
+        self.generator.add_instruction(Instruction::lw(
+            &mut greater_magnitude_len,
+            0,
+            &greater_value,
+        ));
 
-        let max_heap_allocation = self.fourth_temp;
-        self.generator.add_instruction(Instruction::Slli(
-            max_heap_allocation,
-            greater_magnitude_len,
+        constnt!(lesser_magnitude_len = self.third_temp);
+        self.generator.add_instruction(Instruction::lw(
+            &mut lesser_magnitude_len,
+            0,
+            &lesser_value,
+        ));
+
+        var!(max_heap_allocation = self.fourth_temp);
+        self.generator.add_instruction(Instruction::slli(
+            &mut max_heap_allocation,
+            &greater_magnitude_len,
             2,
         ));
 
-        self.generator.add_instruction(Instruction::Addi(
-            max_heap_allocation,
-            max_heap_allocation,
+        self.generator.add_instruction(Instruction::addi(
+            &mut max_heap_allocation.clone(),
+            &max_heap_allocation,
             5,
         ));
 
-        let callback = self.eighth_arg;
+        constnt!(callback_alloc = self.eighth_arg);
         // This function does not modify temps and only changes heap and s3
         // and eighth arg
-        self.generator.add_instruction(Instruction::Jal(
-            callback,
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback_alloc,
             "allocate_integer_type".to_string(),
         ));
 
-        let value_builder = self.second_temp;
+        var!(value_builder = self.fifth_temp);
         self.generator
-            .add_instruction(Instruction::Mv(value_builder, heap));
+            .add_instruction(Instruction::mv(&mut value_builder, &heap));
 
         // Add maximum heap value needed possibly and reclaim later after addition
-        self.generator
-            .add_instruction(Instruction::Add(heap, heap, max_heap_allocation));
+        self.generator.add_instruction(Instruction::add(
+            &mut heap.clone(),
+            &heap,
+            &max_heap_allocation,
+        ));
 
         // Store greater sign
         self.generator
-            .add_instruction(Instruction::Sb(greater_sign, 0, value_builder));
+            .add_instruction(Instruction::sb(&greater_sign, 0, &value_builder));
 
+        self.generator.add_instruction(Instruction::addi(
+            &mut value_builder.clone(),
+            &value_builder,
+            1,
+        ));
+
+        constnt_overwrite!(length_pointer = max_heap_allocation);
         self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 1));
+            .add_instruction(Instruction::mv(&mut length_pointer, &value_builder));
 
-        // Overwrite max_heap_allocation
-        let length_pointer = max_heap_allocation;
-        self.generator
-            .add_instruction(Instruction::Mv(length_pointer, value_builder));
+        self.generator.add_instruction(Instruction::addi(
+            &mut value_builder.clone(),
+            &value_builder,
+            4,
+        ));
 
-        self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
-
-        self.generator.add_instruction(Instruction::Bne(
-            equality_temp,
-            self.zero,
+        self.generator.add_instruction(Instruction::bne(
+            &equality_temp,
+            &zero,
             "equal_value_subtraction".to_string(),
         ));
         {
-            // Overwrite equality_temp
-            let current_word_index = equality_temp;
+            let mut equality_temp = equality_temp.clone();
+
+            var_overwrite!(current_word_index = equality_temp);
             self.generator
-                .add_instruction(Instruction::Li(current_word_index, 0));
+                .add_instruction(Instruction::li(&mut current_word_index, 0));
 
             // First carry is always 0
-            let carry = self.fifth_temp;
-            self.generator.add_instruction(Instruction::Li(carry, 0));
+            var!(carry = self.sixth_temp);
+            self.generator
+                .add_instruction(Instruction::li(&mut carry, 0));
 
             // Overwrite first_magnitude
-            let greater_arg_word_location = greater_value;
-            self.generator.add_instruction(Instruction::Addi(
-                greater_arg_word_location,
-                greater_value,
+            var!(greater_arg_word_location = self.seventh_temp);
+            self.generator.add_instruction(Instruction::addi(
+                &mut greater_arg_word_location,
+                &greater_value,
                 4,
             ));
 
             // Overwrite second_magnitude
-            let lesser_arg_word_location = lesser_value;
-            self.generator.add_instruction(Instruction::Addi(
-                lesser_arg_word_location,
-                lesser_value,
+            var_overwrite!(lesser_arg_word_location = callback);
+            self.generator.add_instruction(Instruction::addi(
+                &mut lesser_arg_word_location,
+                &lesser_value,
                 4,
             ));
 
-            let reclaim_heap_amount = callback;
+            var_overwrite!(reclaim_heap_amount = greater_value);
             self.generator
-                .add_instruction(Instruction::Li(reclaim_heap_amount, 0));
+                .add_instruction(Instruction::li(&mut reclaim_heap_amount, 0));
 
-            let final_length = self.sixth_arg;
+            var!(final_length = self.sixth_arg);
             self.generator
-                .add_instruction(Instruction::Li(final_length, 0));
+                .add_instruction(Instruction::li(&mut final_length, 0));
 
             {
                 self.generator
-                    .add_instruction(Instruction::Label("sub_words".to_string()));
+                    .add_instruction(Instruction::label("sub_words".to_string()));
 
-                self.generator.add_instruction(Instruction::Beq(
-                    current_word_index,
-                    greater_magnitude_len,
+                self.generator.add_instruction(Instruction::beq(
+                    &current_word_index,
+                    &greater_magnitude_len,
                     "finalize_sub_int_value".to_string(),
                 ));
 
-                let arg_word_greater = self.sixth_temp;
-                self.generator.add_instruction(Instruction::Lw(
-                    arg_word_greater,
+                constnt_overwrite!(arg_word_greater = callback_alloc);
+                self.generator.add_instruction(Instruction::lw(
+                    &mut arg_word_greater,
                     0,
-                    greater_arg_word_location,
+                    &greater_arg_word_location,
                 ));
 
-                let arg_word_smaller = self.seventh_temp;
-                self.generator.add_instruction(Instruction::Bge(
-                    current_word_index,
-                    lesser_magnitude_len,
+                constnt_overwrite!(arg_word_smaller = lesser_value);
+                self.generator.add_instruction(Instruction::bge(
+                    &current_word_index,
+                    &lesser_magnitude_len,
                     "lesser".to_string(),
                 ));
 
                 {
-                    self.generator.add_instruction(Instruction::Lw(
-                        arg_word_smaller,
+                    let mut arg_word_smaller = arg_word_smaller.clone();
+                    self.generator.add_instruction(Instruction::lw(
+                        &mut arg_word_smaller,
                         0,
-                        lesser_arg_word_location,
+                        &lesser_arg_word_location,
                     ));
 
                     self.generator
-                        .add_instruction(Instruction::J("sub_result".to_string()));
+                        .add_instruction(Instruction::j("sub_result".to_string()));
                 }
                 {
                     self.generator
-                        .add_instruction(Instruction::Label("lesser".to_string()));
+                        .add_instruction(Instruction::label("lesser".to_string()));
 
                     self.generator
-                        .add_instruction(Instruction::Li(arg_word_smaller, 0));
+                        .add_instruction(Instruction::li(&mut arg_word_smaller, 0));
                 }
 
                 self.generator
-                    .add_instruction(Instruction::Label("sub_result".to_string()));
+                    .add_instruction(Instruction::label("sub_result".to_string()));
 
                 // Overwrite arg_word_smaller
-                let result = arg_word_smaller;
-                self.generator.add_instruction(Instruction::Sub(
-                    result,
-                    arg_word_greater,
-                    arg_word_smaller,
+                var!(result = self.seventh_arg);
+                self.generator.add_instruction(Instruction::sub(
+                    &mut result,
+                    &arg_word_greater,
+                    &arg_word_smaller,
                 ));
 
                 // Overwrite greater_sign
-                let first_carry_check = greater_sign;
+                constnt_overwrite!(first_carry_check = greater_sign);
                 // Check result is more than first arg thus needing a carry
-                self.generator.add_instruction(Instruction::Sltu(
-                    first_carry_check,
-                    arg_word_greater,
-                    result,
+                self.generator.add_instruction(Instruction::sltu(
+                    &mut first_carry_check,
+                    &arg_word_greater,
+                    &result,
                 ));
 
                 // Sub previous carry
-                self.generator
-                    .add_instruction(Instruction::Sub(result, result, carry));
+                self.generator.add_instruction(Instruction::sub(
+                    &mut result.clone(),
+                    &result,
+                    &carry,
+                ));
 
                 // Set carry if we overflowed
-                self.generator
-                    .add_instruction(Instruction::Sltu(carry, arg_word_greater, result));
+                self.generator.add_instruction(Instruction::sltu(
+                    &mut carry.clone(),
+                    &arg_word_greater,
+                    &result,
+                ));
 
                 // OR the carry checks
-                self.generator
-                    .add_instruction(Instruction::Or(carry, carry, first_carry_check));
+                self.generator.add_instruction(Instruction::or(
+                    &mut carry.clone(),
+                    &carry,
+                    &first_carry_check,
+                ));
 
                 self.generator
-                    .add_instruction(Instruction::Sw(result, 0, value_builder));
+                    .add_instruction(Instruction::sw(&result, 0, &value_builder));
 
-                self.generator
-                    .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
-
-                self.generator.add_instruction(Instruction::Addi(
-                    greater_arg_word_location,
-                    greater_arg_word_location,
+                self.generator.add_instruction(Instruction::addi(
+                    &mut value_builder.clone(),
+                    &value_builder,
                     4,
                 ));
 
-                self.generator.add_instruction(Instruction::Addi(
-                    lesser_arg_word_location,
-                    lesser_arg_word_location,
+                self.generator.add_instruction(Instruction::addi(
+                    &mut greater_arg_word_location.clone(),
+                    &greater_arg_word_location,
                     4,
                 ));
 
-                self.generator.add_instruction(Instruction::Addi(
-                    current_word_index,
-                    current_word_index,
+                self.generator.add_instruction(Instruction::addi(
+                    &mut lesser_arg_word_location.clone(),
+                    &lesser_arg_word_location,
+                    4,
+                ));
+
+                self.generator.add_instruction(Instruction::addi(
+                    &mut current_word_index.clone(),
+                    &current_word_index,
                     1,
                 ));
 
-                self.generator.add_instruction(Instruction::Beq(
-                    self.zero,
-                    result,
+                self.generator.add_instruction(Instruction::beq(
+                    &zero,
+                    &result,
                     "can_reclaim_heap_word".to_string(),
                 ));
 
                 {
-                    self.generator.add_instruction(Instruction::Addi(
-                        final_length,
-                        final_length,
+                    self.generator.add_instruction(Instruction::addi(
+                        &mut final_length.clone(),
+                        &final_length,
                         1,
                     ));
 
-                    self.generator.add_instruction(Instruction::Add(
-                        final_length,
-                        final_length,
-                        reclaim_heap_amount,
+                    self.generator.add_instruction(Instruction::add(
+                        &mut final_length.clone(),
+                        &final_length,
+                        &reclaim_heap_amount,
                     ));
 
                     self.generator
-                        .add_instruction(Instruction::Li(reclaim_heap_amount, 0));
+                        .add_instruction(Instruction::li(&mut reclaim_heap_amount, 0));
 
                     self.generator
-                        .add_instruction(Instruction::J("sub_words".to_string()));
+                        .add_instruction(Instruction::j("sub_words".to_string()));
                 }
                 {
                     self.generator
-                        .add_instruction(Instruction::Label("can_reclaim_heap_word".to_string()));
+                        .add_instruction(Instruction::label("can_reclaim_heap_word".to_string()));
 
-                    self.generator.add_instruction(Instruction::Addi(
-                        reclaim_heap_amount,
-                        reclaim_heap_amount,
+                    self.generator.add_instruction(Instruction::addi(
+                        &mut reclaim_heap_amount.clone(),
+                        &reclaim_heap_amount,
                         1,
                     ));
 
                     self.generator
-                        .add_instruction(Instruction::J("sub_words".to_string()));
+                        .add_instruction(Instruction::j("sub_words".to_string()));
                 }
             }
 
             self.generator
-                .add_instruction(Instruction::Label("finalize_sub_int_value".to_string()));
+                .add_instruction(Instruction::label("finalize_sub_int_value".to_string()));
 
             self.generator
-                .add_instruction(Instruction::Sw(final_length, 0, length_pointer));
+                .add_instruction(Instruction::sw(&final_length, 0, &length_pointer));
 
-            self.generator.add_instruction(Instruction::Slli(
-                reclaim_heap_amount,
-                reclaim_heap_amount,
+            self.generator.add_instruction(Instruction::slli(
+                &mut reclaim_heap_amount.clone(),
+                &reclaim_heap_amount,
                 2,
             ));
 
-            self.generator
-                .add_instruction(Instruction::Sub(heap, heap, reclaim_heap_amount));
+            self.generator.add_instruction(Instruction::sub(
+                &mut heap.clone(),
+                &heap,
+                &reclaim_heap_amount,
+            ));
 
             self.generator
-                .add_instruction(Instruction::J("return".to_string()));
+                .add_instruction(Instruction::j("return".to_string()));
         }
         {
             self.generator
-                .add_instruction(Instruction::Label("equal_value_subtraction".to_string()));
+                .add_instruction(Instruction::label("equal_value_subtraction".to_string()));
 
-            // In this case equality_temp stores 1 anyway
-            // but to make sure we still set to 1
+            constnt_overwrite!(size = equality_temp);
             self.generator
-                .add_instruction(Instruction::Li(equality_temp, 1));
-
-            self.generator
-                .add_instruction(Instruction::Sw(equality_temp, 0, length_pointer));
+                .add_instruction(Instruction::li(&mut size, 1));
 
             self.generator
-                .add_instruction(Instruction::Sw(self.zero, 0, value_builder));
+                .add_instruction(Instruction::sw(&size, 0, &length_pointer));
+
+            self.generator
+                .add_instruction(Instruction::sw(&zero, 0, &value_builder));
 
             // reclaim heap since value is 0 and length is 1
             self.generator
-                .add_instruction(Instruction::Addi(heap, value_builder, 4));
+                .add_instruction(Instruction::addi(&mut heap, &value_builder, 4));
 
             self.generator
                 .add_instruction(Instruction::J("return".to_string()));
         }
+
+        self.register_map.free_all()
     }
 }
 
