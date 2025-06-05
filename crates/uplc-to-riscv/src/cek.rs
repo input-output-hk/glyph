@@ -1943,171 +1943,165 @@ impl Cek {
         self.register_map.free_all()
     }
 
-    pub fn handle_frame_case(&mut self) {
-        let first_arg = self.first_arg;
-        let frames = self.frames;
-        let env = self.env;
+    pub fn handle_frame_case(&mut self) -> Freed {
+        argument!(self, first_arg = self.first_arg);
+        var_argument!(self, frames = self.frames);
+        argument!(self, zero = Register::Zero);
 
         self.generator
-            .add_instruction(Instruction::Label("handle_frame_case".to_string()));
+            .add_instruction(Instruction::label("handle_frame_case".to_string()));
 
-        let constr = self.first_temp;
+        constnt!(self, constr = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Mv(constr, first_arg));
+            .add_instruction(Instruction::mv(&mut constr, &first_arg));
 
-        let constr_term_tag = self.second_temp;
+        constnt!(self, constr_term_tag = self.second_temp);
         self.generator
-            .add_instruction(Instruction::Lbu(constr_term_tag, 0, constr));
+            .add_instruction(Instruction::lbu(&mut constr_term_tag, 0, &constr));
 
-        let expected_tag = self.third_temp;
+        constnt!(self, expected_tag = self.third_temp);
 
         self.generator
-            .add_instruction(Instruction::Li(expected_tag, 4));
+            .add_instruction(Instruction::li(&mut expected_tag, 4));
 
-        self.generator.add_instruction(Instruction::Bne(
-            constr_term_tag,
-            expected_tag,
+        self.generator.add_instruction(Instruction::bne(
+            &constr_term_tag,
+            &expected_tag,
             "handle_frame_case_error".to_string(),
         ));
 
         {
-            let constr_tag = self.fourth_temp;
+            var!(self, constr_tag = self.fourth_temp);
             self.generator
-                .add_instruction(Instruction::Lw(constr_tag, 1, constr));
+                .add_instruction(Instruction::lw(&mut constr_tag, 1, &constr));
 
             // Overwrite expected_tag
-            let branches_len = expected_tag;
+            var_overwrite!(branches_len = expected_tag);
             self.generator
-                .add_instruction(Instruction::Lw(branches_len, 5, frames));
+                .add_instruction(Instruction::lw(&mut branches_len, 5, &frames));
 
-            self.generator.add_instruction(Instruction::Bge(
-                constr_tag,
-                branches_len,
+            self.generator.add_instruction(Instruction::bge(
+                &constr_tag,
+                &branches_len,
                 "handle_frame_case_error".to_string(),
             ));
 
-            // Don't need scope here since handle error is already in another scope
-            // {}
-
             // set env
+            constnt!(self, env = self.env);
             self.generator
-                .add_instruction(Instruction::Lw(env, 1, frames));
+                .add_instruction(Instruction::lw(&mut env, 1, &frames));
 
-            // Overwrite constr_tag
-            let offset_to_branch = constr_tag;
-            self.generator
-                .add_instruction(Instruction::Mv(offset_to_branch, constr_tag));
-
-            self.generator.add_instruction(Instruction::Slli(
-                offset_to_branch,
-                offset_to_branch,
+            let mut offset_to_branch = constr_tag;
+            self.generator.add_instruction(Instruction::slli(
+                &mut offset_to_branch.clone(),
+                &offset_to_branch,
                 2,
             ));
 
-            self.generator.add_instruction(Instruction::Addi(
-                offset_to_branch,
-                offset_to_branch,
+            self.generator.add_instruction(Instruction::addi(
+                &mut offset_to_branch.clone(),
+                &offset_to_branch,
                 9,
             ));
 
-            self.generator.add_instruction(Instruction::Add(
-                offset_to_branch,
-                offset_to_branch,
-                frames,
+            self.generator.add_instruction(Instruction::add(
+                &mut offset_to_branch.clone(),
+                &offset_to_branch,
+                &frames,
             ));
 
             // Put branch term in return register
-            let ret = self.return_reg;
+            constnt_overwrite!(ret = first_arg);
             self.generator
-                .add_instruction(Instruction::Lw(ret, 0, offset_to_branch));
+                .add_instruction(Instruction::lw(&mut ret, 0, &offset_to_branch));
 
-            // Overwrite branches_len
-            let claim_stack_item = branches_len;
-            self.generator
-                .add_instruction(Instruction::Mv(claim_stack_item, branches_len));
+            let mut claim_stack_item = branches_len;
 
-            self.generator.add_instruction(Instruction::Slli(
-                claim_stack_item,
-                claim_stack_item,
+            self.generator.add_instruction(Instruction::slli(
+                &mut claim_stack_item.clone(),
+                &claim_stack_item,
                 2,
             ));
 
-            self.generator.add_instruction(Instruction::Addi(
-                claim_stack_item,
-                claim_stack_item,
+            self.generator.add_instruction(Instruction::addi(
+                &mut claim_stack_item.clone(),
+                &claim_stack_item,
                 9,
             ));
 
             // reset frame pointer
-            self.generator
-                .add_instruction(Instruction::Add(frames, frames, claim_stack_item));
+            self.generator.add_instruction(Instruction::add(
+                &mut frames.clone(),
+                &frames,
+                &claim_stack_item,
+            ));
 
             // Overwrite constr_term_tag
-            let constr_fields_len = constr_term_tag;
+            constnt_overwrite!(constr_fields_len = constr_term_tag);
             self.generator
-                .add_instruction(Instruction::Lw(constr_fields_len, 5, constr));
+                .add_instruction(Instruction::lw(&mut constr_fields_len, 5, &constr));
 
-            let current_index = self.fifth_temp;
+            var!(self, current_index = self.fifth_temp);
             self.generator
-                .add_instruction(Instruction::Mv(current_index, Register::Zero));
+                .add_instruction(Instruction::mv(&mut current_index, &zero));
 
-            let current_offset = self.sixth_temp;
+            var!(self, current_offset = self.sixth_temp);
             // 9 for constant offset
             // 1 for frame tag + 4 for constr tag + 4 for constr fields len
             self.generator
-                .add_instruction(Instruction::Li(current_offset, 9));
+                .add_instruction(Instruction::li(&mut current_offset, 9));
 
-            self.generator.add_instruction(Instruction::Add(
-                current_offset,
-                current_offset,
-                constr,
+            self.generator.add_instruction(Instruction::add(
+                &mut current_offset.clone(),
+                &current_offset,
+                &constr,
             ));
 
             {
                 self.generator
-                    .add_instruction(Instruction::Label("transfer_fields_as_args".to_string()));
+                    .add_instruction(Instruction::label("transfer_fields_as_args".to_string()));
 
-                self.generator.add_instruction(Instruction::Beq(
-                    current_index,
-                    constr_fields_len,
+                self.generator.add_instruction(Instruction::beq(
+                    &current_index,
+                    &constr_fields_len,
                     "compute".to_string(),
                 ));
 
                 // Allocate for FrameAwaitFunValue to stack
                 // 5 bytes, 1 for frame tag, 4 for argument value pointer
                 self.generator
-                    .add_instruction(Instruction::Addi(frames, frames, -5));
+                    .add_instruction(Instruction::addi(&mut frames.clone(), &frames, -5));
 
-                //Overwrite claim_stack_item
-                let frame_tag = claim_stack_item;
+                constnt_overwrite!(frame_tag = claim_stack_item);
                 self.generator
-                    .add_instruction(Instruction::Li(frame_tag, 2));
-
-                self.generator
-                    .add_instruction(Instruction::Sb(frame_tag, 0, frames));
-
-                // Overwrite offset_to_branch
-                let arg = offset_to_branch;
+                    .add_instruction(Instruction::li(&mut frame_tag, 2));
 
                 self.generator
-                    .add_instruction(Instruction::Lw(arg, 0, current_offset));
+                    .add_instruction(Instruction::sb(&frame_tag, 0, &frames));
+
+                constnt_overwrite!(arg = offset_to_branch);
+                self.generator
+                    .add_instruction(Instruction::lw(&mut arg, 0, &current_offset));
 
                 self.generator
-                    .add_instruction(Instruction::Sw(arg, 1, frames));
+                    .add_instruction(Instruction::sw(&arg, 1, &frames));
 
-                self.generator.add_instruction(Instruction::Addi(
-                    current_offset,
-                    current_offset,
+                self.generator.add_instruction(Instruction::addi(
+                    &mut current_offset.clone(),
+                    &current_offset,
                     4,
                 ));
 
-                self.generator
-                    .add_instruction(Instruction::Addi(current_index, current_index, 1));
+                self.generator.add_instruction(Instruction::addi(
+                    &mut current_index.clone(),
+                    &current_index,
+                    1,
+                ));
 
                 self.generator
-                    .add_instruction(Instruction::J("transfer_fields_as_args".to_string()));
+                    .add_instruction(Instruction::j("transfer_fields_as_args".to_string()));
             }
-        }
+        };
 
         {
             self.generator
@@ -2115,209 +2109,232 @@ impl Cek {
 
             self.generator
                 .add_instruction(Instruction::J("handle_error".to_string()));
-        }
+        };
+
+        self.register_map.free_all()
     }
 
-    pub fn handle_no_frame(&mut self) {
-        let value = self.first_arg;
+    pub fn handle_no_frame(&mut self) -> Freed {
+        argument!(self, value = self.first_arg);
+        argument!(self, zero = Register::Zero);
         self.generator
-            .add_instruction(Instruction::Label("handle_no_frame".to_string()));
+            .add_instruction(Instruction::label("handle_no_frame".to_string()));
 
-        let value_tag = self.first_temp;
+        constnt!(self, value_tag = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lbu(value_tag, 0, value));
+            .add_instruction(Instruction::lbu(&mut value_tag, 0, &value));
 
         // We should only return constants. That greatly simplifies how we return a value to the user
-        self.generator.add_instruction(Instruction::Bne(
-            value_tag,
-            Register::Zero,
+        self.generator.add_instruction(Instruction::bne(
+            &value_tag,
+            &zero,
             "handle_error".to_string(),
         ));
 
-        let ret = self.return_reg;
+        constnt!(self, ret_temp = self.second_temp);
         self.generator
-            .add_instruction(Instruction::Lw(ret, 1, value));
+            .add_instruction(Instruction::lw(&mut ret_temp, 1, &value));
+
+        constnt_overwrite!(ret = value);
+        self.generator
+            .add_instruction(Instruction::mv(&mut ret, &ret_temp));
 
         self.generator
-            .add_instruction(Instruction::J("halt".to_string()));
+            .add_instruction(Instruction::j("halt".to_string()));
+
+        self.register_map.free_all()
     }
 
-    pub fn halt(&mut self) {
+    pub fn halt(&mut self) -> Freed {
         self.generator
-            .add_instruction(Instruction::Label("halt".to_string()));
+            .add_instruction(Instruction::label("halt".to_string()));
 
         // exit code
+        constnt!(self, exit_code = self.eighth_arg);
         self.generator
-            .add_instruction(Instruction::Li(self.eighth_arg, 93));
+            .add_instruction(Instruction::li(&mut exit_code, 93));
 
-        self.generator.add_instruction(Instruction::Ecall);
+        self.generator.add_instruction(Instruction::ecall());
+
+        self.register_map.free_all()
     }
 
-    pub fn force_evaluate(&mut self) {
-        let function = self.first_arg;
-        let env = self.env;
-        let heap = self.heap;
-        self.generator
-            .add_instruction(Instruction::Label("force_evaluate".to_string()));
+    pub fn force_evaluate(&mut self) -> Freed {
+        argument!(self, function = self.first_arg);
+        argument!(self, zero = Register::Zero);
+        var_argument!(self, heap = self.heap);
 
-        self.generator.add_instruction(Instruction::Comment(
+        self.generator
+            .add_instruction(Instruction::label("force_evaluate".to_string()));
+
+        self.generator.add_instruction(Instruction::comment(
             "Value address should be in A0".to_string(),
         ));
         self.generator
-            .add_instruction(Instruction::Comment("Load value tag".to_string()));
+            .add_instruction(Instruction::comment("Load value tag".to_string()));
 
-        let tag = self.first_temp;
+        constnt!(self, tag = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lbu(tag, 0, function));
+            .add_instruction(Instruction::lbu(&mut tag, 0, &function));
 
         self.generator
-            .add_instruction(Instruction::Comment("Delay".to_string()));
+            .add_instruction(Instruction::comment("Delay".to_string()));
 
-        let delay_value_tag = self.second_temp;
+        constnt!(self, delay_value_tag = self.second_temp);
         self.generator
-            .add_instruction(Instruction::Li(delay_value_tag, 1));
+            .add_instruction(Instruction::li(&mut delay_value_tag, 1));
 
-        self.generator.add_instruction(Instruction::Bne(
-            tag,
-            delay_value_tag,
+        self.generator.add_instruction(Instruction::bne(
+            &tag,
+            &delay_value_tag,
             "force_evaluate_builtin".to_string(),
         ));
 
         {
-            self.generator.add_instruction(Instruction::Comment(
+            let mut delay_value_tag = delay_value_tag.clone();
+            let mut tag = tag.clone();
+            let mut function = function.clone();
+
+            self.generator.add_instruction(Instruction::comment(
                 "load body pointer from a0 which is Value".to_string(),
             ));
 
-            // Overwrite tag
-            let body = tag;
+            constnt_overwrite!(body = tag);
             self.generator
-                .add_instruction(Instruction::Lw(body, 1, function));
+                .add_instruction(Instruction::lw(&mut body, 1, &function));
 
-            self.generator.add_instruction(Instruction::Comment(
+            self.generator.add_instruction(Instruction::comment(
                 "load environment from a0 which is Value".to_string(),
             ));
 
-            // Overwrite delay_value_tag
-            let environment = delay_value_tag;
+            constnt_overwrite!(environment = delay_value_tag);
             self.generator
-                .add_instruction(Instruction::Lw(environment, 5, function));
+                .add_instruction(Instruction::lw(&mut environment, 5, &function));
+
+            constnt!(self, env = self.env);
+            self.generator
+                .add_instruction(Instruction::mv(&mut env, &environment));
+
+            constnt_overwrite!(ret = function);
+            self.generator
+                .add_instruction(Instruction::mv(&mut ret, &body));
 
             self.generator
-                .add_instruction(Instruction::Mv(env, environment));
-
-            let ret = self.return_reg;
-            self.generator.add_instruction(Instruction::Mv(ret, body));
-
-            self.generator
-                .add_instruction(Instruction::J("compute".to_string()));
+                .add_instruction(Instruction::j("compute".to_string()));
         }
 
         {
             self.generator
-                .add_instruction(Instruction::Label("force_evaluate_builtin".to_string()));
+                .add_instruction(Instruction::label("force_evaluate_builtin".to_string()));
 
             // Overwrite delay_value_tag
-            let builtin_value_tag = delay_value_tag;
+            constnt_overwrite!(builtin_value_tag = delay_value_tag);
             self.generator
-                .add_instruction(Instruction::Li(builtin_value_tag, 3));
+                .add_instruction(Instruction::li(&mut builtin_value_tag, 3));
 
-            self.generator.add_instruction(Instruction::Bne(
-                tag,
-                builtin_value_tag,
+            self.generator.add_instruction(Instruction::bne(
+                &tag,
+                &builtin_value_tag,
                 "force_evaluate_error".to_string(),
             ));
 
             {
                 // Overwrite builtin_value_tag
-                let force_count = builtin_value_tag;
+                var_overwrite!(force_count = builtin_value_tag);
                 self.generator
-                    .add_instruction(Instruction::Lbu(force_count, 2, function));
+                    .add_instruction(Instruction::lbu(&mut force_count, 2, &function));
 
-                self.generator.add_instruction(Instruction::Beq(
-                    Register::Zero,
-                    force_count,
+                self.generator.add_instruction(Instruction::beq(
+                    &zero,
+                    &force_count,
                     "force_evaluate_error".to_string(),
                 ));
 
-                self.generator
-                    .add_instruction(Instruction::Addi(force_count, force_count, -1));
+                self.generator.add_instruction(Instruction::addi(
+                    &mut force_count.clone(),
+                    &force_count,
+                    -1,
+                ));
 
                 // Create clone of current value with number of forces changed
                 self.generator
-                    .add_instruction(Instruction::Addi(heap, heap, 7));
+                    .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 7));
 
                 self.generator
-                    .add_instruction(Instruction::Sb(tag, -7, heap));
+                    .add_instruction(Instruction::sb(&tag, -7, &heap));
 
-                let builtin_func_index = self.third_temp;
-                self.generator
-                    .add_instruction(Instruction::Lbu(builtin_func_index, 1, function));
+                constnt!(self, builtin_func_index = self.third_temp);
+                self.generator.add_instruction(Instruction::lbu(
+                    &mut builtin_func_index,
+                    1,
+                    &function,
+                ));
 
                 self.generator
-                    .add_instruction(Instruction::Sb(builtin_func_index, -6, heap));
+                    .add_instruction(Instruction::sb(&builtin_func_index, -6, &heap));
 
                 self.generator
-                    .add_instruction(Instruction::Sb(force_count, -5, heap));
+                    .add_instruction(Instruction::sb(&force_count, -5, &heap));
 
                 // 0 Arguments applied so arg fields is just arg length (zero)
                 self.generator
-                    .add_instruction(Instruction::Sw(Register::Zero, -4, heap));
+                    .add_instruction(Instruction::sw(&zero, -4, &heap));
 
                 // Store new value in ret
-                let ret = self.return_reg;
+                constnt_overwrite!(ret = function);
                 self.generator
-                    .add_instruction(Instruction::Addi(ret, heap, -7));
+                    .add_instruction(Instruction::addi(&mut ret, &heap, -7));
 
                 // If still have forces to apply then return
-                self.generator.add_instruction(Instruction::Bne(
-                    Register::Zero,
-                    force_count,
+                self.generator.add_instruction(Instruction::bne(
+                    &zero,
+                    &force_count,
                     "return".to_string(),
                 ));
 
-                // Overwrite tag
-                let arguments_length = tag;
+                constnt_overwrite!(arguments_length = tag);
                 self.generator
-                    .add_instruction(Instruction::Lw(arguments_length, 3, function));
+                    .add_instruction(Instruction::lw(&mut arguments_length, 3, &ret));
 
-                // Overwrite force count
-                let arity_lookup = force_count;
+                var_overwrite!(arity_lookup = force_count);
                 self.generator
-                    .add_instruction(Instruction::La(arity_lookup, "arities".to_string()));
+                    .add_instruction(Instruction::la(&mut arity_lookup, "arities".to_string()));
 
-                self.generator.add_instruction(Instruction::Add(
-                    arity_lookup,
-                    arity_lookup,
-                    builtin_func_index,
+                self.generator.add_instruction(Instruction::add(
+                    &mut arity_lookup.clone(),
+                    &arity_lookup,
+                    &builtin_func_index,
                 ));
 
-                let arity = self.fourth_temp;
+                constnt!(self, arity = self.fourth_temp);
                 self.generator
-                    .add_instruction(Instruction::Lbu(arity, 0, arity_lookup));
+                    .add_instruction(Instruction::lbu(&mut arity, 0, &arity_lookup));
 
                 // If all arguments not applied then return.
-                self.generator.add_instruction(Instruction::Bne(
-                    arity,
-                    arguments_length,
+                self.generator.add_instruction(Instruction::bne(
+                    &arity,
+                    &arguments_length,
                     "return".to_string(),
                 ));
 
-                let function_index = self.second_arg;
+                constnt!(self, function_index = self.second_arg);
                 self.generator
-                    .add_instruction(Instruction::Mv(function_index, builtin_func_index));
+                    .add_instruction(Instruction::mv(&mut function_index, &builtin_func_index));
 
                 self.generator
-                    .add_instruction(Instruction::J("eval_builtin_app".to_string()));
+                    .add_instruction(Instruction::j("eval_builtin_app".to_string()));
             }
 
             {
                 self.generator
-                    .add_instruction(Instruction::Label("force_evaluate_error".to_string()));
+                    .add_instruction(Instruction::label("force_evaluate_error".to_string()));
 
                 self.generator
-                    .add_instruction(Instruction::J("handle_error".to_string()));
+                    .add_instruction(Instruction::j("handle_error".to_string()));
             }
         }
+
+        self.register_map.free_all()
     }
 
     pub fn apply_evaluate(&mut self) {
