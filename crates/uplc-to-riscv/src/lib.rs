@@ -2,7 +2,8 @@
 //!
 //! This crate provides functionality to compile Untyped Plutus Core (UPLC)
 //! to RISC-V assembly code.
-
+// Not necessary, but just in case
+#![recursion_limit = "300"]
 use thiserror::Error;
 pub mod cek;
 
