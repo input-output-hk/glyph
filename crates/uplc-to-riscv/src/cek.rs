@@ -2639,7 +2639,7 @@ impl Cek {
         var_argument!(env = self.env);
         argument!(zero = self.zero);
         self.generator
-            .add_instruction(Instruction::Label("lookup".to_string()));
+            .add_instruction(Instruction::label("lookup".to_string()));
 
         var!(current_index = self.first_temp);
 
@@ -2828,22 +2828,22 @@ impl Cek {
 
     pub fn initial_term(&mut self, bytes: Vec<u8>) {
         self.generator
-            .add_instruction(Instruction::Section("data".to_string()));
+            .add_instruction(Instruction::section("data".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Label("initial_term".to_string()));
+            .add_instruction(Instruction::label("initial_term".to_string()));
 
-        self.generator.add_instruction(Instruction::Byte(bytes));
-
-        self.generator
-            .add_instruction(Instruction::Label("force_counts".to_string()));
-        self.generator
-            .add_instruction(Instruction::Byte(FORCE_COUNTS.to_vec()));
+        self.generator.add_instruction(Instruction::byte(bytes));
 
         self.generator
-            .add_instruction(Instruction::Label("arities".to_string()));
+            .add_instruction(Instruction::label("force_counts".to_string()));
         self.generator
-            .add_instruction(Instruction::Byte(ARITIES.to_vec()));
+            .add_instruction(Instruction::byte(FORCE_COUNTS.to_vec()));
+
+        self.generator
+            .add_instruction(Instruction::label("arities".to_string()));
+        self.generator
+            .add_instruction(Instruction::byte(ARITIES.to_vec()));
     }
 
     pub fn eval_builtin_app(&mut self) -> Freed {
@@ -3226,81 +3226,85 @@ impl Cek {
         self.register_map.free_all()
     }
 
-    pub fn sub_integer(&mut self) {
-        let args = self.first_arg;
+    pub fn sub_integer(&mut self) -> Freed {
+        argument!(args = self.first_arg);
         self.generator
-            .add_instruction(Instruction::Label("sub_integer".to_string()));
+            .add_instruction(Instruction::label("sub_integer".to_string()));
 
-        let x_value = self.first_temp;
+        constnt!(x_value = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lw(x_value, 0, args));
+            .add_instruction(Instruction::lw(&mut x_value, 0, &args));
 
-        let y_value = self.second_temp;
+        constnt!(y_value = self.second_temp);
         self.generator
-            .add_instruction(Instruction::Lw(y_value, 4, args));
+            .add_instruction(Instruction::lw(&mut y_value, 4, &args));
 
-        // Overwrite args
-        let first_arg = args;
+        constnt_overwrite!(first_arg = args);
         self.generator
-            .add_instruction(Instruction::Mv(first_arg, x_value));
+            .add_instruction(Instruction::mv(&mut first_arg, &x_value));
 
-        let store_y = self.third_arg;
+        constnt!(store_y = self.third_arg);
         self.generator
-            .add_instruction(Instruction::Mv(store_y, y_value));
+            .add_instruction(Instruction::mv(&mut store_y, &y_value));
 
-        let callback = self.second_arg;
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+        constnt!(callback = self.second_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
 
-        // Overwrite x_value
-        let x_integer = x_value;
+        constnt_overwrite!(x_integer = x_value);
         self.generator
-            .add_instruction(Instruction::Mv(x_integer, first_arg));
+            .add_instruction(Instruction::mv(&mut x_integer, &first_arg));
 
+        constnt_overwrite!(first_arg = first_arg);
         self.generator
-            .add_instruction(Instruction::Mv(first_arg, store_y));
+            .add_instruction(Instruction::mv(&mut first_arg, &store_y));
 
-        // Overwrite store_y
-        let store_x = store_y;
+        constnt_overwrite!(store_x = store_y);
         self.generator
-            .add_instruction(Instruction::Mv(store_x, x_integer));
+            .add_instruction(Instruction::mv(&mut store_x, &x_integer));
 
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+        constnt_overwrite!(callback = callback);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
 
-        // Now move things back
+        constnt_overwrite!(x_integer = x_integer);
         self.generator
-            .add_instruction(Instruction::Mv(x_integer, store_x));
+            .add_instruction(Instruction::mv(&mut x_integer, &store_x));
 
         // Overwrite y_value
-        let y_integer = y_value;
+        constnt_overwrite!(y_integer = y_value);
         self.generator
-            .add_instruction(Instruction::Mv(y_integer, first_arg));
+            .add_instruction(Instruction::mv(&mut y_integer, &first_arg));
 
         // Overwrite first_arg
-        let x_sign = self.return_reg;
+        constnt_overwrite!(x_sign = first_arg);
         self.generator
-            .add_instruction(Instruction::Lbu(x_sign, 0, x_integer));
+            .add_instruction(Instruction::lbu(&mut x_sign, 0, &x_integer));
 
-        // Overwrite callback
-        let y_sign = callback;
+        var_overwrite!(y_sign = callback);
         self.generator
-            .add_instruction(Instruction::Lbu(y_sign, 0, y_integer));
+            .add_instruction(Instruction::lbu(&mut y_sign, 0, &y_integer));
 
         // flip y_sign
         self.generator
-            .add_instruction(Instruction::Xori(y_sign, y_sign, 1));
+            .add_instruction(Instruction::xori(&mut y_sign.clone(), &y_sign, 1));
 
-        let x_magnitude = store_x;
+        constnt_overwrite!(x_magnitude = store_x);
         self.generator
-            .add_instruction(Instruction::Addi(x_magnitude, x_integer, 1));
+            .add_instruction(Instruction::addi(&mut x_magnitude, &x_integer, 1));
 
-        let y_magnitude = self.fourth_arg;
+        constnt!(y_magnitude = self.fourth_arg);
         self.generator
-            .add_instruction(Instruction::Addi(y_magnitude, y_integer, 1));
+            .add_instruction(Instruction::addi(&mut y_magnitude, &y_integer, 1));
 
         self.generator
-            .add_instruction(Instruction::J("add_signed_integers".to_string()));
+            .add_instruction(Instruction::j("add_signed_integers".to_string()));
+
+        self.register_map.free_all()
     }
 
     pub fn multiply_integer(&mut self) {

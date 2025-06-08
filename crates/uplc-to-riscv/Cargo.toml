@@ -43,4 +43,6 @@ strum = "0.27.1"
 default = []
 
 [dev-dependencies]
+pretty_assertions = "1.4.1"
 tempfile = "3.8.1"
+walkdir = "2.5.0"
