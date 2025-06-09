@@ -3342,404 +3342,432 @@ impl Cek {
         self.generator.add_instruction(Instruction::Nop);
     }
 
-    pub fn equals_integer(&mut self) {
-        let args = self.first_arg;
-        let heap = self.heap;
+    pub fn equals_integer(&mut self) -> Freed {
+        argument!(args = self.first_arg);
+        var_argument!(heap = self.heap);
+        argument!(zero = self.zero);
         self.generator
-            .add_instruction(Instruction::Label("equals_integer".to_string()));
+            .add_instruction(Instruction::label("equals_integer".to_string()));
 
-        let x_value = self.first_temp;
+        constnt!(x_value = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lw(x_value, 0, args));
+            .add_instruction(Instruction::lw(&mut x_value, 0, &args));
 
-        let y_value = self.second_temp;
+        constnt!(y_value = self.second_temp);
         self.generator
-            .add_instruction(Instruction::Lw(y_value, 4, args));
+            .add_instruction(Instruction::lw(&mut y_value, 4, &args));
 
-        // Overwrite args
-        let first_arg = args;
+        constnt_overwrite!(first_arg = args);
         self.generator
-            .add_instruction(Instruction::Mv(first_arg, x_value));
+            .add_instruction(Instruction::mv(&mut first_arg, &x_value));
 
-        let store_y = self.third_arg;
+        constnt!(store_y = self.third_arg);
         self.generator
-            .add_instruction(Instruction::Mv(store_y, y_value));
+            .add_instruction(Instruction::mv(&mut store_y, &y_value));
 
-        let callback = self.second_arg;
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+        constnt!(callback = self.second_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
 
         // Overwrite x_value
-        let x_integer = x_value;
+        constnt_overwrite!(x_integer = x_value);
         self.generator
-            .add_instruction(Instruction::Mv(x_integer, first_arg));
+            .add_instruction(Instruction::mv(&mut x_integer, &first_arg));
 
+        constnt_overwrite!(first_arg = first_arg);
         self.generator
-            .add_instruction(Instruction::Mv(first_arg, store_y));
+            .add_instruction(Instruction::mv(&mut first_arg, &store_y));
 
-        // Overwrite store_y
-        let store_x = store_y;
+        constnt_overwrite!(store_x = store_y);
         self.generator
-            .add_instruction(Instruction::Mv(store_x, x_integer));
+            .add_instruction(Instruction::mv(&mut store_x, &x_integer));
 
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+        constnt_overwrite!(callback = callback);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
 
-        // Now move things back
+        constnt_overwrite!(x_integer = x_integer);
         self.generator
-            .add_instruction(Instruction::Mv(x_integer, store_x));
+            .add_instruction(Instruction::mv(&mut x_integer, &store_x));
 
         // Overwrite y_value
-        let y_integer = y_value;
+        constnt_overwrite!(y_integer = y_value);
         self.generator
-            .add_instruction(Instruction::Mv(y_integer, first_arg));
+            .add_instruction(Instruction::mv(&mut y_integer, &first_arg));
+
+        constnt_overwrite!(x_sign = first_arg);
+        self.generator
+            .add_instruction(Instruction::lbu(&mut x_sign, 0, &x_integer));
+
+        constnt_overwrite!(y_sign = callback);
+        self.generator
+            .add_instruction(Instruction::lbu(&mut y_sign, 0, &y_integer));
+
+        constnt_overwrite!(x_magnitude = store_x);
+        self.generator
+            .add_instruction(Instruction::addi(&mut x_magnitude, &x_integer, 1));
+
+        constnt!(y_magnitude = self.fourth_arg);
+        self.generator
+            .add_instruction(Instruction::addi(&mut y_magnitude, &y_integer, 1));
+
+        constnt!(callback = self.fifth_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "compare_magnitude".to_string(),
+        ));
 
         // Overwrite first_arg
-        let x_sign = self.return_reg;
+        constnt_arg_overwrite!(equality = x_sign);
+        constnt_overwrite!(bool_value = x_integer);
         self.generator
-            .add_instruction(Instruction::Lbu(x_sign, 0, x_integer));
-
-        // Overwrite callback
-        let y_sign = callback;
-        self.generator
-            .add_instruction(Instruction::Lbu(y_sign, 0, y_integer));
-
-        let x_magnitude = store_x;
-        self.generator
-            .add_instruction(Instruction::Addi(x_magnitude, x_integer, 1));
-
-        let y_magnitude = self.fourth_arg;
-        self.generator
-            .add_instruction(Instruction::Addi(y_magnitude, y_integer, 1));
-
-        let callback = self.fifth_arg;
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "compare_magnitude".to_string()));
-
-        // Overwrite first_arg
-        let equality = x_sign;
-        let bool_value = x_integer;
-        self.generator
-            .add_instruction(Instruction::Mv(bool_value, equality));
+            .add_instruction(Instruction::mv(&mut bool_value, &equality));
 
         // heap allocation = 1 byte for value tag + 4 bytes for pointer + 1 byte for type length
         // + 1 byte for type + 1 byte for bool value
         // Overwrite equality
-        let ret = self.return_reg;
-        self.generator.add_instruction(Instruction::Mv(ret, heap));
+        constnt_overwrite!(ret = equality);
+        self.generator
+            .add_instruction(Instruction::mv(&mut ret, &heap));
 
         self.generator
-            .add_instruction(Instruction::Addi(heap, heap, 8));
+            .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 8));
 
         self.generator
-            .add_instruction(Instruction::Sb(self.zero, -8, heap));
+            .add_instruction(Instruction::sb(&zero, -8, &heap));
 
-        // Overwrite y_integer
-        let constant_pointer = y_integer;
+        constnt_overwrite!(constant_pointer = y_integer);
         self.generator
-            .add_instruction(Instruction::Addi(constant_pointer, heap, -3));
-
-        self.generator
-            .add_instruction(Instruction::Sw(constant_pointer, -7, heap));
-
-        // Overwrite constant_pointer
-        let bool_type = constant_pointer;
-        self.generator
-            .add_instruction(Instruction::Li(bool_type, 1 + 256 * (BOOL as i32)));
+            .add_instruction(Instruction::addi(&mut constant_pointer, &heap, -3));
 
         self.generator
-            .add_instruction(Instruction::Sh(bool_type, -3, heap));
+            .add_instruction(Instruction::sw(&constant_pointer, -7, &heap));
+
+        constnt_overwrite!(bool_type = constant_pointer);
+        self.generator
+            .add_instruction(Instruction::li(&mut bool_type, 1 + 256 * (BOOL as i32)));
 
         self.generator
-            .add_instruction(Instruction::Sb(bool_value, -1, heap));
+            .add_instruction(Instruction::sh(&bool_type, -3, &heap));
 
         self.generator
-            .add_instruction(Instruction::J("return".to_string()));
+            .add_instruction(Instruction::sb(&bool_value, -1, &heap));
+
+        self.generator
+            .add_instruction(Instruction::j("return".to_string()));
+
+        self.register_map.free_all()
     }
 
-    pub fn less_than_equals_integer(&mut self) {
-        let args = self.first_arg;
-        let heap = self.heap;
+    pub fn less_than_equals_integer(&mut self) -> Freed {
+        argument!(args = self.first_arg);
+        var_argument!(heap = self.heap);
+        argument!(zero = self.zero);
         self.generator
-            .add_instruction(Instruction::Label("less_than_equals_integer".to_string()));
+            .add_instruction(Instruction::label("less_than_equals_integer".to_string()));
 
-        let x_value = self.first_temp;
+        constnt!(x_value = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lw(x_value, 0, args));
+            .add_instruction(Instruction::lw(&mut x_value, 0, &args));
 
-        let y_value = self.second_temp;
+        constnt!(y_value = self.second_temp);
         self.generator
-            .add_instruction(Instruction::Lw(y_value, 4, args));
+            .add_instruction(Instruction::lw(&mut y_value, 4, &args));
 
         // Overwrite args
-        let first_arg = args;
+        constnt_overwrite!(first_arg = args);
         self.generator
-            .add_instruction(Instruction::Mv(first_arg, x_value));
+            .add_instruction(Instruction::mv(&mut first_arg, &x_value));
 
-        let store_y = self.third_arg;
+        constnt!(store_y = self.third_arg);
         self.generator
-            .add_instruction(Instruction::Mv(store_y, y_value));
+            .add_instruction(Instruction::mv(&mut store_y, &y_value));
 
-        let callback = self.second_arg;
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+        constnt!(callback = self.second_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
 
         // Overwrite x_value
-        let x_integer = x_value;
+        constnt_overwrite!(x_integer = x_value);
         self.generator
-            .add_instruction(Instruction::Mv(x_integer, first_arg));
+            .add_instruction(Instruction::mv(&mut x_integer, &first_arg));
 
+        constnt_overwrite!(first_arg = first_arg);
         self.generator
-            .add_instruction(Instruction::Mv(first_arg, store_y));
+            .add_instruction(Instruction::mv(&mut first_arg, &store_y));
 
-        // Overwrite store_y
-        let store_x = store_y;
+        constnt_overwrite!(store_x = store_y);
         self.generator
-            .add_instruction(Instruction::Mv(store_x, x_integer));
+            .add_instruction(Instruction::mv(&mut store_x, &x_integer));
 
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+        constnt_overwrite!(callback = callback);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
 
         // Now move things back
+        constnt_overwrite!(x_integer = x_integer);
         self.generator
-            .add_instruction(Instruction::Mv(x_integer, store_x));
+            .add_instruction(Instruction::mv(&mut x_integer, &store_x));
 
         // Overwrite y_value
-        let y_integer = y_value;
+        constnt_overwrite!(y_integer = y_value);
         self.generator
-            .add_instruction(Instruction::Mv(y_integer, first_arg));
+            .add_instruction(Instruction::mv(&mut y_integer, &first_arg));
 
         // Overwrite first_arg
-        let x_sign = self.return_reg;
+        constnt_overwrite!(x_sign = first_arg);
         self.generator
-            .add_instruction(Instruction::Lbu(x_sign, 0, x_integer));
+            .add_instruction(Instruction::lbu(&mut x_sign, 0, &x_integer));
 
         // Overwrite callback
-        let y_sign = callback;
+        constnt_overwrite!(y_sign = callback);
         self.generator
-            .add_instruction(Instruction::Lbu(y_sign, 0, y_integer));
+            .add_instruction(Instruction::lbu(&mut y_sign, 0, &y_integer));
 
-        let x_magnitude = store_x;
+        constnt_overwrite!(x_magnitude = store_x);
         self.generator
-            .add_instruction(Instruction::Addi(x_magnitude, x_integer, 1));
+            .add_instruction(Instruction::addi(&mut x_magnitude, &x_integer, 1));
 
-        let first_magnitude = self.seventh_arg;
+        constnt!(first_magnitude = self.seventh_arg);
         self.generator
-            .add_instruction(Instruction::Mv(first_magnitude, x_magnitude));
+            .add_instruction(Instruction::mv(&mut first_magnitude, &x_magnitude));
 
-        let y_magnitude = self.fourth_arg;
+        constnt!(y_magnitude = self.fourth_arg);
         self.generator
-            .add_instruction(Instruction::Addi(y_magnitude, y_integer, 1));
+            .add_instruction(Instruction::addi(&mut y_magnitude, &y_integer, 1));
 
-        let callback = self.fifth_arg;
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "compare_magnitude".to_string()));
+        constnt!(callback = self.fifth_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "compare_magnitude".to_string(),
+        ));
 
         // Overwrite first_arg
-        let equality = x_sign;
-        let greater_magnitude_value = y_sign;
-        let bool_value = x_integer;
+        constnt_arg_overwrite!(equality = x_sign);
+        constnt_arg_overwrite!(greater_magnitude_value = y_sign);
+        var_overwrite!(bool_value = x_integer);
         self.generator
-            .add_instruction(Instruction::Mv(bool_value, equality));
+            .add_instruction(Instruction::mv(&mut bool_value, &equality));
 
         // heap allocation = 1 byte for value tag + 4 bytes for pointer + 1 byte for type length
         // + 1 byte for type + 1 byte for bool value
         // Overwrite equality
-        let ret = self.return_reg;
-        self.generator.add_instruction(Instruction::Mv(ret, heap));
+        constnt_overwrite!(ret = equality);
+        self.generator
+            .add_instruction(Instruction::mv(&mut ret, &heap));
 
         self.generator
-            .add_instruction(Instruction::Addi(heap, heap, 8));
+            .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 8));
 
         self.generator
-            .add_instruction(Instruction::Sb(self.zero, -8, heap));
+            .add_instruction(Instruction::sb(&zero, -8, &heap));
 
-        // Overwrite y_integer
-        let constant_pointer = y_integer;
+        constnt_overwrite!(constant_pointer = y_integer);
         self.generator
-            .add_instruction(Instruction::Addi(constant_pointer, heap, -3));
+            .add_instruction(Instruction::addi(&mut constant_pointer, &heap, -3));
 
         self.generator
-            .add_instruction(Instruction::Sw(constant_pointer, -7, heap));
+            .add_instruction(Instruction::sw(&constant_pointer, -7, &heap));
 
         // Overwrite constant_pointer
-        let bool_type = constant_pointer;
+        constnt_overwrite!(bool_type = constant_pointer);
         self.generator
-            .add_instruction(Instruction::Li(bool_type, 1 + 256 * (BOOL as i32)));
+            .add_instruction(Instruction::li(&mut bool_type, 1 + 256 * (BOOL as i32)));
 
         self.generator
-            .add_instruction(Instruction::Sh(bool_type, -3, heap));
+            .add_instruction(Instruction::sh(&bool_type, -3, &heap));
 
-        self.generator.add_instruction(Instruction::Bne(
-            greater_magnitude_value,
-            first_magnitude,
+        self.generator.add_instruction(Instruction::bne(
+            &greater_magnitude_value,
+            &first_magnitude,
             "less_than".to_string(),
         ));
 
         {
-            self.generator.add_instruction(Instruction::J(
+            self.generator.add_instruction(Instruction::j(
                 "finish_less_than_equals_integer".to_string(),
             ));
         }
         {
             self.generator
-                .add_instruction(Instruction::Label("less_than".to_string()));
+                .add_instruction(Instruction::label("less_than".to_string()));
 
             self.generator
-                .add_instruction(Instruction::Li(bool_value, 1));
+                .add_instruction(Instruction::li(&mut bool_value, 1));
         }
 
-        self.generator.add_instruction(Instruction::Label(
+        self.generator.add_instruction(Instruction::label(
             "finish_less_than_equals_integer".to_string(),
         ));
 
         self.generator
-            .add_instruction(Instruction::Sb(bool_value, -1, heap));
+            .add_instruction(Instruction::sb(&bool_value, -1, &heap));
 
         self.generator
-            .add_instruction(Instruction::J("return".to_string()));
+            .add_instruction(Instruction::j("return".to_string()));
+
+        self.register_map.free_all()
     }
 
-    pub fn less_than_integer(&mut self) {
-        let args = self.first_arg;
-        let heap = self.heap;
+    pub fn less_than_integer(&mut self) -> Freed {
+        argument!(args = self.first_arg);
+        var_argument!(heap = self.heap);
+        argument!(zero = self.zero);
         self.generator
-            .add_instruction(Instruction::Label("less_than_integer".to_string()));
+            .add_instruction(Instruction::label("less_than_integer".to_string()));
 
-        let x_value = self.first_temp;
+        constnt!(x_value = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lw(x_value, 0, args));
+            .add_instruction(Instruction::lw(&mut x_value, 0, &args));
 
-        let y_value = self.second_temp;
+        constnt!(y_value = self.second_temp);
         self.generator
-            .add_instruction(Instruction::Lw(y_value, 4, args));
+            .add_instruction(Instruction::lw(&mut y_value, 4, &args));
 
         // Overwrite args
-        let first_arg = args;
+        constnt_overwrite!(first_arg = args);
         self.generator
-            .add_instruction(Instruction::Mv(first_arg, x_value));
+            .add_instruction(Instruction::mv(&mut first_arg, &x_value));
 
-        let store_y = self.third_arg;
+        constnt!(store_y = self.third_arg);
         self.generator
-            .add_instruction(Instruction::Mv(store_y, y_value));
+            .add_instruction(Instruction::mv(&mut store_y, &y_value));
 
-        let callback = self.second_arg;
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+        constnt!(callback = self.second_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
 
         // Overwrite x_value
-        let x_integer = x_value;
+        constnt_overwrite!(x_integer = x_value);
         self.generator
-            .add_instruction(Instruction::Mv(x_integer, first_arg));
+            .add_instruction(Instruction::mv(&mut x_integer, &first_arg));
 
+        constnt_overwrite!(first_arg = first_arg);
         self.generator
-            .add_instruction(Instruction::Mv(first_arg, store_y));
+            .add_instruction(Instruction::mv(&mut first_arg, &store_y));
 
-        // Overwrite store_y
-        let store_x = store_y;
+        constnt_overwrite!(store_x = store_y);
         self.generator
-            .add_instruction(Instruction::Mv(store_x, x_integer));
+            .add_instruction(Instruction::mv(&mut store_x, &x_integer));
 
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "unwrap_integer".to_string()));
+        constnt_overwrite!(callback = callback);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
 
         // Now move things back
+        constnt_overwrite!(x_integer = x_integer);
         self.generator
-            .add_instruction(Instruction::Mv(x_integer, store_x));
+            .add_instruction(Instruction::mv(&mut x_integer, &store_x));
 
         // Overwrite y_value
-        let y_integer = y_value;
+        constnt_overwrite!(y_integer = y_value);
         self.generator
-            .add_instruction(Instruction::Mv(y_integer, first_arg));
+            .add_instruction(Instruction::mv(&mut y_integer, &first_arg));
 
         // Overwrite first_arg
-        let x_sign = first_arg;
+        constnt_overwrite!(x_sign = first_arg);
         self.generator
-            .add_instruction(Instruction::Lbu(x_sign, 0, x_integer));
+            .add_instruction(Instruction::lbu(&mut x_sign, 0, &x_integer));
 
         // Overwrite callback
-        let y_sign = callback;
+        constnt_overwrite!(y_sign = callback);
         self.generator
-            .add_instruction(Instruction::Lbu(y_sign, 0, y_integer));
+            .add_instruction(Instruction::lbu(&mut y_sign, 0, &y_integer));
 
-        let x_magnitude = store_x;
+        constnt_overwrite!(x_magnitude = store_x);
         self.generator
-            .add_instruction(Instruction::Addi(x_magnitude, x_integer, 1));
+            .add_instruction(Instruction::addi(&mut x_magnitude, &x_integer, 1));
 
-        let first_magnitude = self.seventh_arg;
+        constnt!(first_magnitude = self.seventh_arg);
         self.generator
-            .add_instruction(Instruction::Mv(first_magnitude, x_magnitude));
+            .add_instruction(Instruction::mv(&mut first_magnitude, &x_magnitude));
 
-        let y_magnitude = self.fourth_arg;
+        constnt!(y_magnitude = self.fourth_arg);
         self.generator
-            .add_instruction(Instruction::Addi(y_magnitude, y_integer, 1));
+            .add_instruction(Instruction::addi(&mut y_magnitude, &y_integer, 1));
 
-        let callback = self.fifth_arg;
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "compare_magnitude".to_string()));
+        constnt!(callback = self.fifth_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "compare_magnitude".to_string(),
+        ));
 
         // Overwrite first_arg
-        let equality = x_sign;
-        let greater_magnitude_value = y_sign;
-        let bool_value = x_integer;
+        constnt_arg_overwrite!(equality = x_sign);
+        constnt_arg_overwrite!(greater_magnitude_value = y_sign);
+        var_overwrite!(bool_value = x_integer);
         // Flip equality
         self.generator
-            .add_instruction(Instruction::Xori(bool_value, equality, 1));
+            .add_instruction(Instruction::xori(&mut bool_value, &equality, 1));
 
         // heap allocation = 1 byte for value tag + 4 bytes for pointer + 1 byte for type length
         // + 1 byte for type + 1 byte for bool value
         // Overwrite equality
-        let ret = self.return_reg;
-        self.generator.add_instruction(Instruction::Mv(ret, heap));
+        constnt_overwrite!(ret = equality);
+        self.generator
+            .add_instruction(Instruction::mv(&mut ret, &heap));
 
         self.generator
-            .add_instruction(Instruction::Addi(heap, heap, 8));
+            .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 8));
 
         self.generator
-            .add_instruction(Instruction::Sb(self.zero, -8, heap));
+            .add_instruction(Instruction::sb(&zero, -8, &heap));
 
-        // Overwrite y_integer
-        let constant_pointer = y_integer;
+        constnt_overwrite!(constant_pointer = y_integer);
         self.generator
-            .add_instruction(Instruction::Addi(constant_pointer, heap, -3));
+            .add_instruction(Instruction::addi(&mut constant_pointer, &heap, -3));
 
         self.generator
-            .add_instruction(Instruction::Sw(constant_pointer, -7, heap));
+            .add_instruction(Instruction::sw(&constant_pointer, -7, &heap));
 
         // Overwrite constant_pointer
-        let bool_type = constant_pointer;
+        constnt_overwrite!(bool_type = constant_pointer);
         self.generator
-            .add_instruction(Instruction::Li(bool_type, 1 + 256 * (BOOL as i32)));
+            .add_instruction(Instruction::li(&mut bool_type, 1 + 256 * (BOOL as i32)));
 
         self.generator
-            .add_instruction(Instruction::Sh(bool_type, -3, heap));
+            .add_instruction(Instruction::sh(&bool_type, -3, &heap));
 
-        self.generator.add_instruction(Instruction::Bne(
-            greater_magnitude_value,
-            first_magnitude,
+        self.generator.add_instruction(Instruction::bne(
+            &greater_magnitude_value,
+            &first_magnitude,
             "less_than_int".to_string(),
         ));
 
         {
             self.generator
-                .add_instruction(Instruction::J("finish_less_than_integer".to_string()));
+                .add_instruction(Instruction::j("finish_less_than_integer".to_string()));
 
             self.generator
-                .add_instruction(Instruction::Li(bool_value, 0));
+                .add_instruction(Instruction::li(&mut bool_value, 0));
         }
         {
             self.generator
-                .add_instruction(Instruction::Label("less_than_int".to_string()));
+                .add_instruction(Instruction::label("less_than_int".to_string()));
         }
 
         self.generator
-            .add_instruction(Instruction::Label("finish_less_than_integer".to_string()));
+            .add_instruction(Instruction::label("finish_less_than_integer".to_string()));
 
         self.generator
-            .add_instruction(Instruction::Sb(bool_value, -1, heap));
+            .add_instruction(Instruction::sb(&bool_value, -1, &heap));
 
         self.generator
-            .add_instruction(Instruction::J("return".to_string()));
+            .add_instruction(Instruction::j("return".to_string()));
+
+        self.register_map.free_all()
     }
 
     pub fn append_bytestring(&mut self) {
