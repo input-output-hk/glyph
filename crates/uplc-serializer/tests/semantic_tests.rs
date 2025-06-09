@@ -175,10 +175,10 @@ fn test_bytestring_constant_serialization() {
 
     // Size should be encoded (1 word for our small bytestring)
     // and then the bytestring bytes should appear
-    let bytes = [1, 2, 3];
+    let bytes = [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0];
     let mut found_bytes = false;
 
-    for window in binary[constant_pos + bytestring_tag_pos + 6..].windows(3) {
+    for window in binary[constant_pos + bytestring_tag_pos + 6..].windows(12) {
         if window == bytes {
             found_bytes = true;
             break;
@@ -222,8 +222,8 @@ fn test_boolean_constant_serialization() {
 fn test_constructor_and_case_serialization() {
     // Instead of testing the constructor and case separately, test them together
     // This is much more representative of real usage
-    let uplc_text = r#"(program 1.0.0 
-                        (lam x 
+    let uplc_text = r#"(program 1.0.0
+                        (lam x
                            [
                              (lam y [y x])
                              (con integer 42)
@@ -235,7 +235,7 @@ fn test_constructor_and_case_serialization() {
     assert!(!binary.is_empty(), "Binary should not be empty");
 
     // Verify we can parse complex programs with data structures
-    let data_program = r#"(program 1.0.0 
+    let data_program = r#"(program 1.0.0
                           (con data (Constr 0 [])))"#;
     let data_binary = parse_and_serialize(data_program).unwrap();
 
