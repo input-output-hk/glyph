@@ -3770,149 +3770,167 @@ impl Cek {
         self.register_map.free_all()
     }
 
-    pub fn append_bytestring(&mut self) {
-        let args = self.first_arg;
-        let heap = self.heap;
+    pub fn append_bytestring(&mut self) -> Freed {
+        argument!(args = self.first_arg);
+        var_argument!(heap = self.heap);
         self.generator
-            .add_instruction(Instruction::Label("append_bytestring".to_string()));
+            .add_instruction(Instruction::label("append_bytestring".to_string()));
 
-        let x_value = self.first_temp;
+        constnt!(x_value = self.first_temp);
         self.generator
-            .add_instruction(Instruction::Lw(x_value, 0, args));
+            .add_instruction(Instruction::lw(&mut x_value, 0, &args));
 
-        let y_value = self.second_temp;
+        constnt!(y_value = self.second_temp);
         self.generator
-            .add_instruction(Instruction::Lw(y_value, 4, args));
+            .add_instruction(Instruction::lw(&mut y_value, 4, &args));
 
         // Overwrite args
-        let first_arg = args;
+        constnt_overwrite!(first_arg = args);
         self.generator
-            .add_instruction(Instruction::Mv(first_arg, x_value));
+            .add_instruction(Instruction::mv(&mut first_arg, &x_value));
 
-        let store_y = self.third_arg;
+        constnt!(store_y = self.third_arg);
         self.generator
-            .add_instruction(Instruction::Mv(store_y, y_value));
+            .add_instruction(Instruction::mv(&mut store_y, &y_value));
 
-        let callback = self.second_arg;
-        self.generator
-            .add_instruction(Instruction::Jal(callback, "unwrap_bytestring".to_string()));
+        constnt!(callback = self.second_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_bytestring".to_string(),
+        ));
 
         // Overwrite x_value
-        let x_bytestring = x_value;
+        constnt_overwrite!(x_bytestring = x_value);
         self.generator
-            .add_instruction(Instruction::Mv(x_bytestring, first_arg));
+            .add_instruction(Instruction::mv(&mut x_bytestring, &first_arg));
 
+        constnt_overwrite!(first_arg = first_arg);
         self.generator
-            .add_instruction(Instruction::Mv(first_arg, store_y));
+            .add_instruction(Instruction::mv(&mut first_arg, &store_y));
 
-        // Overwrite store_y
-        let store_x = store_y;
+        constnt_overwrite!(store_x = store_y);
         self.generator
-            .add_instruction(Instruction::Mv(store_x, x_bytestring));
+            .add_instruction(Instruction::mv(&mut store_x, &x_bytestring));
 
+        constnt_overwrite!(callback = callback);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_bytestring".to_string(),
+        ));
+
+        constnt_overwrite!(x_bytestring = x_bytestring);
         self.generator
-            .add_instruction(Instruction::Jal(callback, "unwrap_bytestring".to_string()));
+            .add_instruction(Instruction::mv(&mut x_bytestring, &store_x));
 
-        // Now move things back
+        constnt_overwrite!(y_bytestring = y_value);
         self.generator
-            .add_instruction(Instruction::Mv(x_bytestring, store_x));
+            .add_instruction(Instruction::mv(&mut y_bytestring, &first_arg));
 
-        // Overwrite y_value
-        let y_bytestring = y_value;
+        constnt!(x_length = self.third_temp);
         self.generator
-            .add_instruction(Instruction::Mv(y_bytestring, first_arg));
+            .add_instruction(Instruction::lw(&mut x_length, 0, &x_bytestring));
 
-        let x_length = self.third_temp;
+        constnt!(y_length = self.fourth_temp);
         self.generator
-            .add_instruction(Instruction::Lw(x_length, 0, x_bytestring));
+            .add_instruction(Instruction::lw(&mut y_length, 0, &y_bytestring));
 
-        let y_length = self.fourth_temp;
+        constnt!(total_length = self.fifth_temp);
         self.generator
-            .add_instruction(Instruction::Lw(y_length, 0, y_bytestring));
+            .add_instruction(Instruction::add(&mut total_length, &x_length, &y_length));
 
-        let total_length = self.fifth_temp;
+        constnt_overwrite!(ret = first_arg);
         self.generator
-            .add_instruction(Instruction::Add(total_length, x_length, y_length));
+            .add_instruction(Instruction::mv(&mut ret, &heap));
 
-        let ret = self.return_reg;
-        self.generator.add_instruction(Instruction::Mv(ret, heap));
-
-        let callback = self.eighth_arg;
+        let callback_alloc = self.eighth_arg;
         // This function does not modify temps and only changes heap and s3
         // and eighth arg
         self.generator.add_instruction(Instruction::Jal(
-            callback,
+            callback_alloc,
             "allocate_bytestring_type".to_string(),
         ));
 
-        let value_builder = self.sixth_temp;
+        var!(value_builder = self.sixth_temp);
         self.generator
-            .add_instruction(Instruction::Mv(value_builder, heap));
+            .add_instruction(Instruction::mv(&mut value_builder, &heap));
 
         // Overwrite total_length
-        let total_allocation = self.seventh_temp;
+        var!(total_allocation = self.seventh_temp);
         self.generator
-            .add_instruction(Instruction::Slli(total_allocation, total_length, 2));
+            .add_instruction(Instruction::slli(&mut total_allocation, &total_length, 2));
 
         // heap allocation = 1 byte for value tag + 4 bytes for pointer + 1 byte for type length
         // + 1 byte for type + 4 bytes for bytestring length + 4 * bytestring length bytes
-        self.generator
-            .add_instruction(Instruction::Addi(total_allocation, total_allocation, 4));
+        self.generator.add_instruction(Instruction::addi(
+            &mut total_allocation.clone(),
+            &total_allocation,
+            4,
+        ));
+
+        self.generator.add_instruction(Instruction::add(
+            &mut heap.clone(),
+            &heap,
+            &total_allocation,
+        ));
 
         self.generator
-            .add_instruction(Instruction::Add(heap, heap, total_allocation));
+            .add_instruction(Instruction::sw(&total_length, 0, &value_builder));
 
+        self.generator.add_instruction(Instruction::addi(
+            &mut value_builder.clone(),
+            &value_builder,
+            4,
+        ));
+
+        constnt!(return_temp = self.seventh_arg);
         self.generator
-            .add_instruction(Instruction::Sw(total_length, 0, value_builder));
+            .add_instruction(Instruction::mv(&mut return_temp, &ret));
 
+        constnt!(second_list = self.sixth_arg);
         self.generator
-            .add_instruction(Instruction::Addi(value_builder, value_builder, 4));
+            .add_instruction(Instruction::mv(&mut second_list, &y_bytestring));
 
-        let return_temp = self.seventh_arg;
+        constnt!(second_list_len = self.fifth_arg);
         self.generator
-            .add_instruction(Instruction::Mv(return_temp, ret));
+            .add_instruction(Instruction::mv(&mut second_list_len, &y_length));
 
-        let second_list = self.sixth_arg;
+        constnt_overwrite!(size = store_x);
         self.generator
-            .add_instruction(Instruction::Mv(second_list, y_bytestring));
+            .add_instruction(Instruction::mv(&mut size, &x_length));
 
-        let second_list_len = self.fifth_arg;
+        constnt_overwrite!(dst_list = callback);
         self.generator
-            .add_instruction(Instruction::Mv(second_list_len, y_length));
+            .add_instruction(Instruction::mv(&mut dst_list, &value_builder));
 
-        let size = self.third_arg;
+        constnt_overwrite!(src_list = ret);
         self.generator
-            .add_instruction(Instruction::Mv(size, x_length));
-
-        let dst_list = self.second_arg;
-
-        self.generator
-            .add_instruction(Instruction::Mv(dst_list, value_builder));
-
-        let src_list = ret;
-        self.generator
-            .add_instruction(Instruction::Addi(src_list, x_bytestring, 4));
+            .add_instruction(Instruction::addi(&mut src_list, &x_bytestring, 4));
 
         // clone x into heap
-        let callback = self.fourth_arg;
+        constnt!(callback = self.fourth_arg);
         self.generator
-            .add_instruction(Instruction::Jal(callback, "clone_list".to_string()));
+            .add_instruction(Instruction::jal(&mut callback, "clone_list".to_string()));
 
+        constnt_overwrite!(size = size);
         self.generator
-            .add_instruction(Instruction::Mv(size, second_list_len));
+            .add_instruction(Instruction::mv(&mut size, &second_list_len));
 
+        constnt_overwrite!(src_list = src_list);
         self.generator
-            .add_instruction(Instruction::Addi(src_list, second_list, 4));
+            .add_instruction(Instruction::addi(&mut src_list, &second_list, 4));
 
-        // clone y into heap
+        constnt_overwrite!(callback = callback);
         self.generator
-            .add_instruction(Instruction::Jal(callback, "clone_list".to_string()));
+            .add_instruction(Instruction::jal(&mut callback, "clone_list".to_string()));
 
+        constnt_overwrite!(ret = src_list);
         self.generator
-            .add_instruction(Instruction::Mv(self.return_reg, return_temp));
+            .add_instruction(Instruction::mv(&mut ret, &return_temp));
 
         self.generator
             .add_instruction(Instruction::J("return".to_string()));
+
+        self.register_map.free_all()
     }
 
     pub fn cons_bytestring(&mut self) {
