@@ -5636,7 +5636,11 @@ mod tests {
 
         let gene = thing.cek_assembly(riscv_program);
 
+        Command::new("ls").args(["."]).status().unwrap();
+
         gene.save_to_file("test_add_big_int.s").unwrap();
+
+        Command::new("ls").args(["."]).status().unwrap();
 
         Command::new("riscv64-elf-as")
             .args([
@@ -5749,6 +5753,8 @@ mod tests {
         let gene = thing.cek_assembly(riscv_program);
 
         gene.save_to_file("test_add_big_int_sign.s").unwrap();
+
+        Command::new("ls").args(["."]).status().unwrap();
 
         Command::new("riscv64-elf-as")
             .args([
