@@ -5750,7 +5750,7 @@ mod tests {
 
         gene.save_to_file("test_add_big_int_sign.s").unwrap();
 
-        Command::new("ls").args(["../.."]).status().unwrap();
+        Command::new("ls").args(["../../linker"]).status().unwrap();
 
         Command::new("riscv64-elf-as")
             .args([
@@ -5763,7 +5763,7 @@ mod tests {
             .status()
             .unwrap();
 
-        Command::new("ls").args(["../.."]).status().unwrap();
+        Command::new("ls").args(["."]).status().unwrap();
 
         Command::new("riscv64-elf-ld")
             .args([
