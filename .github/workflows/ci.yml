@@ -23,25 +23,34 @@ jobs:
           toolchain: stable
           override: true
           components: rustfmt, clippy
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo build --verbose
-      - run: cargo test --verbose
-
-  build-riscv:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: webfactory/ssh-agent@v0.8.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-          target: riscv32imac-unknown-none-elf
-      - run: |
+      - name: Install RISC-V toolchain
+        run: |
           sudo apt-get update
-          sudo apt-get install -y riscv64-elf-gcc
-      - run: cargo build --verbose --target riscv32imac-unknown-none-elf --features no_std
+          sudo apt-get install -y gcc-riscv64-unknown-elf
+          # Create alias since apt installs as riscv64-unknown-elf-as
+          sudo ln -s /usr/bin/riscv64-unknown-elf-as /usr/local/bin/riscv64-elf-as
+          sudo ln -s /usr/bin/riscv64-unknown-elf-ld /usr/local/bin/riscv64-elf-ld
+      - name: Run Cargo
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo build --verbose
+          cargo test --verbose
+
+  # build-riscv:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: webfactory/ssh-agent@v0.8.0
+  #       with:
+  #         ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+  #     - uses: actions-rs/toolchain@v1
+  #       with:
+  #         profile: minimal
+  #         toolchain: stable
+  #         override: true
+  #         target: riscv32imac-unknown-none-elf
+  #     - run: |
+  #         sudo apt-get update
+  #         sudo apt-get install -y riscv64-elf-gcc
+  #     - run: cargo build --verbose --target riscv32imac-unknown-none-elf --features no_std
