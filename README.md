@@ -6,8 +6,6 @@
 > ready for production use. It is in an experimental state with
 > many features still being implemented and tested.
 
-test
-
 A compiler that translates Untyped Plutus Core (UPLC) to RISC-V assembly code.
 
 ## Project Structure
