@@ -423,6 +423,20 @@ impl Cek {
         self.append_bytestring();
         self.cons_bytestring();
         self.slice_bytestring();
+        self.length_bytestring();
+        self.index_bytestring();
+        self.equals_bytestring();
+        self.less_than_bytestring();
+        self.less_than_equals_bytestring();
+        self.sha2_256();
+        self.sha3_256();
+        self.blake2b_256();
+        self.verify_ed25519_signature();
+        self.append_string();
+        self.equals_string();
+        self.encode_utf8();
+        self.decode_utf8();
+        self.if_then_else();
         self.add_signed_integers();
         self.compare_magnitude();
         self.sub_signed_integers();
@@ -2943,6 +2957,62 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::j("slice_bytestring".to_string()));
 
+        // 13 - length_bytestring
+        self.generator
+            .add_instruction(Instruction::j("length_bytestring".to_string()));
+
+        // 14 - index_bytestring
+        self.generator
+            .add_instruction(Instruction::j("index_bytestring".to_string()));
+
+        // 15 - equals_bytestring
+        self.generator
+            .add_instruction(Instruction::j("equals_bytestring".to_string()));
+
+        // 16 - less_than_bytestring
+        self.generator
+            .add_instruction(Instruction::j("less_than_bytestring".to_string()));
+
+        // 17 - less_than_equals_bytestring
+        self.generator
+            .add_instruction(Instruction::j("less_than_equals_bytestring".to_string()));
+
+        // 18 - sha2_256
+        self.generator
+            .add_instruction(Instruction::j("sha2_256".to_string()));
+
+        // 19 - sha3_256
+        self.generator
+            .add_instruction(Instruction::j("sha3_256".to_string()));
+
+        // 20 - blake2b_256
+        self.generator
+            .add_instruction(Instruction::j("blake2b_256".to_string()));
+
+        // 21 - verify_ed25519_signature
+        self.generator
+            .add_instruction(Instruction::j("verify_ed25519_signature".to_string()));
+
+        // 22 - append_string
+        self.generator
+            .add_instruction(Instruction::j("append_string".to_string()));
+
+        // 23 - equals_string
+        self.generator
+            .add_instruction(Instruction::j("equals_string".to_string()));
+
+        // 24 - encode_utf8
+        self.generator
+            .add_instruction(Instruction::j("encode_utf8".to_string()));
+
+        // 25 - decode_utf8
+        self.generator
+            .add_instruction(Instruction::j("decode_utf8".to_string()));
+
+        // 26 - if_then_else
+        self.generator
+            .add_instruction(Instruction::j("if_then_else".to_string()));
+
         self.register_map.free_all()
     }
 
@@ -4318,6 +4388,105 @@ impl Cek {
         self.register_map.free_all()
     }
 
+    pub fn length_bytestring(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("length_bytestring".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn index_bytestring(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("index_bytestring".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn equals_bytestring(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("equals_bytestring".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn less_than_bytestring(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("less_than_bytestring".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn less_than_equals_bytestring(&mut self) {
+        self.generator.add_instruction(Instruction::Label(
+            "less_than_equals_bytestring".to_string(),
+        ));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn sha2_256(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("sha2_256".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn sha3_256(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("sha3_256".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn blake2b_256(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("blake2b_256".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn verify_ed25519_signature(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("verify_ed25519_signature".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn append_string(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("append_string".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn equals_string(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("equals_string".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn encode_utf8(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("encode_utf8".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn decode_utf8(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("decode_utf8".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
+    pub fn if_then_else(&mut self) {
+        self.generator
+            .add_instruction(Instruction::Label("if_then_else".to_string()));
+
+        self.generator.add_instruction(Instruction::Nop);
+    }
+
     // This uses all argument and temp registers
     pub fn add_signed_integers(&mut self) -> Freed {
         argument!(first_sign = self.first_arg);
@@ -5287,6 +5456,20 @@ mod tests {
         cek.append_bytestring();
         cek.cons_bytestring();
         cek.slice_bytestring();
+        cek.length_bytestring();
+        cek.index_bytestring();
+        cek.equals_bytestring();
+        cek.less_than_bytestring();
+        cek.less_than_equals_bytestring();
+        cek.sha2_256();
+        cek.sha3_256();
+        cek.blake2b_256();
+        cek.verify_ed25519_signature();
+        cek.append_string();
+        cek.equals_string();
+        cek.encode_utf8();
+        cek.decode_utf8();
+        cek.if_then_else();
         cek.add_signed_integers();
         cek.compare_magnitude();
         cek.sub_signed_integers();
