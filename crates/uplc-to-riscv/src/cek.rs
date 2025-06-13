@@ -4453,11 +4453,127 @@ impl Cek {
         self.register_map.free_all()
     }
 
-    pub fn index_bytestring(&mut self) {
+    pub fn index_bytestring(&mut self) -> Freed {
+        argument!(args = self.first_arg);
+        var_argument!(heap = self.heap);
+        argument!(zero = self.zero);
         self.generator
             .add_instruction(Instruction::Label("index_bytestring".to_string()));
 
-        self.generator.add_instruction(Instruction::Nop);
+        constnt!(x_value = self.first_temp);
+        self.generator
+            .add_instruction(Instruction::lw(&mut x_value, 0, &args));
+
+        constnt!(y_value = self.third_arg);
+        self.generator
+            .add_instruction(Instruction::lw(&mut y_value, 4, &args));
+
+        constnt_overwrite!(unwrap_val = args);
+        self.generator
+            .add_instruction(Instruction::mv(&mut unwrap_val, &x_value));
+
+        constnt!(callback = self.second_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_bytestring".to_string(),
+        ));
+
+        constnt!(bytestring = self.fourth_arg);
+        self.generator
+            .add_instruction(Instruction::mv(&mut bytestring, &unwrap_val));
+
+        constnt_overwrite!(unwrap_val = unwrap_val);
+        self.generator
+            .add_instruction(Instruction::mv(&mut unwrap_val, &y_value));
+
+        constnt_overwrite!(callback = callback);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
+
+        constnt_overwrite!(index = x_value);
+        self.generator
+            .add_instruction(Instruction::mv(&mut index, &unwrap_val));
+
+        constnt!(sign = self.second_temp);
+        self.generator
+            .add_instruction(Instruction::lbu(&mut sign, 0, &index));
+
+        self.generator
+            .add_instruction(Instruction::bne(&sign, &zero, "handle_error".to_string()));
+
+        constnt!(max_index_size = self.third_temp);
+        self.generator
+            .add_instruction(Instruction::li(&mut max_index_size, 1));
+
+        constnt!(index_size = self.fourth_temp);
+        self.generator
+            .add_instruction(Instruction::lw(&mut index_size, 1, &index));
+
+        self.generator.add_instruction(Instruction::bne(
+            &index_size,
+            &max_index_size,
+            "handle_error".to_string(),
+        ));
+
+        var_overwrite!(index_val = index_size);
+        self.generator
+            .add_instruction(Instruction::lw(&mut index_val, 5, &index));
+
+        constnt!(byte_len = self.fifth_temp);
+        self.generator
+            .add_instruction(Instruction::lw(&mut byte_len, 0, &bytestring));
+
+        self.generator.add_instruction(Instruction::bgeu(
+            &index_val,
+            &byte_len,
+            "handle_error".to_string(),
+        ));
+
+        // offset index past length word
+        self.generator
+            .add_instruction(Instruction::addi(&mut index_val.clone(), &index_val, 1));
+
+        self.generator
+            .add_instruction(Instruction::slli(&mut index_val.clone(), &index_val, 2));
+
+        self.generator.add_instruction(Instruction::add(
+            &mut index_val.clone(),
+            &index_val,
+            &bytestring,
+        ));
+
+        constnt!(byte = self.fifth_arg);
+        self.generator
+            .add_instruction(Instruction::lw(&mut byte, 0, &index_val));
+
+        constnt_overwrite!(ret = unwrap_val);
+        self.generator
+            .add_instruction(Instruction::mv(&mut ret, &heap));
+
+        constnt!(callback_alloc = self.eighth_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback_alloc,
+            "allocate_integer_type".to_string(),
+        ));
+
+        self.generator
+            .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 9));
+
+        self.generator
+            .add_instruction(Instruction::sb(&zero, -9, &heap));
+
+        self.generator
+            .add_instruction(Instruction::sw(&max_index_size, -8, &heap));
+
+        self.generator
+            .add_instruction(Instruction::sw(&byte, -4, &heap));
+
+        self.generator
+            .add_instruction(Instruction::j("return".to_string()));
+
+        self.register_map.free_all()
     }
 
     pub fn equals_bytestring(&mut self) {
@@ -7124,6 +7240,117 @@ mod tests {
             .unwrap();
 
         assert_eq!(value, 4);
+    }
+
+    #[test]
+    fn test_index_bytestring() {
+        let thing = Cek::default();
+
+        let term: Term<Name> = Term::index_bytearray()
+            .apply(Term::byte_string(vec![251, 251, 254, 254]))
+            .apply(Term::integer(2.into()));
+
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
+
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_index_bytes.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_index_bytes.o",
+                "test_index_bytes.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_index_bytes.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_index_bytes.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_index_bytes.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            a => unreachable!("HOW? {:#?}", a),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, const_tag::INTEGER);
+
+        let sign = section_data[offset_index + 2];
+
+        assert_eq!(sign, 0);
+
+        let integer_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(integer_length, 1);
+
+        let value = *section_data[(offset_index + 7)..(offset_index + 11)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(value, 254);
     }
 
     #[test]
