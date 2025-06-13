@@ -4383,16 +4383,74 @@ impl Cek {
             .add_instruction(Instruction::sw(&new_length, 0, &length_pointer));
 
         self.generator
+            .add_instruction(Instruction::mv(&mut heap, &value_builder));
+
+        self.generator
             .add_instruction(Instruction::j("return".to_string()));
 
         self.register_map.free_all()
     }
 
-    pub fn length_bytestring(&mut self) {
+    pub fn length_bytestring(&mut self) -> Freed {
+        argument!(args = self.first_arg);
+        var_argument!(heap = self.heap);
+        argument!(zero = self.zero);
         self.generator
             .add_instruction(Instruction::Label("length_bytestring".to_string()));
 
-        self.generator.add_instruction(Instruction::Nop);
+        constnt!(x_value = self.first_temp);
+        self.generator
+            .add_instruction(Instruction::lw(&mut x_value, 0, &args));
+
+        constnt_overwrite!(unwrap_val = args);
+        self.generator
+            .add_instruction(Instruction::mv(&mut unwrap_val, &x_value));
+
+        constnt!(callback = self.second_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_bytestring".to_string(),
+        ));
+
+        constnt_overwrite!(bytestring = x_value);
+        self.generator
+            .add_instruction(Instruction::mv(&mut bytestring, &unwrap_val));
+
+        constnt!(bytestring_len = self.second_temp);
+        self.generator
+            .add_instruction(Instruction::lw(&mut bytestring_len, 0, &bytestring));
+
+        constnt_overwrite!(ret = unwrap_val);
+        self.generator
+            .add_instruction(Instruction::mv(&mut ret, &heap));
+
+        constnt!(callback_alloc = self.eighth_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback_alloc,
+            "allocate_integer_type".to_string(),
+        ));
+
+        // 1 byte for sign + 4 bytes for length of 1 + 4 bytes to represent bytestring len
+        self.generator
+            .add_instruction(Instruction::addi(&mut heap.clone(), &heap, 9));
+
+        self.generator
+            .add_instruction(Instruction::sb(&zero, -9, &heap));
+
+        constnt_overwrite!(integer_size = bytestring);
+        self.generator
+            .add_instruction(Instruction::li(&mut integer_size, 1));
+
+        self.generator
+            .add_instruction(Instruction::sw(&integer_size, -8, &heap));
+
+        self.generator
+            .add_instruction(Instruction::sw(&bytestring_len, -4, &heap));
+
+        self.generator
+            .add_instruction(Instruction::j("return".to_string()));
+
+        self.register_map.free_all()
     }
 
     pub fn index_bytestring(&mut self) {
@@ -6956,6 +7014,116 @@ mod tests {
             .collect::<Vec<u32>>();
 
         assert_eq!(value, vec![251, 254])
+    }
+
+    #[test]
+    fn test_bytestring_length() {
+        let thing = Cek::default();
+
+        let term: Term<Name> =
+            Term::length_of_bytearray().apply(Term::byte_string(vec![251, 251, 254, 254]));
+
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
+
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_len_bytes.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_len_bytes.o",
+                "test_len_bytes.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_len_bytes.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_len_bytes.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_len_bytes.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            a => unreachable!("HOW? {:#?}", a),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, const_tag::INTEGER);
+
+        let sign = section_data[offset_index + 2];
+
+        assert_eq!(sign, 0);
+
+        let integer_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(integer_length, 1);
+
+        let value = *section_data[(offset_index + 7)..(offset_index + 11)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(value, 4);
     }
 
     #[test]
