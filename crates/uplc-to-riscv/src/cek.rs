@@ -422,6 +422,7 @@ impl Cek {
         self.less_than_equals_integer();
         self.append_bytestring();
         self.cons_bytestring();
+        self.slice_bytestring();
         self.add_signed_integers();
         self.compare_magnitude();
         self.sub_signed_integers();
@@ -2938,6 +2939,10 @@ impl Cek {
         self.generator
             .add_instruction(Instruction::j("cons_bytestring".to_string()));
 
+        // 12 - slice_bytestring
+        self.generator
+            .add_instruction(Instruction::j("slice_bytestring".to_string()));
+
         self.register_map.free_all()
     }
 
@@ -4110,6 +4115,209 @@ impl Cek {
         self.register_map.free_all()
     }
 
+    pub fn slice_bytestring(&mut self) -> Freed {
+        argument!(args = self.first_arg);
+        var_argument!(heap = self.heap);
+        argument!(zero = self.zero);
+        self.generator
+            .add_instruction(Instruction::label("slice_bytestring".to_string()));
+
+        constnt!(x_value = self.first_temp);
+        self.generator
+            .add_instruction(Instruction::lw(&mut x_value, 0, &args));
+
+        constnt!(y_value = self.third_arg);
+        self.generator
+            .add_instruction(Instruction::lw(&mut y_value, 4, &args));
+
+        constnt!(z_value = self.fourth_arg);
+        self.generator
+            .add_instruction(Instruction::lw(&mut z_value, 8, &args));
+
+        constnt_overwrite!(unwrap_val = args);
+        self.generator
+            .add_instruction(Instruction::mv(&mut unwrap_val, &x_value));
+
+        constnt!(callback = self.second_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
+
+        constnt!(x_store = self.fifth_arg);
+        self.generator
+            .add_instruction(Instruction::mv(&mut x_store, &unwrap_val));
+
+        constnt_overwrite!(unwrap_val = unwrap_val);
+        self.generator
+            .add_instruction(Instruction::mv(&mut unwrap_val, &y_value));
+
+        constnt_overwrite!(callback = callback);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_integer".to_string(),
+        ));
+
+        constnt!(y_store = self.sixth_arg);
+        self.generator
+            .add_instruction(Instruction::mv(&mut y_store, &unwrap_val));
+
+        constnt_overwrite!(unwrap_val = unwrap_val);
+        self.generator
+            .add_instruction(Instruction::mv(&mut unwrap_val, &z_value));
+
+        constnt_overwrite!(callback = callback);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback,
+            "unwrap_bytestring".to_string(),
+        ));
+        constnt_overwrite!(bytestring_val = y_value);
+        self.generator
+            .add_instruction(Instruction::mv(&mut bytestring_val, &unwrap_val));
+
+        constnt!(max_int_length = self.second_temp);
+        self.generator
+            .add_instruction(Instruction::li(&mut max_int_length, 1));
+
+        constnt_overwrite!(x_length = x_value);
+        self.generator
+            .add_instruction(Instruction::lw(&mut x_length, 1, &x_store));
+
+        self.generator.add_instruction(Instruction::bne(
+            &x_length,
+            &max_int_length,
+            "handle_error".to_string(),
+        ));
+        constnt!(y_length = self.third_temp);
+        self.generator
+            .add_instruction(Instruction::lw(&mut y_length, 1, &y_store));
+
+        self.generator.add_instruction(Instruction::bne(
+            &y_length,
+            &max_int_length,
+            "handle_error".to_string(),
+        ));
+
+        constnt!(bytestring_len = self.fourth_temp);
+        self.generator
+            .add_instruction(Instruction::lw(&mut bytestring_len, 0, &bytestring_val));
+
+        var!(starting_index = self.fifth_temp);
+        self.generator
+            .add_instruction(Instruction::lw(&mut starting_index, 5, &x_store));
+
+        var!(taking_index = self.sixth_temp);
+        self.generator
+            .add_instruction(Instruction::lw(&mut taking_index, 5, &y_store));
+
+        // Use bytes register to offset by 4 * starting_index + 4 for length word
+        var!(bytes = self.seventh_temp);
+        self.generator
+            .add_instruction(Instruction::slli(&mut bytes, &starting_index, 2));
+
+        self.generator
+            .add_instruction(Instruction::addi(&mut bytes.clone(), &bytes, 4));
+
+        self.generator.add_instruction(Instruction::add(
+            &mut bytes.clone(),
+            &bytes,
+            &bytestring_val,
+        ));
+
+        constnt_overwrite!(ret = unwrap_val);
+        self.generator
+            .add_instruction(Instruction::mv(&mut ret, &heap));
+
+        constnt!(callback_alloc = self.eighth_arg);
+        self.generator.add_instruction(Instruction::jal(
+            &mut callback_alloc,
+            "allocate_bytestring_type".to_string(),
+        ));
+
+        var_overwrite!(value_builder = z_value);
+        self.generator
+            .add_instruction(Instruction::mv(&mut value_builder, &heap));
+
+        var_overwrite!(new_length = bytestring_val);
+        self.generator
+            .add_instruction(Instruction::li(&mut new_length, 0));
+
+        constnt!(length_pointer = self.seventh_arg);
+        self.generator
+            .add_instruction(Instruction::mv(&mut length_pointer, &value_builder));
+
+        self.generator.add_instruction(Instruction::addi(
+            &mut value_builder.clone(),
+            &value_builder,
+            4,
+        ));
+
+        {
+            self.generator
+                .add_instruction(Instruction::label("slice_loop".to_string()));
+
+            self.generator.add_instruction(Instruction::bgeu(
+                &starting_index,
+                &bytestring_len,
+                "finalize_slice".to_string(),
+            ));
+
+            self.generator.add_instruction(Instruction::beq(
+                &taking_index,
+                &zero,
+                "finalize_slice".to_string(),
+            ));
+
+            constnt_overwrite!(byte = x_length);
+            self.generator
+                .add_instruction(Instruction::lw(&mut byte, 0, &bytes));
+
+            self.generator
+                .add_instruction(Instruction::sw(&byte, 0, &value_builder));
+
+            self.generator.add_instruction(Instruction::addi(
+                &mut value_builder.clone(),
+                &value_builder,
+                4,
+            ));
+
+            self.generator
+                .add_instruction(Instruction::addi(&mut bytes.clone(), &bytes, 4));
+
+            self.generator.add_instruction(Instruction::addi(
+                &mut taking_index.clone(),
+                &taking_index,
+                -1,
+            ));
+
+            self.generator.add_instruction(Instruction::addi(
+                &mut starting_index.clone(),
+                &starting_index,
+                1,
+            ));
+
+            self.generator.add_instruction(Instruction::addi(
+                &mut new_length.clone(),
+                &new_length,
+                1,
+            ));
+
+            self.generator
+                .add_instruction(Instruction::j("slice_loop".to_string()));
+        }
+
+        self.generator
+            .add_instruction(Instruction::label("finalize_slice".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::sw(&new_length, 0, &length_pointer));
+
+        self.generator
+            .add_instruction(Instruction::j("return".to_string()));
+
+        self.register_map.free_all()
+    }
+
     // This uses all argument and temp registers
     pub fn add_signed_integers(&mut self) -> Freed {
         argument!(first_sign = self.first_arg);
@@ -5078,6 +5286,7 @@ mod tests {
         cek.less_than_equals_integer();
         cek.append_bytestring();
         cek.cons_bytestring();
+        cek.slice_bytestring();
         cek.add_signed_integers();
         cek.compare_magnitude();
         cek.sub_signed_integers();
@@ -6353,6 +6562,217 @@ mod tests {
             .collect::<Vec<u32>>();
 
         assert_eq!(value, vec![255, 255, 254, 245])
+    }
+
+    #[test]
+    fn test_con_bytestring() {
+        let thing = Cek::default();
+
+        let term: Term<Name> = Term::cons_bytearray()
+            .apply(Term::integer(20.into()))
+            .apply(Term::byte_string(vec![254, 245]));
+
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
+
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_cons_bytes.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_cons_bytes.o",
+                "test_cons_bytes.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_cons_bytes.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_cons_bytes.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_cons_bytes.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            a => unreachable!("HOW? {:#?}", a),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, const_tag::BYTESTRING);
+
+        let byte_length = *section_data[(offset_index + 2)..(offset_index + 6)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(byte_length, 3);
+
+        let value = section_data[(offset_index + 6)..(offset_index + 18)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>();
+
+        assert_eq!(value, vec![20, 254, 245])
+    }
+
+    #[test]
+    fn test_slice_bytestring() {
+        let thing = Cek::default();
+
+        let term: Term<Name> = Term::slice_bytearray()
+            .apply(Term::integer(1.into()))
+            .apply(Term::integer(2.into()))
+            .apply(Term::byte_string(vec![251, 251, 254, 254]));
+
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
+
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+        let gene = thing.cek_assembly(riscv_program);
+
+        gene.save_to_file("test_slice_bytes.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_slice_bytes.o",
+                "test_slice_bytes.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_slice_bytes.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_slice_bytes.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_slice_bytes.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            a => unreachable!("HOW? {:#?}", a),
+        };
+
+        assert_ne!(result_pointer, u32::MAX);
+
+        let section = v.2.find_section(result_pointer).unwrap();
+
+        let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+        let offset_index = (result_pointer - section.start) as usize;
+
+        let type_length = section_data[offset_index];
+
+        assert_eq!(type_length, 1);
+
+        let constant_type = section_data[offset_index + 1];
+
+        assert_eq!(constant_type, const_tag::BYTESTRING);
+
+        let byte_length = *section_data[(offset_index + 2)..(offset_index + 6)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>()
+            .first()
+            .unwrap();
+
+        assert_eq!(byte_length, 2);
+
+        let value = section_data[(offset_index + 6)..(offset_index + 14)]
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect::<Vec<u32>>();
+
+        assert_eq!(value, vec![251, 254])
     }
 
     #[test]
