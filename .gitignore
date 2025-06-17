@@ -31,4 +31,7 @@ Cargo.lock
 .DS_Store
 
 # Example output directory
-examples/output/ 
+examples/output/
+
+core/.zig-cache/
+core/zig-out/
