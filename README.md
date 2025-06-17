@@ -1,5 +1,13 @@
 # UPLC to RISC-V Compiler
 
+## Dev Setup
+
+### macOS
+
+```sh
+brew install riscv64-elf-gcc
+```
+
 > [!WARNING]
 >
 > This project is currently under active development and is NOT
@@ -38,6 +46,7 @@ uplc-to-risc-cli compile --input input.uplc --output output.s
 ```
 
 Options:
+
 - `--mode`: Compilation mode (direct, evaluate, optimize)
 - `--optimize`: Optimization level (none, default, aggressive)
 
@@ -87,20 +96,24 @@ This project is currently in active development and requires several key improve
 ### Remaining Work for Production Readiness
 
 1. **Complete UPLC Term Support**
+
    - Implement remaining UPLC term types (Error handling, Constructors)
    - Add support for all required builtin functions (Boolean, List, Pair, Cryptographic operations)
 
 2. **BitVMX Compatibility**
+
    - Enhance memory segmentation (read-only vs. read-write)
    - Complete execution trace generation for verification
    - Implement hash chain support and dispute resolution utilities
 
 3. **Testing and Documentation**
+
    - Create a comprehensive test suite covering all components
    - Develop detailed documentation for API usage and BitVMX integration
    - Add examples demonstrating smart contracts and validation logic
 
 4. **Performance and Optimization**
+
    - Implement BitVMX-specific optimizations
    - Optimize memory usage and reduce code size
    - Benchmark against other UPLC compilers

@@ -1,0 +1,2 @@
+#!/bin/bash
+riscv64-elf-objdump -d zig-out/lib/core.o
