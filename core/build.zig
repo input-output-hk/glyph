@@ -4,6 +4,12 @@ const std = @import("std");
 // declaratively construct a build graph that will be executed by an external
 // runner.
 pub fn build(b: *std.Build) void {
+    // Force RISC-V 32-bit Linux target for tests
+    const riscv_target = b.resolveTargetQuery(.{
+        .cpu_arch = .riscv32,
+        .os_tag = .linux,
+    });
+
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -108,10 +114,15 @@ pub fn build(b: *std.Build) void {
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
     const lib_unit_tests = b.addTest(.{
-        .root_module = lib_mod,
+        .root_source_file = b.path("src/root.zig"),
+        .target = riscv_target,
+        .optimize = optimize,
     });
 
-    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
+    const qemu_run = b.addSystemCommand(&.{"qemu-riscv32"});
+    qemu_run.addArtifactArg(lib_unit_tests);
+
+    // const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
 
     // const exe_unit_tests = b.addTest(.{
     //     .root_module = exe_mod,
@@ -123,6 +134,7 @@ pub fn build(b: *std.Build) void {
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_lib_unit_tests.step);
+    test_step.dependOn(&qemu_run.step);
+    qemu_run.step.dependOn(&lib_unit_tests.step);
     // test_step.dependOn(&run_exe_unit_tests.step);
 }

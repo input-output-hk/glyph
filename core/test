@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Parse command line arguments
+BUILD=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -b|--build)
+            BUILD=true
+            shift
+            ;;
+        *)
+            echo "Unknown option $1"
+            exit 1
+            ;;
+    esac
+done
+
+# Build the image if -b flag is provided
+if [ "$BUILD" = true ]; then
+    docker build -t zig-riscv .
+fi
+
+# Run the tests
+docker run --rm -v $(pwd):/work zig-riscv
