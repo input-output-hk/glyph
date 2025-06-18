@@ -7,26 +7,6 @@ const TermList = expr.TermList;
 const Constant = expr.Constant;
 const DefaultFunction = expr.DefaultFunction;
 
-pub fn allocType(heap: *Heap, comptime T: type) *T {
-    // Align the heap pointer for the type
-    const aligned_addr = std.mem.alignForward(usize, @intFromPtr(heap.heap_ptr), @alignOf(T));
-    heap.heap_ptr = @ptrFromInt(aligned_addr);
-    const ptr_bytes: [*]align(@alignOf(T)) u8 = @alignCast(heap.heap_ptr);
-    const ptr: *T = @ptrCast(ptr_bytes);
-    heap.heap_ptr += std.mem.alignForward(usize, @sizeOf(T), @alignOf(T));
-    return ptr;
-}
-
-fn allocArray(heap: *Heap, comptime T: type, len: u32) [*]T {
-    // Align the heap pointer for the type
-    const aligned_addr = std.mem.alignForward(usize, @intFromPtr(heap.heap_ptr), @alignOf(T));
-    heap.heap_ptr = @ptrFromInt(aligned_addr);
-    const ptr_bytes: [*]align(@alignOf(T)) u8 = @alignCast(heap.heap_ptr);
-    const ptr: [*]T = @ptrCast(ptr_bytes);
-    heap.heap_ptr += std.mem.alignForward(usize, @sizeOf(T) * len, @alignOf(T));
-    return ptr;
-}
-
 const ValueList = struct { length: u32, list: [*]*Value };
 
 const Builtin = struct {
@@ -77,20 +57,20 @@ pub const Env = struct {
         return .{ .heap = heap, .env_list = null };
     }
     fn clone(self: *Self) *Self {
-        const e = allocType(self.heap, Env);
+        const e = self.heap.allocType(Env);
         e.* = .{ .heap = self.heap, .env_list = self.env_list };
         return e;
     }
     pub fn extend(self: *Self, v: *Value) *Self {
-        const node = allocType(self.heap, EnvList);
+        const node = self.heap.allocType(EnvList);
         node.* = .{ .value = v, .next = self.env_list };
-        const e = allocType(self.heap, Env);
+        const e = self.heap.allocType(Env);
         e.* = .{ .heap = self.heap, .env_list = node };
         return e;
     }
 
     pub fn mkValue(self: *Self, v: Value) *Value {
-        const out = allocType(self.heap, Value);
+        const out = self.heap.allocType(Value);
         out.* = v;
         return out;
     }
@@ -138,7 +118,7 @@ pub const Env = struct {
     }
 
     fn mkFrame(self: *Self, fr: Frame) *Frame {
-        const slot = allocType(self.heap, Frame);
+        const slot = self.heap.allocType(Frame);
         slot.* = fr;
         return slot;
     }
@@ -218,7 +198,7 @@ pub const Env = struct {
 
             .frameConstr => |f| {
                 const new_len = f.resolved_fields.length + 1;
-                const dst = allocArray(self.heap, *Value, new_len);
+                const dst = self.heap.allocArray(*Value, new_len);
                 dst[0] = v;
                 var i: u32 = 0;
                 while (i < f.resolved_fields.length) : (i += 1)
@@ -305,7 +285,7 @@ pub const Env = struct {
 
     fn evalBuiltin(self: *Self, b: *const Builtin, next: *Value) *Value {
         const new_len = b.args.length + 1;
-        const dst = allocArray(self.heap, *Value, new_len);
+        const dst = self.heap.allocArray(*Value, new_len);
         var i: u32 = 0;
         while (i < b.args.length) : (i += 1) dst[i] = b.args.list[i];
         dst[b.args.length] = next;
@@ -350,7 +330,7 @@ pub const Env = struct {
         return v.constant.*.integer;
     }
     fn wrapInt(self: *Self, i: i128) *Value {
-        const c = allocType(self.heap, Constant);
+        const c = self.heap.allocType(Constant);
         c.* = Constant{ .integer = i };
         return self.mkConst(c);
     }
