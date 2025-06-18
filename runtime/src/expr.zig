@@ -76,6 +76,12 @@ pub const Term = enum(u32) {
             },
         };
     }
+
+    // For constant
+    pub fn constantValue(ptr: *const Term) *Constant {
+        const value: *Constant = @ptrFromInt(@intFromPtr(ptr) + @sizeOf(u32));
+        return value;
+    }
 };
 
 pub const Apply = struct { function: *const Term, argument: *const Term };
@@ -89,7 +95,6 @@ pub const DefaultFunction = enum(u32) {
     subtract_integer,
 };
 
-pub const Constant = enum {
-    int,
-    bytestring,
+pub const Constant = struct {
+    integer: i128,
 };
