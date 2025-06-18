@@ -1,8 +1,10 @@
-//! By convention, root.zig is the root source file when making a library. If
-//! you are making an executable, the convention is to delete this file and
-//! start with main.zig instead.
 const std = @import("std");
 const testing = std.testing;
+const expr = @import("expr.zig");
+const Term = expr.Term;
+const cek = @import("cek.zig");
+const Heap = @import("Heap.zig");
+const Env = cek.Env;
 
 pub export fn init() u32 {
     const initial_term_addr: u32 = 0x90000000;
@@ -55,13 +57,91 @@ test "apply functionality" {
     try testing.expect(argVar == 2);
 }
 
+test "constr functionality" {
+    const field1: []const u32 = &.{ 1, 0, 5 };
+    const field1Pointer: *const u32 = @ptrCast(field1);
+    const field2: []const u32 = &.{ 2, 0, 2 };
+    const field2Pointer: *const u32 = @ptrCast(field2);
+    const constr: []const u32 = &.{
+        8,
+        55,
+        2,
+        @truncate(@intFromPtr(field1Pointer)),
+        @truncate(@intFromPtr(field2Pointer)),
+    };
+    const ptr: *const Term = @ptrCast(constr);
+
+    const constrStruct = switch (ptr.*) {
+        .constr => ptr.constrValues(),
+        else => @panic("NO"),
+    };
+
+    const field1Index = switch (constrStruct.fields.list[0].*) {
+        .delay => constrStruct.fields.list[0].termBody().debruijnIndex(),
+        else => @panic("OOOO"),
+    };
+
+    const field2Index = switch (constrStruct.fields.list[1].*) {
+        .lambda => constrStruct.fields.list[1].termBody().debruijnIndex(),
+        else => @panic("NOOOOOOOOOO"),
+    };
+
+    try testing.expect(constrStruct.tag == 55);
+    try testing.expect(constrStruct.fields.length == 2);
+    try testing.expect(field1Index == 5);
+    try testing.expect(field2Index == 2);
+}
+
+test "case functionality" {
+    const branch1: []const u32 = &.{ 1, 0, 2 };
+    const branch2: []const u32 = &.{ 2, 0, 1 };
+    const constr: []const u32 = &.{6};
+    const branch1Pointer: *const u32 = @ptrCast(branch1);
+    const branch2Pointer: *const u32 = @ptrCast(branch2);
+    const constrPointer: *const u32 = @ptrCast(constr);
+
+    const case: []const u32 = &.{
+        9,
+        @truncate(@intFromPtr(constrPointer)),
+        2,
+        @truncate(@intFromPtr(branch1Pointer)),
+        @truncate(@intFromPtr(branch2Pointer)),
+    };
+    const ptr: *const Term = @ptrCast(case);
+
+    std.debug.print("HERE\n", .{});
+    const caseValues = switch (ptr.*) {
+        .case => ptr.caseValues(),
+        else => @panic("NOOOOOOOOOO"),
+    };
+
+    switch (caseValues.constr.*) {
+        .terror => {},
+        else => @panic("NOOOOOOOOOO"),
+    }
+
+    const branch1Var = switch (caseValues.branches.list[0].*) {
+        .delay => caseValues.branches.list[0].termBody().debruijnIndex(),
+        else => @panic("NOOOOOOOOOO"),
+    };
+
+    const branch2Var = switch (caseValues.branches.list[1].*) {
+        .lambda => caseValues.branches.list[1].termBody().debruijnIndex(),
+        else => @panic("NOOOOOOOOOO"),
+    };
+
+    try testing.expect(caseValues.branches.length == 2);
+    try testing.expect(branch1Var == 2);
+    try testing.expect(branch2Var == 1);
+}
+
 test "heap functionality" {
-    var heap = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer heap.deinit();
-    const heapMemory = try heap.allocator().alloc(u32, 10000);
-    const heapPointer: [*]u8 = @ptrCast(heapMemory);
-    var myHeap = Heap{ .heap_ptr = heapPointer };
-    const env: ?*Env = null;
+    var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer allocator.deinit();
+
+    var heap = try Heap.createTestHeap(&allocator);
+
+    var env: Env = Env.init(&heap);
 
     const argument: []const u32 = &.{ 1, 0, 2 };
     const argPointer: *const u32 = @ptrCast(argument);
@@ -71,174 +151,24 @@ test "heap functionality" {
 
     const applyStruct = switch (ptr.*) {
         .apply => ptr.appliedTerms(),
-        else => @panic("NOOOOOOOOOO"),
+        else => @panic("NOO"),
     };
 
     const funcVar = switch (applyStruct.function.*) {
         .lambda => applyStruct.function.termBody().debruijnIndex(),
-        else => @panic("NOOOOOOOOOO"),
+        else => @panic("N"),
     };
 
     const argVar = switch (applyStruct.argument.*) {
-        .delay => myHeap.createDelay(env, applyStruct.argument.termBody()),
-        else => @panic("NOOOOOOOOOO"),
+        .delay => env.createDelay(applyStruct.argument.termBody()),
+        else => @panic("NOOOO"),
     };
 
     const argIndex = switch (argVar.*) {
-        .delay => |other| blk: {
-            break :blk other.body.debruijnIndex();
-        },
+        .delay => |other| other.body.debruijnIndex(),
         else => @panic("NO"),
     };
 
     try testing.expect(funcVar == 1);
     try testing.expect(argIndex == 2);
 }
-
-const Term = enum(u32) {
-    tvar,
-    delay,
-    lambda,
-    apply,
-    constant,
-    force,
-    builtin,
-    constr,
-    case,
-
-    fn debruijnIndex(ptr: *const Term) u32 {
-        const dbIndex: *u32 = @ptrFromInt(@intFromPtr(ptr) + @sizeOf(u32));
-
-        return dbIndex.*;
-    }
-
-    fn termBody(ptr: *const Term) *const Term {
-        const nextTerm: *const Term = @ptrFromInt(@intFromPtr(ptr) + @sizeOf(u32));
-
-        return nextTerm;
-    }
-
-    fn appliedTerms(ptr: *const Term) Apply {
-        const argTerm: **const Term = @ptrFromInt(@intFromPtr(ptr) + @sizeOf(u32));
-
-        const funcTerm: *const Term = @ptrFromInt(@intFromPtr(ptr) + @sizeOf(u32) * 2);
-
-        return .{
-            .function = funcTerm,
-            .argument = argTerm.*,
-        };
-    }
-
-    fn defaultFunction(ptr: *const Term) DefaultFunction {
-        const func: *const DefaultFunction = @ptrFromInt(@intFromPtr(ptr) + @sizeOf(u32));
-
-        return func.*;
-    }
-
-    fn constrValues(ptr: *const Term) .{ .tag = u32, .fields = *const TermList } {
-        const tag: *const u32 = @ptrFromInt(@intFromPtr(ptr) + @sizeOf(u32));
-
-        const fields: *const TermList = @ptrFromInt(@intFromPtr(ptr) + @sizeOf(u32) * 2);
-
-        return .{ .tag = tag.*, .fields = fields };
-    }
-
-    fn caseValues(ptr: *const Term) .{ .constr = *const Term, .branches = *const TermList } {
-        const constr: *const Term = @ptrFromInt(@intFromPtr(ptr) + @sizeOf(u32));
-
-        const branches: *const TermList = @ptrFromInt(@intFromPtr(ptr) + @sizeOf(u32) * 2);
-
-        return .{ .constr = constr, .branches = branches };
-    }
-};
-
-const Apply = struct { function: *const Term, argument: *const Term };
-
-const TermList = extern struct { length: u32, list: []*Term };
-
-const DefaultFunction = enum(u32) {
-    addInteger,
-    subtractInteger,
-};
-
-const Constant = enum {
-    int,
-    bytestring,
-};
-
-const Value = union(enum) {
-    constant: *Constant,
-    delay: struct {
-        env: ?*Env,
-        body: *const Term,
-    },
-    lambda: struct {
-        env: ?*Env,
-        body: *const Term,
-    },
-};
-
-const Frame = union(enum) {
-    frameAwaitArg: struct {
-        function: *const Value,
-    },
-    frameAwaitFunTerm: struct {
-        env: ?*Env,
-        argument: *const Term,
-    },
-    frameAwaitFunValue: struct {
-        argument: *const Value,
-    },
-    frameForce: void,
-    frameConstr: struct {
-        env: ?*Env,
-        tag: u32,
-        fields: TermList,
-    },
-    frameCases: struct {
-        env: ?*Env,
-        branches: TermList,
-    },
-    noFrame: void,
-};
-
-const Env = extern struct {
-    value: *Value,
-    next: ?*Env,
-};
-
-const Heap = struct {
-    heap_ptr: [*]u8,
-
-    // Creates Delay on the heap and returns a pointer to it
-    fn createDelay(heap: *Heap, env: ?*Env, body: *const Term) *Value {
-        var val = Value{ .delay = .{ .env = env, .body = body } };
-
-        const valData: *align(4) [@sizeOf(Value)]u8 = std.mem.asBytes(&val);
-
-        @memcpy(heap.heap_ptr, valData);
-
-        const heapVal: [*]align(4) u8 = @alignCast(heap.heap_ptr);
-        const heapVal2: *Value = @ptrCast(heapVal);
-
-        heap.heap_ptr = heap.heap_ptr + @sizeOf(Value);
-
-        return heapVal2;
-    }
-
-    // Creates Delay on the heap and returns a pointer to it
-    fn createLambda(heap: *Heap, env: ?*Env, body: *const Term) *const Value {
-        var val = Value{ .lambda = .{ .env = env, .body = body } };
-
-        const valData: *align(4) [@sizeOf(Value)]u8 = std.mem.asBytes(&val);
-
-        @memcpy(heap.heap_ptr, valData);
-
-        const heapVal: [*]align(4) u8 = @alignCast(heap.heap_ptr);
-        const heapVal2: *Value = @ptrCast(heapVal);
-
-        heap.heap_ptr = heap.heap_ptr + @sizeOf(Value);
-
-        return heapVal2;
-    }
-};
