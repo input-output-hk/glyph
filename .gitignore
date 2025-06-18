@@ -33,5 +33,5 @@ Cargo.lock
 # Example output directory
 examples/output/
 
-core/.zig-cache/
-core/zig-out/
+.zig-cache/
+zig-out/

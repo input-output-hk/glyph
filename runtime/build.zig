@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
 
     const loc = obj.getEmittedBin();
 
-    const file = b.addInstallFile(loc, "lib/core.o");
+    const file = b.addInstallFile(loc, "lib/runtime.o");
 
     b.getInstallStep().dependOn(&file.step);
 

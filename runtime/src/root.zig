@@ -109,7 +109,6 @@ test "case functionality" {
     };
     const ptr: *const Term = @ptrCast(case);
 
-    std.debug.print("HERE\n", .{});
     const caseValues = switch (ptr.*) {
         .case => ptr.caseValues(),
         else => @panic("NOOOOOOOOOO"),
