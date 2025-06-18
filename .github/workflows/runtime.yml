@@ -39,4 +39,6 @@ jobs:
         run: echo "/opt/zig-x86_64-linux-0.15.0-dev.832+1ca213dab" >> $GITHUB_PATH
 
       - name: Run tests
-        run: zig build test
+        run: |
+          cd runtime
+          zig build test
