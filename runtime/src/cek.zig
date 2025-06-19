@@ -149,7 +149,7 @@ pub const State = union(enum) {
     },
     ret: struct {
         frame: *Frame,
-        value: *Value,
+        value: *const Value,
     },
     done: *Term,
 };
@@ -195,27 +195,27 @@ pub const Machine = struct {
 
     fn compute(self: *Self, ctx: *Frame, env: ?*Env, t: *const Term) State {
         switch (t.*) {
-            .tvar => State{
+            .tvar => return State{
                 .ret = .{
                     .frame = ctx,
                     .value = env.?.lookupVar(t.debruijnIndex()),
                 },
             },
             // .constant => return self.ret(ctx, self.makeConst(t.constantValue())),
-            .lambda => State{
+            .lambda => return State{
                 .ret = .{
                     .frame = ctx,
                     .value = createLambda(self.heap, env, t.termBody()),
                 },
             },
-            .delay => State{
+            .delay => return State{
                 .ret = .{
                     .frame = ctx,
                     .value = createDelay(self.heap, env, t.termBody()),
                 },
             },
             .force => {
-                const nctx = self.heap.create(Frame, &.{ .frameForce = .{ .ctx = ctx } });
+                const nctx = self.heap.create(Frame, &.{ .frame_force = .{ .ctx = ctx } });
                 return self.compute(nctx, env, t.termBody());
             },
 
@@ -263,6 +263,7 @@ pub const Machine = struct {
             // },
 
             .terror => @panic("evaluation failure"),
+            else => @panic("Impossible"),
         }
     }
 
@@ -417,5 +418,36 @@ pub const Machine = struct {
         const c = self.heap.allocType(Constant);
         c.* = Constant{ .integer = i };
         return self.makeConst(c);
+    }
+
+    test "lambda compute" {
+        var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer allocator.deinit();
+
+        var heap = try Heap.createTestHeap(&allocator);
+        var machine = Self{
+            .heap = &heap,
+        };
+
+        const v = Term.tvar;
+
+        const expected = createLambda(&heap, null, &v);
+
+        const memory: []const u32 = &.{ 2, 0, 1 };
+        const ptr: *const Term = @ptrCast(memory);
+
+        const ctx = machine.heap.create(Frame, &.no_frame);
+
+        const state = machine.compute(ctx, null, ptr);
+
+        switch (state) {
+            .ret => |r| {
+                try testing.expectEqualDeep(r.frame.*, .no_frame);
+                try testing.expectEqualDeep(r.value, expected);
+            },
+            else => {
+                @panic("HOW");
+            },
+        }
     }
 };
