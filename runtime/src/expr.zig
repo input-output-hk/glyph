@@ -82,6 +82,11 @@ pub const Term = enum(u32) {
         const value: *Constant = @ptrFromInt(@intFromPtr(ptr) + @sizeOf(u32));
         return value;
     }
+
+    pub fn isUnit(ptr: *const Term) bool {
+        _ = ptr;
+        return false;
+    }
 };
 
 pub const Apply = struct { function: *const Term, argument: *const Term };
@@ -93,6 +98,20 @@ pub const TermList = extern struct { length: u32, list: [*]*const Term };
 pub const DefaultFunction = enum(u32) {
     add_integer,
     subtract_integer,
+
+    pub fn forceCount(f: DefaultFunction) u8 {
+        return switch (f) {
+            .add_integer => 0,
+            .subtract_integer => 0,
+        };
+    }
+
+    pub fn arity(f: DefaultFunction) u8 {
+        return switch (f) {
+            .add_integer => 2,
+            .subtract_integer => 2,
+        };
+    }
 };
 
 pub const Constant = struct {

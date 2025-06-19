@@ -1,11 +1,27 @@
 const Heap = @import("Heap.zig");
 const expr = @import("./expr.zig");
 const std = @import("std");
-
+const testing = std.testing;
 const Term = expr.Term;
 const TermList = expr.TermList;
 const Constant = expr.Constant;
 const DefaultFunction = expr.DefaultFunction;
+
+const Frame = union(enum) {
+    no_frame,
+    frame_await_arg: struct { function: *Value, ctx: *Frame },
+    frame_await_fun_term: struct { env: ?*Env, argument: *const Term, ctx: *Frame },
+    frame_await_fun_value: struct { argument: *Value, ctx: *Frame },
+    frame_force: struct { ctx: *Frame },
+    frame_constr: struct {
+        env: ?*Env,
+        tag: u32,
+        fields: TermList,
+        resolved_fields: ValueList,
+        ctx: *Frame,
+    },
+    frame_cases: struct { env: ?*Env, branches: TermList, ctx: *Frame },
+};
 
 const ValueList = struct { length: u32, list: [*]*Value };
 
@@ -19,92 +35,37 @@ const Builtin = struct {
 const Value = union(enum) {
     constant: *Constant,
     delay: struct {
-        env: *Env,
+        env: ?*Env,
         body: *const Term,
     },
     lambda: struct {
-        env: *Env,
+        env: ?*Env,
         body: *const Term,
     },
     builtin: Builtin,
     constr: struct { tag: u32, fields: ValueList },
 };
 
-const Frame = union(enum) {
-    frameAwaitArg: struct { function: *Value, ctx: *Frame },
-    frameAwaitFunTerm: struct { env: *Env, argument: *const Term, ctx: *Frame },
-    frameAwaitFunValue: struct { argument: *Value, ctx: *Frame },
-    frameForce: struct { ctx: *Frame },
-    frameConstr: struct {
-        env: *Env,
-        tag: u32,
-        fields: TermList,
-        resolved_fields: ValueList,
-        ctx: *Frame,
-    },
-    frameCases: struct { env: *Env, branches: TermList, ctx: *Frame },
-    noFrame: void,
-};
-
 pub const Env = struct {
-    heap: *Heap,
-    env_list: ?*EnvList,
+    value: *const Value,
+    next: ?*Env,
 
     const Self = @This();
-    const EnvList = struct { value: *Value, next: ?*EnvList };
 
-    pub fn init(heap: *Heap) Self {
-        return .{ .heap = heap, .env_list = null };
-    }
-    fn clone(self: *Self) *Self {
-        const e = self.heap.allocType(Env);
-        e.* = .{ .heap = self.heap, .env_list = self.env_list };
-        return e;
-    }
-    pub fn extend(self: *Self, v: *Value) *Self {
-        const node = self.heap.allocType(EnvList);
-        node.* = .{ .value = v, .next = self.env_list };
-        const e = self.heap.allocType(Env);
-        e.* = .{ .heap = self.heap, .env_list = node };
-        return e;
+    pub fn init(v: *const Value, m: *Machine) *Self {
+        return m.heap.create(Env, &.{ .value = v, .next = null });
     }
 
-    pub fn mkValue(self: *Self, v: Value) *Value {
-        const out = self.heap.allocType(Value);
-        out.* = v;
-        return out;
-    }
-    fn mkConst(self: *Self, c: *Constant) *Value {
-        return self.mkValue(.{ .constant = c });
-    }
-    fn mkDelay(self: *Self, b: *const Term) *Value {
-        return self.mkValue(.{ .delay = .{ .env = self.clone(), .body = b } });
-    }
-    pub fn createDelay(self: *Self, b: *const Term) *Value {
-        return self.mkDelay(b);
-    }
-    fn mkLam(self: *Self, b: *const Term) *Value {
-        return self.mkValue(.{ .lambda = .{ .env = self.clone(), .body = b } });
+    pub fn preprend(self: *Self, v: *const Value, m: *Machine) *Self {
+        return m.heap.create(Env, &.{ .value = v, .next = self });
     }
 
-    fn mkBuilt(self: *Self, f: DefaultFunction) *Value {
-        return self.mkValue(.{ .builtin = .{
-            .fun = f,
-            .force_count = getDefaultForceCount(f),
-            .args_count = getDefaultArgCount(f),
-            .args = ValueList{ .length = 0, .list = undefined },
-        } });
-    }
-    fn mkConstr(self: *Self, tag: u32, vls: ValueList) *Value {
-        return self.mkValue(.{ .constr = .{ .tag = tag, .fields = vls } });
-    }
+    pub fn lookupVar(self: *Self, idx: u32) *const Value {
+        var cur: ?*Self = self;
+        var i = idx - 1;
 
-    fn lookupVar(self: *Self, idx: u32) *Value {
-        if (idx == 0) @panic("invalid de Bruijn index 0");
-        var cur = self.env_list;
-        var i: u32 = 1;
-        while (cur) |n| : (i += 1) {
-            if (i == idx) {
+        while (cur) |n| : (i -= 1) {
+            if (i == 0) {
                 return n.value;
             }
             cur = n.next;
@@ -112,77 +73,200 @@ pub const Env = struct {
         @panic("open term during evaluation");
     }
 
-    pub fn run(self: *Self, t: *const Term) *Value {
-        const root = self.mkFrame(.{ .noFrame = {} });
-        return self.compute(root, t);
+    test "init" {
+        var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer allocator.deinit();
+
+        var heap = try Heap.createTestHeap(&allocator);
+        var machine = Machine{
+            .heap = &heap,
+        };
+
+        const t = Term.terror;
+        const v = createDelay(&heap, null, &t);
+
+        const env = Env.init(v, &machine);
+
+        try testing.expectEqualDeep(env.value, v);
+        try testing.expect(env.next == null);
     }
 
-    fn mkFrame(self: *Self, fr: Frame) *Frame {
-        const slot = self.heap.allocType(Frame);
-        slot.* = fr;
-        return slot;
+    test "lookup" {
+        var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer allocator.deinit();
+
+        var heap = try Heap.createTestHeap(&allocator);
+        var machine = Machine{
+            .heap = &heap,
+        };
+
+        const t = Term.terror;
+        const v = createDelay(&heap, null, &t);
+
+        const v2 = createLambda(&heap, null, &t);
+
+        var env = Env.init(v, &machine);
+        env = env.preprend(v2, &machine);
+
+        const value = env.lookupVar(2);
+
+        try testing.expectEqualDeep(value, v);
+    }
+};
+
+pub fn createConst(heap: *Heap, c: *Constant) *Value {
+    return heap.create(Value, &.{ .constant = c });
+}
+
+pub fn createDelay(heap: *Heap, env: ?*Env, b: *const Term) *Value {
+    return heap.create(Value, &.{ .delay = .{ .env = env, .body = b } });
+}
+
+pub fn createLambda(heap: *Heap, env: ?*Env, b: *const Term) *Value {
+    return heap.create(Value, &.{ .lambda = .{ .env = env, .body = b } });
+}
+
+pub fn createBuiltin(heap: *Heap, f: DefaultFunction) *Value {
+    return heap.create(Value, &.{
+        .builtin = .{
+            .fun = f,
+            .force_count = f.forceCount(),
+            .args_count = f.arity(),
+            .args = ValueList{ .length = 0, .list = undefined },
+        },
+    });
+}
+
+pub fn createConstr(heap: *Heap, tag: u32, vls: ValueList) *Value {
+    return heap.create(Value, &.{ .constr = .{ .tag = tag, .fields = vls } });
+}
+
+pub const State = union(enum) {
+    compute: struct {
+        frame: *Frame,
+        env: ?*Env,
+        term: *const Term,
+    },
+    ret: struct {
+        frame: *Frame,
+        value: *Value,
+    },
+    done: *Term,
+};
+
+pub const Machine = struct {
+    heap: *Heap,
+
+    const Self = @This();
+
+    pub fn init(heap: *Heap) Self {
+        return .{ .heap = heap };
     }
 
-    fn compute(self: *Self, ctx: *Frame, t: *const Term) *Value {
+    pub fn run(self: *Self, t: *const Term) void {
+        const ctx = self.heap.create(Frame, &.no_frame);
+
+        var state = State{
+            .compute = .{
+                .frame = ctx,
+                .env = null,
+                .term = t,
+            },
+        };
+
+        while (true) {
+            switch (state) {
+                .compute => |c| {
+                    state = self.compute(c.frame, c.env, c.term);
+                },
+                .ret => |r| {
+                    state = self.ret(r.frame, r.value);
+                },
+                .done => |d| {
+                    if (d.isUnit()) {
+                        return;
+                    } else {
+                        @panic("Returned term other than unit");
+                    }
+                },
+            }
+        }
+    }
+
+    fn compute(self: *Self, ctx: *Frame, env: ?*Env, t: *const Term) State {
         switch (t.*) {
-            .tvar => return self.ret(ctx, self.lookupVar(t.debruijnIndex())),
-            .constant => return self.ret(ctx, self.mkConst(t.constantValue())),
-            .lambda => return self.ret(ctx, self.mkLam(t.termBody())),
-            .delay => return self.ret(ctx, self.mkDelay(t.termBody())),
-
+            .tvar => State{
+                .ret = .{
+                    .frame = ctx,
+                    .value = env.?.lookupVar(t.debruijnIndex()),
+                },
+            },
+            // .constant => return self.ret(ctx, self.makeConst(t.constantValue())),
+            .lambda => State{
+                .ret = .{
+                    .frame = ctx,
+                    .value = createLambda(self.heap, env, t.termBody()),
+                },
+            },
+            .delay => State{
+                .ret = .{
+                    .frame = ctx,
+                    .value = createDelay(self.heap, env, t.termBody()),
+                },
+            },
             .force => {
-                const nctx = self.mkFrame(.{ .frameForce = .{ .ctx = ctx } });
-                return self.compute(nctx, t.termBody());
+                const nctx = self.heap.create(Frame, &.{ .frameForce = .{ .ctx = ctx } });
+                return self.compute(nctx, env, t.termBody());
             },
 
-            .apply => {
-                const p = t.appliedTerms();
-                const nctx = self.mkFrame(.{ .frameAwaitFunTerm = .{
-                    .env = self,
-                    .argument = p.argument,
-                    .ctx = ctx,
-                } });
-                return self.compute(nctx, p.function);
-            },
+            // .apply => {
+            //     const p = t.appliedTerms();
+            //     const nctx = self.makeFrame(.{ .frameAwaitFunTerm = .{
+            //         .env = self,
+            //         .argument = p.argument,
+            //         .ctx = ctx,
+            //     } });
+            //     return self.compute(nctx, p.function);
+            // },
 
-            .builtin => return self.ret(ctx, self.mkBuilt(t.defaultFunction())),
+            // .builtin => return self.ret(ctx, self.makeBuilt(t.defaultFunction())),
 
-            .constr => {
-                const c = t.constrValues();
-                if (c.fields.length == 0)
-                    return self.ret(ctx, self.mkConstr(c.tag, ValueList{ .length = 0, .list = undefined }));
+            // .constr => {
+            //     const c = t.constrValues();
+            //     if (c.fields.length == 0)
+            //         return self.ret(ctx, self.makeConstr(c.tag, ValueList{ .length = 0, .list = undefined }));
 
-                const rest = TermList{
-                    .length = c.fields.length - 1,
-                    .list = c.fields.list + 1,
-                };
-                const fr = Frame{ .frameConstr = .{
-                    .env = self,
-                    .tag = c.tag,
-                    .fields = rest,
-                    .resolved_fields = ValueList{ .length = 0, .list = undefined },
-                    .ctx = ctx,
-                } };
-                const nctx = self.mkFrame(fr);
-                return self.compute(nctx, c.fields.list[0]);
-            },
+            //     const rest = TermList{
+            //         .length = c.fields.length - 1,
+            //         .list = c.fields.list + 1,
+            //     };
+            //     const fr = Frame{ .frameConstr = .{
+            //         .env = self,
+            //         .tag = c.tag,
+            //         .fields = rest,
+            //         .resolved_fields = ValueList{ .length = 0, .list = undefined },
+            //         .ctx = ctx,
+            //     } };
+            //     const nctx = self.makeFrame(fr);
+            //     return self.compute(nctx, c.fields.list[0]);
+            // },
 
-            .case => {
-                const cs = t.caseValues();
-                const fr = Frame{ .frameCases = .{
-                    .env = self,
-                    .branches = cs.branches,
-                    .ctx = ctx,
-                } };
-                const nctx = self.mkFrame(fr);
-                return self.compute(nctx, cs.constr);
-            },
+            // .case => {
+            //     const cs = t.caseValues();
+            //     const fr = Frame{ .frameCases = .{
+            //         .env = self,
+            //         .branches = cs.branches,
+            //         .ctx = ctx,
+            //     } };
+            //     const nctx = self.makeFrame(fr);
+            //     return self.compute(nctx, cs.constr);
+            // },
 
             .terror => @panic("evaluation failure"),
         }
     }
 
-    fn ret(self: *Self, ctx: *Frame, v: *Value) *Value {
+    fn ret(self: *Self, ctx: *Frame, v: *Value) State {
         switch (ctx.*) {
             .noFrame => return v,
 
@@ -192,7 +276,7 @@ pub const Env = struct {
             .frameAwaitFunValue => |f| return self.applyEval(f.ctx, v, f.argument),
 
             .frameAwaitFunTerm => |f| {
-                const nctx = self.mkFrame(.{ .frameAwaitArg = .{ .function = v, .ctx = f.ctx } });
+                const nctx = self.makeFrame(.{ .frameAwaitArg = .{ .function = v, .ctx = f.ctx } });
                 return self.compute(nctx, f.argument);
             },
 
@@ -207,7 +291,7 @@ pub const Env = struct {
                 const done = ValueList{ .length = new_len, .list = dst };
 
                 if (f.fields.length == 0) {
-                    return self.ret(f.ctx, self.mkConstr(f.tag, done));
+                    return self.ret(f.ctx, self.makeConstr(f.tag, done));
                 }
 
                 const next = f.fields.list[0];
@@ -222,7 +306,7 @@ pub const Env = struct {
                     .resolved_fields = done,
                     .ctx = f.ctx,
                 } };
-                const nctx = self.mkFrame(fr2);
+                const nctx = self.makeFrame(fr2);
                 return self.compute(nctx, next);
             },
 
@@ -235,7 +319,7 @@ pub const Env = struct {
                         var nctx = f.ctx;
                         var idx: i32 = @as(i32, @intCast(c.fields.length)) - 1;
                         while (idx >= 0) : (idx -= 1)
-                            nctx = self.mkFrame(.{ .frameAwaitFunValue = .{
+                            nctx = self.makeFrame(.{ .frameAwaitFunValue = .{
                                 .argument = c.fields.list[@as(usize, @intCast(idx))],
                                 .ctx = nctx,
                             } });
@@ -295,7 +379,7 @@ pub const Env = struct {
         }
 
         // Create a new builtin value with updated args
-        const new_builtin = self.mkValue(.{ .builtin = .{
+        const new_builtin = self.heap.create(.{ .builtin = .{
             .fun = b.fun,
             .force_count = b.force_count,
             .args_count = b.args_count - 1,
@@ -332,19 +416,6 @@ pub const Env = struct {
     fn wrapInt(self: *Self, i: i128) *Value {
         const c = self.heap.allocType(Constant);
         c.* = Constant{ .integer = i };
-        return self.mkConst(c);
+        return self.makeConst(c);
     }
 };
-
-fn getDefaultForceCount(f: DefaultFunction) u8 {
-    return switch (f) {
-        .add_integer => 0,
-        .subtract_integer => 0,
-    };
-}
-fn getDefaultArgCount(f: DefaultFunction) u8 {
-    return switch (f) {
-        .add_integer => 2,
-        .subtract_integer => 2,
-    };
-}
