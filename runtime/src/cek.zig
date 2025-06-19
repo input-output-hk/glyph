@@ -611,6 +611,9 @@ pub const Machine = struct {
                         },
                     },
                 );
+                const noFrame = machine.frames.popFrame();
+
+                try testing.expectEqualDeep(noFrame, .no_frame);
                 try testing.expectEqualDeep(c.term.*, Term.delay);
             },
             else => @panic("HOW3"),
