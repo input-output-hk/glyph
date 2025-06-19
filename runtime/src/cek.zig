@@ -58,7 +58,7 @@ const ValueList = struct { length: u32, list: [*]*const Value };
 const Builtin = struct {
     fun: DefaultFunction,
     force_count: u8,
-    args_count: u8,
+    arity: u8,
     args: ValueList,
 };
 
@@ -82,12 +82,12 @@ pub const Env = struct {
 
     const Self = @This();
 
-    pub fn init(v: *const Value, m: *Machine) *Self {
-        return m.heap.create(Env, &.{ .value = v, .next = null });
+    pub fn init(v: *const Value, heap: *Heap) *Self {
+        return heap.create(Env, &.{ .value = v, .next = null });
     }
 
-    pub fn preprend(self: *Self, v: *const Value, m: *Machine) *Self {
-        return m.heap.create(Env, &.{ .value = v, .next = self });
+    pub fn preprend(self: *Self, v: *const Value, heap: *Heap) *Self {
+        return heap.create(Env, &.{ .value = v, .next = self });
     }
 
     pub fn lookupVar(self: *Self, idx: u32) *const Value {
@@ -108,16 +108,11 @@ pub const Env = struct {
         defer allocator.deinit();
 
         var heap = try Heap.createTestHeap(&allocator);
-        var frames = try Frames.createTestFrames(&allocator);
-        var machine = Machine{
-            .heap = &heap,
-            .frames = &frames,
-        };
 
         const t = Term.terror;
         const v = createDelay(&heap, null, &t);
 
-        const env = Env.init(v, &machine);
+        const env = Env.init(v, &heap);
 
         try testing.expectEqualDeep(env.value, v);
         try testing.expect(env.next == null);
@@ -128,19 +123,14 @@ pub const Env = struct {
         defer allocator.deinit();
 
         var heap = try Heap.createTestHeap(&allocator);
-        var frames = try Frames.createTestFrames(&allocator);
-        var machine = Machine{
-            .heap = &heap,
-            .frames = &frames,
-        };
 
         const t = Term.terror;
         const v = createDelay(&heap, null, &t);
 
         const v2 = createLambda(&heap, null, &t);
 
-        var env = Env.init(v, &machine);
-        env = env.preprend(v2, &machine);
+        var env = Env.init(v, &heap);
+        env = env.preprend(v2, &heap);
 
         const value = env.lookupVar(2);
 
@@ -184,7 +174,21 @@ pub fn createBuiltin(heap: *Heap, f: DefaultFunction) *Value {
         .builtin = .{
             .fun = f,
             .force_count = f.forceCount(),
-            .args_count = f.arity(),
+            .arity = f.arity(),
+            .args = ValueList{
+                .length = 0,
+                .list = undefined,
+            },
+        },
+    });
+}
+
+pub fn forceBuiltin(heap: *Heap, b: *const Builtin) *Value {
+    return heap.create(Value, &.{
+        .builtin = .{
+            .fun = b.fun,
+            .force_count = b.force_count - 1,
+            .arity = b.arity,
             .args = ValueList{
                 .length = 0,
                 .list = undefined,
@@ -262,25 +266,15 @@ pub const Machine = struct {
                     .value = env.?.lookupVar(t.debruijnIndex()),
                 },
             },
-            // .constant => return self.ret(ctx, self.makeConst(t.constantValue())),
-            .lambda => return State{
-                .ret = .{
-                    .value = createLambda(self.heap, env, t.termBody()),
-                },
-            },
             .delay => return State{
                 .ret = .{
                     .value = createDelay(self.heap, env, t.termBody()),
                 },
             },
-            .force => {
-                self.frames.addFrame(&.frame_force);
-                return State{
-                    .compute = .{
-                        .env = env,
-                        .term = t.termBody(),
-                    },
-                };
+            .lambda => return State{
+                .ret = .{
+                    .value = createLambda(self.heap, env, t.termBody()),
+                },
             },
 
             .apply => {
@@ -301,6 +295,18 @@ pub const Machine = struct {
                     },
                 };
             },
+            // constant
+            .force => {
+                self.frames.addFrame(&.frame_force);
+                return State{
+                    .compute = .{
+                        .env = env,
+                        .term = t.termBody(),
+                    },
+                };
+            },
+
+            .terror => @panic("evaluation failure"),
 
             .builtin => return State{
                 .ret = .{
@@ -310,17 +316,23 @@ pub const Machine = struct {
 
             .constr => {
                 const c = t.constrValues();
+
                 if (c.fields.length == 0) {
                     return State{
                         .ret = .{
-                            .value = createConstr(self.heap, c.tag, ValueList{
-                                .length = 0,
-                                .list = undefined,
-                            }),
+                            .value = createConstr(
+                                self.heap,
+                                c.tag,
+                                ValueList{
+                                    .length = 0,
+                                    .list = undefined,
+                                },
+                            ),
                         },
                     };
                 }
 
+                // TODO: TEST THIS
                 const rest = TermList{
                     .length = c.fields.length - 1,
                     .list = c.fields.list + 1,
@@ -332,10 +344,7 @@ pub const Machine = struct {
                             .env = env,
                             .tag = c.tag,
                             .fields = rest,
-                            .resolved_fields = ValueList{
-                                .length = 0,
-                                .list = undefined,
-                            },
+                            .resolved_fields = ValueList{ .length = 0, .list = undefined },
                         },
                     },
                 );
@@ -348,18 +357,17 @@ pub const Machine = struct {
                 };
             },
 
-            // .case => {
-            //     const cs = t.caseValues();
-            //     const fr = Frame{ .frameCases = .{
-            //         .env = self,
-            //         .branches = cs.branches,
-            //         .ctx = ctx,
-            //     } };
-            //     const nctx = self.makeFrame(fr);
-            //     return self.compute(nctx, cs.constr);
-            // },
+            .case => {
+                const cs = t.caseValues();
+                self.frames.addFrame(&Frame{
+                    .frame_cases = .{
+                        .env = env,
+                        .branches = cs.branches,
+                    },
+                });
+                return self.compute(env, cs.constr);
+            },
 
-            .terror => @panic("evaluation failure"),
             else => @panic("TODO"),
         }
     }
@@ -370,10 +378,11 @@ pub const Machine = struct {
         switch (frame) {
             .no_frame => @panic("TODO"),
 
-            // .frameForce => |f| return self.forceEval(f.ctx, v),
+            .frame_force => return self.forceEval(v),
 
-            // .frameAwaitArg => |f| return self.applyEval(f.ctx, f.function, v),
-            // .frameAwaitFunValue => |f| return self.applyEval(f.ctx, v, f.argument),
+            .frame_await_arg => |f| return self.applyEval(f.function, v),
+
+            .frame_await_fun_value => |f| return self.applyEval(v, f.argument),
 
             .frame_await_fun_term => |arg| {
                 self.frames.addFrame(
@@ -443,41 +452,61 @@ pub const Machine = struct {
         }
     }
 
-    fn forceEval(self: *Self, ctx: *Frame, v: *Value) *Value {
+    fn forceEval(self: *Self, v: *const Value) State {
         switch (v.*) {
-            .delay => |d| return d.env.compute(ctx, d.body),
-            .builtin => |*b| {
+            .delay => |d| return State{
+                .compute = .{
+                    .env = d.env,
+                    .term = d.body,
+                },
+            },
+
+            .builtin => |b| {
                 if (b.force_count == 0) @panic("builtin term argument expected");
-                b.force_count -= 1;
-                return self.ret(ctx, v);
+
+                return State{
+                    .ret = .{
+                        .value = forceBuiltin(self.heap, &b),
+                    },
+                };
             },
             else => @panic("non-polymorphic instantiation"),
         }
     }
 
-    // fn applyEval(
-    //     self: *Self,
-    //     ctx: *Frame,
-    //     funVal: *Value,
-    //     argVal: *Value,
-    // ) *Value {
-    //     switch (funVal.*) {
-    //         .lambda => |lam| {
-    //             const new_env = lam.env.extend(argVal);
-    //             return new_env.compute(ctx, lam.body);
-    //         },
+    fn applyEval(
+        self: *Self,
+        funVal: *const Value,
+        argVal: *const Value,
+    ) State {
+        switch (funVal.*) {
+            .lambda => |lam| {
+                const new_env = if (lam.env) |env| blk: {
+                    break :blk env.preprend(argVal, self.heap);
+                } else blk: {
+                    break :blk Env.init(argVal, self.heap);
+                };
 
-    //         .builtin => |b| {
-    //             if (b.force_count != 0)
-    //                 @panic("unexpected built-in term argument");
+                return State{
+                    .compute = .{
+                        .env = new_env,
+                        .term = lam.body,
+                    },
+                };
+            },
 
-    //             const res = self.evalBuiltin(&b, argVal);
-    //             return self.ret(ctx, res);
-    //         },
+            .builtin => |b| {
+                if (b.force_count != 0)
+                    @panic("unexpected built-in term argument");
 
-    //         else => @panic("apply on non-callable"),
-    //     }
-    // }
+                @panic("TODO");
+                // const res = self.evalBuiltin(&b, argVal);
+                // return self.ret(ctx, res);
+            },
+
+            else => @panic("apply on non-callable"),
+        }
+    }
 
     // fn evalBuiltin(self: *Self, b: *const Builtin, next: *Value) *Value {
     //     const new_len = b.args.length + 1;
@@ -620,3 +649,55 @@ pub const Machine = struct {
         }
     }
 };
+
+test "constr compute" {
+    var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer allocator.deinit();
+
+    var heap = try Heap.createTestHeap(&allocator);
+    var frames = try Frames.createTestFrames(&allocator);
+    var machine = Machine{
+        .heap = &heap,
+        .frames = &frames,
+    };
+
+    const field1: []const u32 = &.{ 1, 0, 5 };
+    const field1Pointer: *const u32 = @ptrCast(field1);
+    const field2: []const u32 = &.{ 2, 0, 2 };
+    const field2Pointer: *const u32 = @ptrCast(field2);
+    const constr: []const u32 = &.{
+        8,
+        55,
+        2,
+        @truncate(@intFromPtr(field1Pointer)),
+        @truncate(@intFromPtr(field2Pointer)),
+    };
+    const ptr: *const Term = @ptrCast(constr);
+
+    machine.frames.addFrame(&.no_frame);
+
+    const state = machine.compute(null, ptr);
+
+    switch (state) {
+        .compute => |c| {
+            try testing.expect(c.env == null);
+            try testing.expectEqualDeep(c.term, &Term.delay);
+            try testing.expectEqualDeep(c.term.termBody(), &Term.tvar);
+            try testing.expectEqualDeep(c.term.termBody().debruijnIndex(), 5);
+        },
+        else => @panic("HOW1"),
+    }
+
+    const frame = machine.frames.popFrame();
+
+    switch (frame) {
+        .frame_constr => |c| {
+            try testing.expect(c.env == null);
+            try testing.expect(c.fields.length == 1);
+            try testing.expectEqualDeep(c.fields.list[0], &Term.lambda);
+            try testing.expectEqualDeep(c.fields.list[0].termBody(), &Term.tvar);
+            try testing.expectEqualDeep(c.fields.list[0].termBody().debruijnIndex(), 2);
+        },
+        else => @panic("HOW2"),
+    }
+}
