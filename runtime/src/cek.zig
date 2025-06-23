@@ -17,7 +17,7 @@ const Frame = union(enum) {
         env: ?*Env,
         tag: u32,
         fields: TermList,
-        resolved_fields: ValueList,
+        resolved_fields: ?*LinkedValues,
     },
     frame_cases: struct {
         env: ?*Env,
@@ -54,12 +54,13 @@ const Frames = struct {
 };
 
 const ValueList = struct { length: u32, list: [*]*const Value };
+const LinkedValues = struct { value: *const Value, next: ?*LinkedValues };
 
 const Builtin = struct {
     fun: DefaultFunction,
     force_count: u8,
     arity: u8,
-    args: ValueList,
+    args: ?*LinkedValues,
 };
 
 const Value = union(enum) {
@@ -73,7 +74,12 @@ const Value = union(enum) {
         body: *const Term,
     },
     builtin: Builtin,
-    constr: struct { tag: u32, values: ValueList },
+    constr: struct { tag: u32, values: ?*LinkedValues },
+
+    pub fn isUnit(ptr: *const Value) bool {
+        _ = ptr;
+        return false;
+    }
 };
 
 pub const Env = struct {
@@ -175,10 +181,7 @@ pub fn createBuiltin(heap: *Heap, f: DefaultFunction) *Value {
             .fun = f,
             .force_count = f.forceCount(),
             .arity = f.arity(),
-            .args = ValueList{
-                .length = 0,
-                .list = undefined,
-            },
+            .args = null,
         },
     });
 }
@@ -189,15 +192,12 @@ pub fn forceBuiltin(heap: *Heap, b: *const Builtin) *Value {
             .fun = b.fun,
             .force_count = b.force_count - 1,
             .arity = b.arity,
-            .args = ValueList{
-                .length = 0,
-                .list = undefined,
-            },
+            .args = null,
         },
     });
 }
 
-pub fn createConstr(heap: *Heap, tag: u32, vls: ValueList) *Value {
+pub fn createConstr(heap: *Heap, tag: u32, vls: ?*LinkedValues) *Value {
     return heap.create(
         Value,
         &Value{
@@ -214,7 +214,7 @@ pub const State = union(enum) {
     ret: struct {
         value: *const Value,
     },
-    done: *Term,
+    done: *const Value,
 };
 
 pub const Machine = struct {
@@ -323,10 +323,7 @@ pub const Machine = struct {
                             .value = createConstr(
                                 self.heap,
                                 c.tag,
-                                ValueList{
-                                    .length = 0,
-                                    .list = undefined,
-                                },
+                                null,
                             ),
                         },
                     };
@@ -344,7 +341,7 @@ pub const Machine = struct {
                             .env = env,
                             .tag = c.tag,
                             .fields = rest,
-                            .resolved_fields = ValueList{ .length = 0, .list = undefined },
+                            .resolved_fields = null,
                         },
                     },
                 );
@@ -376,7 +373,7 @@ pub const Machine = struct {
         const frame = self.frames.popFrame();
 
         switch (frame) {
-            .no_frame => @panic("TODO"),
+            .no_frame => return State{ .done = v },
 
             .frame_force => return self.forceEval(v),
 
@@ -400,54 +397,76 @@ pub const Machine = struct {
                 };
             },
 
-            // .frameConstr => |f| {
-            //     const new_len = f.resolved_fields.length + 1;
-            //     const dst = self.heap.allocArray(*Value, new_len);
-            //     dst[0] = v;
-            //     var i: u32 = 0;
-            //     while (i < f.resolved_fields.length) : (i += 1)
-            //         dst[i + 1] = f.resolved_fields.list[i];
+            .frame_constr => |f| {
+                const next_resolved = self.heap.create(
+                    LinkedValues,
+                    &LinkedValues{ .value = v, .next = f.resolved_fields },
+                );
 
-            //     const done = ValueList{ .length = new_len, .list = dst };
+                if (f.fields.length == 0) {
+                    return State{
+                        .ret = .{
+                            .value = createConstr(
+                                self.heap,
+                                f.tag,
+                                next_resolved,
+                            ),
+                        },
+                    };
+                } else {
+                    const rest = TermList{
+                        .length = f.fields.length - 1,
+                        .list = f.fields.list + 1,
+                    };
 
-            //     if (f.fields.length == 0) {
-            //         return self.ret(f.ctx, self.makeConstr(f.tag, done));
-            //     }
+                    self.frames.addFrame(
+                        &Frame{
+                            .frame_constr = .{
+                                .tag = f.tag,
+                                .env = f.env,
+                                .fields = rest,
+                                .resolved_fields = next_resolved,
+                            },
+                        },
+                    );
 
-            //     const next = f.fields.list[0];
-            //     const rest = TermList{
-            //         .length = f.fields.length - 1,
-            //         .list = f.fields.list + 1,
-            //     };
-            //     const fr2 = Frame{ .frameConstr = .{
-            //         .env = f.env,
-            //         .tag = f.tag,
-            //         .fields = rest,
-            //         .resolved_fields = done,
-            //         .ctx = f.ctx,
-            //     } };
-            //     const nctx = self.makeFrame(fr2);
-            //     return self.compute(nctx, next);
-            // },
+                    return State{
+                        .compute = .{
+                            .env = f.env,
+                            .term = f.fields.list[0],
+                        },
+                    };
+                }
+            },
 
-            // .frameCases => |f| {
-            //     switch (v.*) {
-            //         .constr => |c| {
-            //             if (c.tag >= f.branches.length)
-            //                 @panic("constructor tag out of range");
-            //             // push constructor fields in reverse order
-            //             var nctx = f.ctx;
-            //             var idx: i32 = @as(i32, @intCast(c.fields.length)) - 1;
-            //             while (idx >= 0) : (idx -= 1)
-            //                 nctx = self.makeFrame(.{ .frameAwaitFunValue = .{
-            //                     .argument = c.fields.list[@as(usize, @intCast(idx))],
-            //                     .ctx = nctx,
-            //                 } });
-            //             return self.compute(nctx, f.branches.list[c.tag]);
-            //         },
-            //         else => @panic("case on non-constructor"),
-            //     }
-            // },
+            .frame_cases => |f| {
+                switch (v.*) {
+                    .constr => |c| {
+                        if (c.tag >= f.branches.length) {
+                            @panic("constructor tag out of range");
+                        }
+
+                        const branch = f.branches.list[c.tag];
+
+                        var fields = c.values;
+                        while (fields) : (fields = fields.?.next) {
+                            self.frames.addFrame(
+                                &Frame{
+                                    .frame_await_fun_value = fields.?.value,
+                                },
+                            );
+                        }
+
+                        return State{
+                            .compute = .{
+                                .env = f.env,
+                                .term = branch,
+                            },
+                        };
+                    },
+                    else => @panic("case on non-constructor"),
+                }
+            },
             else => @panic("TODO"),
         }
     }
@@ -499,56 +518,52 @@ pub const Machine = struct {
                 if (b.force_count != 0)
                     @panic("unexpected built-in term argument");
 
-                @panic("TODO");
-                // const res = self.evalBuiltin(&b, argVal);
-                // return self.ret(ctx, res);
+                if (b.arity == 0) {
+                    @panic("unexpected built-in term argument");
+                }
+
+                const next_arity = b.arity - 1;
+
+                const nextArg = self.heap.create(
+                    LinkedValues,
+                    &LinkedValues{
+                        .value = argVal,
+                        .next = b.args,
+                    },
+                );
+
+                const builtinValue = blk: {
+                    if (next_arity == 0) {
+                        break :blk self.callBuiltin(b.fun, nextArg);
+                    } else {
+                        break :blk self.heap.create(
+                            Value,
+                            &Value{
+                                .builtin = .{
+                                    .fun = b.fun,
+                                    .force_count = b.force_count,
+                                    .arity = next_arity,
+                                    .args = nextArg,
+                                },
+                            },
+                        );
+                    }
+                };
+
+                return State{
+                    .ret = .{
+                        .value = builtinValue,
+                    },
+                };
             },
 
             else => @panic("apply on non-callable"),
         }
     }
 
-    // fn evalBuiltin(self: *Self, b: *const Builtin, next: *Value) *Value {
-    //     const new_len = b.args.length + 1;
-    //     const dst = self.heap.allocArray(*Value, new_len);
-    //     var i: u32 = 0;
-    //     while (i < b.args.length) : (i += 1) dst[i] = b.args.list[i];
-    //     dst[b.args.length] = next;
-
-    //     if (b.args_count == 1) {
-    //         return callBuiltin(self, b.fun, ValueList{ .length = new_len, .list = dst });
-    //     }
-
-    //     // Create a new builtin value with updated args
-    //     const new_builtin = self.heap.create(.{ .builtin = .{
-    //         .fun = b.fun,
-    //         .force_count = b.force_count,
-    //         .args_count = b.args_count - 1,
-    //         .args = ValueList{ .length = new_len, .list = dst },
-    //     } });
-    //     return new_builtin;
-    // }
-
-    // fn callBuiltin(
-    //     self: *Self,
-    //     fun: DefaultFunction,
-    //     args: ValueList,
-    // ) *Value {
-    //     switch (fun) {
-    //         .add_integer => {
-    //             if (args.length != 2) @panic("arity error for add_integer");
-    //             const a = self.unwrapInt(args.list[0]);
-    //             const b = self.unwrapInt(args.list[1]);
-    //             return self.wrapInt(a + b);
-    //         },
-    //         .subtract_integer => {
-    //             if (args.length != 2) @panic("arity error for subtract_integer");
-    //             const a = self.unwrapInt(args.list[0]);
-    //             const b = self.unwrapInt(args.list[1]);
-    //             return self.wrapInt(a - b);
-    //         },
-    //     }
-    // }
+    fn callBuiltin(_: *Self, _: DefaultFunction, _: ?*LinkedValues) *const Value {
+        @panic("TODO");
+    }
 
     // fn unwrapInt(_: *Self, v: *Value) i128 {
     //     if (v.* != .constant) @panic("expected integer constant");
@@ -699,5 +714,73 @@ test "constr compute" {
             try testing.expectEqualDeep(c.fields.list[0].termBody().debruijnIndex(), 2);
         },
         else => @panic("HOW2"),
+    }
+}
+
+test "constr compute ret" {
+    var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer allocator.deinit();
+
+    var heap = try Heap.createTestHeap(&allocator);
+    var frames = try Frames.createTestFrames(&allocator);
+    var machine = Machine{
+        .heap = &heap,
+        .frames = &frames,
+    };
+
+    const field1: []const u32 = &.{ 1, 0, 5 };
+    const field1Pointer: *const u32 = @ptrCast(field1);
+    const field2: []const u32 = &.{ 2, 0, 2 };
+    const field2Pointer: *const u32 = @ptrCast(field2);
+    const constr: []const u32 = &.{
+        8,
+        55,
+        2,
+        @truncate(@intFromPtr(field1Pointer)),
+        @truncate(@intFromPtr(field2Pointer)),
+    };
+    const ptr: *const Term = @ptrCast(constr);
+
+    machine.frames.addFrame(&.no_frame);
+
+    const state = machine.compute(null, ptr);
+
+    const next_state = switch (state) {
+        .compute => |c| blk: {
+            break :blk machine.compute(c.env, c.term);
+        },
+        else => @panic("HERE???"),
+    };
+
+    const final = switch (next_state) {
+        .ret => |r| blk: {
+            break :blk machine.ret(r.value);
+        },
+        else => @panic("EHRER"),
+    };
+
+    switch (final) {
+        .compute => |c| {
+            try testing.expect(c.env == null);
+            try testing.expectEqualDeep(c.term, &Term.lambda);
+            try testing.expectEqualDeep(c.term.termBody(), &Term.tvar);
+            try testing.expectEqualDeep(c.term.termBody().debruijnIndex(), 2);
+        },
+        else => @panic("DNFSJ"),
+    }
+
+    switch (machine.frames.popFrame()) {
+        .frame_constr => |c| {
+            try testing.expect(c.env == null);
+            try testing.expect(c.fields.length == 0);
+            try testing.expectEqualDeep(c.resolved_fields.?.value, &Value{
+                .delay = .{
+                    .env = null,
+                    .body = &Term.tvar,
+                },
+            });
+            try testing.expect(c.tag == 55);
+        },
+        else => unreachable,
     }
 }
