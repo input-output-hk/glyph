@@ -82,11 +82,6 @@ pub const Term = enum(u32) {
         const value: *Constant = @ptrFromInt(@intFromPtr(ptr) + @sizeOf(u32));
         return value;
     }
-
-    pub fn isUnit(ptr: *const Term) bool {
-        _ = ptr;
-        return false;
-    }
 };
 
 pub const Apply = struct { function: *const Term, argument: *const Term };
