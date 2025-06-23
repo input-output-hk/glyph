@@ -19,7 +19,7 @@ const Frame = union(enum) {
         fields: TermList,
         resolved_fields: ?*LinkedValues,
     },
-    frame_cases: struct {
+    frame_case: struct {
         env: ?*Env,
         branches: TermList,
     },
@@ -54,7 +54,7 @@ const Frames = struct {
 };
 
 const ValueList = struct { length: u32, list: [*]*const Value };
-const LinkedValues = struct { value: *const Value, next: ?*LinkedValues };
+const LinkedValues = struct { value: *const Value, next: ?*const LinkedValues };
 
 const Builtin = struct {
     fun: DefaultFunction,
@@ -74,7 +74,7 @@ const Value = union(enum) {
         body: *const Term,
     },
     builtin: Builtin,
-    constr: struct { tag: u32, values: ?*LinkedValues },
+    constr: struct { tag: u32, values: ?*const LinkedValues },
 
     pub fn isUnit(ptr: *const Value) bool {
         _ = ptr;
@@ -357,7 +357,7 @@ pub const Machine = struct {
             .case => {
                 const cs = t.caseValues();
                 self.frames.addFrame(&Frame{
-                    .frame_cases = .{
+                    .frame_case = .{
                         .env = env,
                         .branches = cs.branches,
                     },
@@ -439,7 +439,7 @@ pub const Machine = struct {
                 }
             },
 
-            .frame_cases => |f| {
+            .frame_case => |f| {
                 switch (v.*) {
                     .constr => |c| {
                         if (c.tag >= f.branches.length) {
@@ -449,10 +449,12 @@ pub const Machine = struct {
                         const branch = f.branches.list[c.tag];
 
                         var fields = c.values;
-                        while (fields) : (fields = fields.?.next) {
+                        while (fields != null) : (fields = fields.?.next) {
                             self.frames.addFrame(
                                 &Frame{
-                                    .frame_await_fun_value = fields.?.value,
+                                    .frame_await_fun_value = .{
+                                        .argument = fields.?.value,
+                                    },
                                 },
                             );
                         }
@@ -467,7 +469,6 @@ pub const Machine = struct {
                     else => @panic("case on non-constructor"),
                 }
             },
-            else => @panic("TODO"),
         }
     }
 
@@ -780,6 +781,125 @@ test "constr compute ret" {
                 },
             });
             try testing.expect(c.tag == 55);
+        },
+        else => unreachable,
+    }
+}
+
+test "case compute ret" {
+    var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer allocator.deinit();
+
+    var heap = try Heap.createTestHeap(&allocator);
+    var frames = try Frames.createTestFrames(&allocator);
+    var machine = Machine{
+        .heap = &heap,
+        .frames = &frames,
+    };
+
+    const field1: []const u32 = &.{ 1, 0, 5 };
+    const field1Pointer: *const u32 = @ptrCast(field1);
+    const field2: []const u32 = &.{ 2, 0, 2 };
+    const field2Pointer: *const u32 = @ptrCast(field2);
+    const constr: []const u32 = &.{
+        8,
+        0,
+        2,
+        @truncate(@intFromPtr(field1Pointer)),
+        @truncate(@intFromPtr(field2Pointer)),
+    };
+    const constrPointer: *const u32 = @ptrCast(constr);
+
+    const branch: []const u32 = &.{ 2, 2, 5, 0, 4 };
+    const branchPointer: *const u32 = @ptrCast(branch);
+
+    const case: []const u32 = &.{
+        9,
+        @truncate(@intFromPtr(constrPointer)),
+        1,
+        @truncate(@intFromPtr(branchPointer)),
+    };
+    const ptr: *const Term = @ptrCast(case);
+
+    machine.frames.addFrame(&.no_frame);
+
+    const state = machine.compute(null, ptr);
+
+    var next_state = switch (state) {
+        .compute => |c| blk: {
+            break :blk machine.compute(c.env, c.term);
+        },
+        else => @panic("HERE???1"),
+    };
+
+    next_state = switch (next_state) {
+        .ret => |r| blk: {
+            break :blk machine.ret(r.value);
+        },
+        else => {
+            std.debug.print("{}", .{next_state});
+            @panic("HERE???2");
+        },
+    };
+
+    next_state = switch (next_state) {
+        .compute => |c| blk: {
+            break :blk machine.compute(c.env, c.term);
+        },
+        else => @panic("HERE???4"),
+    };
+
+    const final = switch (next_state) {
+        .ret => |r| blk: {
+            break :blk machine.ret(r.value);
+        },
+        else => {
+            std.debug.print("{}", .{next_state});
+            @panic("HERE???2");
+        },
+    };
+
+    const first_field = LinkedValues{
+        .value = &Value{
+            .delay = .{
+                .body = &Term.tvar,
+                .env = null,
+            },
+        },
+        .next = null,
+    };
+
+    const fields = LinkedValues{
+        .value = &Value{
+            .lambda = .{
+                .body = &Term.tvar,
+                .env = null,
+            },
+        },
+        .next = &first_field,
+    };
+
+    switch (final) {
+        .ret => |r| {
+            try testing.expectEqualDeep(
+                r.value,
+                &Value{
+                    .constr = .{
+                        .tag = 0,
+                        .values = &fields,
+                    },
+                },
+            );
+        },
+        else => @panic("DNFSJ"),
+    }
+
+    switch (machine.frames.popFrame()) {
+        .frame_case => |c| {
+            try testing.expect(c.env == null);
+            try testing.expect(c.branches.length == 1);
+            try testing.expectEqualDeep(c.branches.list[0], &Term.lambda);
+            try testing.expectEqualDeep(c.branches.list[0].termBody(), &Term.lambda);
         },
         else => unreachable,
     }
