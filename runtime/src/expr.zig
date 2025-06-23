@@ -109,6 +109,47 @@ pub const DefaultFunction = enum(u32) {
     }
 };
 
-pub const Constant = struct {
-    integer: i128,
+pub const BigInt = extern struct {
+    sign: u32,
+    length: u32,
+    words: [*]const u32,
+};
+
+pub const Bytes = extern struct {
+    length: u32,
+    words: [*]const u32,
+};
+
+pub const Constant = enum(u32) {
+    integer,
+    bytes,
+    string,
+    unit,
+    boolean,
+
+    const Self = @This();
+
+    pub fn bigInt(self: *const Self) BigInt {
+        const sign: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+
+        const words: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 3);
+
+        return BigInt{
+            .sign = sign.*,
+            .length = length.*,
+            .words = words,
+        };
+    }
+
+    pub fn innerBytes(self: *const Self) Bytes {
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+
+        return Bytes{
+            .length = length.*,
+            .words = bytes,
+        };
+    }
 };
