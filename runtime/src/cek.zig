@@ -7,7 +7,7 @@ const TermList = expr.TermList;
 const Constant = expr.Constant;
 const DefaultFunction = expr.DefaultFunction;
 
-const Frame = union(enum) {
+const Frame = union(enum(u32)) {
     no_frame,
     frame_await_arg: struct { function: *const Value },
     frame_await_fun_term: struct { env: ?*Env, argument: *const Term },
@@ -63,7 +63,7 @@ const Builtin = struct {
     args: ?*LinkedValues,
 };
 
-const Value = union(enum) {
+const Value = union(enum(u32)) {
     constant: *Constant,
     delay: struct {
         env: ?*Env,
@@ -77,8 +77,15 @@ const Value = union(enum) {
     constr: struct { tag: u32, values: ?*const LinkedValues },
 
     pub fn isUnit(ptr: *const Value) bool {
-        _ = ptr;
-        return false;
+        switch (ptr.*) {
+            .constant => |c| {
+                switch (c.*) {
+                    .unit => return true,
+                    else => return false,
+                }
+            },
+            else => return false,
+        }
     }
 };
 
@@ -206,7 +213,7 @@ pub fn createConstr(heap: *Heap, tag: u32, vls: ?*LinkedValues) *Value {
     );
 }
 
-pub const State = union(enum) {
+pub const State = union(enum(u32)) {
     compute: struct {
         env: ?*Env,
         term: *const Term,
@@ -243,10 +250,10 @@ pub const Machine = struct {
         while (true) {
             switch (state) {
                 .compute => |c| {
-                    state = self.compute(c.frame, c.env, c.term);
+                    state = self.compute(c.env, c.term);
                 },
                 .ret => |r| {
-                    state = self.ret(r.frame, r.value);
+                    state = self.ret(r.value);
                 },
                 .done => |d| {
                     if (d.isUnit()) {
@@ -295,7 +302,14 @@ pub const Machine = struct {
                     },
                 };
             },
-            // constant
+            .constant => return State{
+                .ret = .{
+                    .value = createConst(
+                        self.heap,
+                        t.constantValue(),
+                    ),
+                },
+            },
             .force => {
                 self.frames.addFrame(&.frame_force);
                 return State{
@@ -329,7 +343,6 @@ pub const Machine = struct {
                     };
                 }
 
-                // TODO: TEST THIS
                 const rest = TermList{
                     .length = c.fields.length - 1,
                     .list = c.fields.list + 1,
@@ -364,8 +377,6 @@ pub const Machine = struct {
                 });
                 return self.compute(env, cs.constr);
             },
-
-            else => @panic("TODO"),
         }
     }
 
@@ -902,5 +913,63 @@ test "case compute ret" {
             try testing.expectEqualDeep(c.branches.list[0].termBody(), &Term.lambda);
         },
         else => unreachable,
+    }
+}
+
+test "constant compute" {
+    var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer allocator.deinit();
+
+    var heap = try Heap.createTestHeap(&allocator);
+    var frames = try Frames.createTestFrames(&allocator);
+    var machine = Machine{
+        .heap = &heap,
+        .frames = &frames,
+    };
+
+    const term: []const u32 = &.{
+        4,
+        3,
+    };
+
+    const ptr: *const Term = @ptrCast(term);
+
+    machine.frames.addFrame(&.no_frame);
+
+    machine.run(ptr);
+}
+
+test "constant compute big int" {
+    var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer allocator.deinit();
+
+    var heap = try Heap.createTestHeap(&allocator);
+    var frames = try Frames.createTestFrames(&allocator);
+    var machine = Machine{
+        .heap = &heap,
+        .frames = &frames,
+    };
+
+    const term: []const u32 = &.{ 4, 0, 1, 1, 11 };
+
+    const ptr: *const Term = @ptrCast(term);
+
+    machine.frames.addFrame(&.no_frame);
+
+    const state = machine.compute(null, ptr);
+
+    switch (state) {
+        .ret => |r| {
+            switch (r.value.constant.*) {
+                .integer => {
+                    const bigInt = r.value.constant.bigInt();
+                    try testing.expect(bigInt.length == 1);
+                    try testing.expect(bigInt.sign == 1);
+                    try testing.expect(bigInt.words[0] == 11);
+                },
+                else => @panic("How?"),
+            }
+        },
+        else => @panic("How?"),
     }
 }
