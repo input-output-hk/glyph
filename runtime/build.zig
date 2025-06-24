@@ -3,12 +3,14 @@ const std = @import("std");
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
-pub fn build(b: *std.Build) void {
-    // Force RISC-V 32-bit Linux target for tests
-    const riscv_build_target = b.resolveTargetQuery(.{
-        .cpu_arch = .riscv32,
-        .os_tag = .freestanding,
+pub fn build(b: *std.Build) !void {
+    const riscv_build_target_query = try std.Build.parseTargetQuery(.{
+        .arch_os_abi = "riscv32-freestanding",
+        .cpu_features = "baseline+i+m",
     });
+
+    // Force RISC-V 32-bit freestanding target for builds
+    const riscv_build_target = b.resolveTargetQuery(riscv_build_target_query);
 
     // Standard optimization options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
@@ -16,7 +18,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const obj = b.addObject(.{
-        .name = "core",
+        .name = "runtime",
         .root_source_file = b.path("src/root.zig"),
         .target = riscv_build_target,
         .optimize = optimize,
@@ -29,10 +31,12 @@ pub fn build(b: *std.Build) void {
     b.getInstallStep().dependOn(&file.step);
 
     // Force RISC-V 32-bit Linux target for tests
-    const riscv_test_target = b.resolveTargetQuery(.{
-        .cpu_arch = .riscv32,
-        .os_tag = .linux,
+    const riscv_test_target_query = try std.Build.parseTargetQuery(.{
+        .arch_os_abi = "riscv32-linux",
+        .cpu_features = "baseline+i+m",
     });
+
+    const riscv_test_target = b.resolveTargetQuery(riscv_test_target_query);
 
     const lib_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/root.zig"),
