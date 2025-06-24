@@ -11,6 +11,12 @@ pub fn createTestHeap(arena: *std.heap.ArenaAllocator) !Self {
     return Self{ .heap_ptr = heapPointer };
 }
 
+pub fn createHeap(ptr: u32) Self {
+    const heapPointer: [*]u8 = @ptrFromInt(ptr);
+
+    return Self{ .heap_ptr = heapPointer };
+}
+
 pub fn create(heap: *Self, comptime T: type, v: *const T) *T {
     if (@alignOf(T) < 4) {
         // How to print type?

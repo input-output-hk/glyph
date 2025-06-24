@@ -133,13 +133,13 @@ use uplc_serializer::constants::const_tag::{self, BOOL};
 //ExpModInteger
 
 // Must be exactly divisible by 4
-const FORCE_COUNTS: [u8; 88] = [
+const _FORCE_COUNTS: [u8; 88] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
     1, 2, 2, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-const ARITIES: [u8; 88] = [
+const _ARITIES: [u8; 88] = [
     2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 3, 3, 3, 2, 2, 1, 1, 3, 2,
     2, 1, 1, 3, 2, 1, 1, 1, 6, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 2, 1, 1, 2, 1, 2, 2, 1, 1, 2, 2,
     1, 2, 2, 1, 1, 2, 2, 2, 2, 3, 2, 3, 3, 3, 1, 2, 3, 2, 2, 2, 1, 1, 1, 3,
@@ -375,71 +375,13 @@ impl Cek {
 
     pub fn cek_assembly(mut self, bytes: Vec<u8>) -> CodeGenerator {
         // Generate the core CEK implementation
+        // self.generator
+        //     .add_instruction(Instruction::global("_start".to_string()));
+        // self.generator
+
         self.generator
-            .add_instruction(Instruction::global("_start".to_string()));
-        self.generator
-            .add_instruction(Instruction::label("_start".to_string()));
-        self.init();
-        self.compute();
-        self.return_compute();
-        self.handle_var();
-        self.handle_delay();
-        self.handle_lambda();
-        self.handle_apply();
-        self.handle_constant();
-        self.handle_force();
-        self.handle_error();
-        self.handle_builtin();
-        self.handle_constr();
-        self.handle_case();
-        self.handle_frame_await_fun_term();
-        self.handle_frame_await_arg();
-        self.handle_frame_await_fun_value();
-        self.handle_frame_force();
-        self.handle_frame_constr();
-        self.handle_frame_case();
-        self.handle_no_frame();
-        self.halt();
-        self.force_evaluate();
-        self.apply_evaluate();
-        self.lookup();
-        self.clone_list();
-        self.reverse_clone_list();
-        self.eval_builtin_app();
-        self.unwrap_integer();
-        self.unwrap_bytestring();
-        self.allocate_integer_type();
-        self.allocate_bytestring_type();
-        self.add_integer();
-        self.sub_integer();
-        self.multiply_integer();
-        self.divide_integer();
-        self.quotient_integer();
-        self.remainder_integer();
-        self.mod_integer();
-        self.equals_integer();
-        self.less_than_integer();
-        self.less_than_equals_integer();
-        self.append_bytestring();
-        self.cons_bytestring();
-        self.slice_bytestring();
-        self.length_bytestring();
-        self.index_bytestring();
-        self.equals_bytestring();
-        self.less_than_bytestring();
-        self.less_than_equals_bytestring();
-        self.sha2_256();
-        self.sha3_256();
-        self.blake2b_256();
-        self.verify_ed25519_signature();
-        self.append_string();
-        self.equals_string();
-        self.encode_utf8();
-        self.decode_utf8();
-        self.if_then_else();
-        self.add_signed_integers();
-        self.compare_magnitude();
-        self.sub_signed_integers();
+            .add_instruction(Instruction::section("data".to_string()));
+
         self.initial_term(bytes);
         // self.generator
         //     .add_instruction(Instruction::Section("heap".to_string()));
@@ -2843,22 +2785,9 @@ impl Cek {
 
     pub fn initial_term(&mut self, bytes: Vec<u8>) {
         self.generator
-            .add_instruction(Instruction::section("data".to_string()));
-
-        self.generator
             .add_instruction(Instruction::label("initial_term".to_string()));
 
         self.generator.add_instruction(Instruction::byte(bytes));
-
-        self.generator
-            .add_instruction(Instruction::label("force_counts".to_string()));
-        self.generator
-            .add_instruction(Instruction::byte(FORCE_COUNTS.to_vec()));
-
-        self.generator
-            .add_instruction(Instruction::label("arities".to_string()));
-        self.generator
-            .add_instruction(Instruction::byte(ARITIES.to_vec()));
     }
 
     pub fn eval_builtin_app(&mut self) -> Freed {
@@ -5574,11 +5503,10 @@ mod tests {
     use std::process::Command;
 
     use emulator::ExecutionResult;
-    use risc_v_gen::{emulator::verify_file, Instruction};
-    use uplc::ast::{DeBruijn, Name, Program, Term};
-    use uplc_serializer::{constants::const_tag, serialize};
+    use risc_v_gen::emulator::verify_file;
+    use uplc_serializer::constants::const_tag;
 
-    use crate::cek::{u32_vec_to_u8_vec, Cek};
+    use crate::cek::Cek;
 
     #[test]
     fn test_cek_machine() {
@@ -5662,10 +5590,10 @@ mod tests {
         let thing = Cek::default();
 
         let gene = thing.cek_assembly(vec![
-            /*apply*/ 3, /* arg pointer*/ 11, 0, 0, 144, /*lambda*/ 2,
-            /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, /* type length in bytes */ 1,
-            /* integer */ 0, /* sign */ 0, /* length */ 1, 0, 0, 0,
-            /*value (little-endian) */ 13, 0, 0, 0,
+            /*apply*/ 3, 0, 0, 0, /* arg pointer*/ 20, 0, 0, 144, /*lambda*/ 2, 0,
+            0, 0, /*var*/ 0, 0, 0, 0, /*index */ 1, 0, 0, 0, /*constant*/ 4, 0, 0,
+            0, /* integer */ 0, 0, 0, 0, /* sign */ 0, 0, 0, 0, /* length */ 1, 0,
+            0, 0, /*value (little-endian) */ 13, 0, 0, 0,
         ]);
 
         // println!("{}", gene.generate());
@@ -5674,7 +5602,7 @@ mod tests {
 
         Command::new("riscv64-elf-as")
             .args([
-                "-march=rv32i",
+                "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
                 "test_apply.o",
@@ -5691,6 +5619,7 @@ mod tests {
                 "test_apply.elf",
                 "-T",
                 "../../linker/link.ld",
+                "../../runtime/zig-out/lib/runtime.o",
                 "test_apply.o",
             ])
             .status()
@@ -5698,93 +5627,6 @@ mod tests {
 
         let v = verify_file("test_apply.elf").unwrap();
 
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            _ => unreachable!("HOW?"),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, 0);
-
-        let sign = section_data[offset_index + 2];
-
-        assert_eq!(sign, 0);
-
-        let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(word_length, 1);
-
-        let value = *section_data[(offset_index + 7)..(offset_index + 11)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(value, 13);
-    }
-
-    #[test]
-    fn test_add_integer_double() {
-        let thing = Cek::default();
-
-        let gene = thing.cek_assembly(vec![
-            /*apply*/ 3, /* arg pointer*/ 28, 0, 0, 144, /*lambda*/ 2,
-            /*apply */ 3, /* arg pointer*/ 18, 0, 0, 144, /*apply */ 3,
-            /* arg pointer*/ 23, 0, 0, 144, /*add_integer */ 7, 0, /*var*/ 0, 1, 0,
-            0, 0, /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4,
-            /* type length in bytes */ 1, /* integer */ 0, /* sign */ 0,
-            /* length */ 1, 0, 0, 0, /*value (little-endian) */ 13, 0, 0, 0,
-        ]);
-
-        // println!("{}", gene.generate());
-
-        gene.save_to_file("test_add.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_add.o",
-                "test_add.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_add.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_add.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_add.elf").unwrap();
-
         // let mut file = File::create("bbbb.txt").unwrap();
         // write!(
         //     &mut file,
@@ -5792,7 +5634,7 @@ mod tests {
         //     v.1.iter()
         //         .map(|(item, _)| {
         //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 "Step number: {}, Opcode: {:#x?}, hex: {:#x}\nFull: {:#x?}",
         //                 item.step_number,
         //                 riscv_decode::decode(item.read_pc.opcode),
         //                 item.read_pc.opcode,
@@ -5807,1574 +5649,1677 @@ mod tests {
 
         let result_pointer = match v.0 {
             ExecutionResult::Halt(result, _step) => result,
-            _ => unreachable!("HOW?"),
+            d => unreachable!("HOW? {:#?}", d),
         };
 
         assert_ne!(result_pointer, u32::MAX);
 
         let section = v.2.find_section(result_pointer).unwrap();
 
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
+        let section_data = &section.data;
 
-        let offset_index = (result_pointer - section.start) as usize;
+        let offset_index = ((result_pointer - section.start) / 4) as usize;
 
-        let type_length = section_data[offset_index];
+        assert_eq!(section_data[offset_index], 0);
 
-        assert_eq!(type_length, 1);
+        let constant_pointer = section_data[offset_index + 1].to_be();
 
-        let constant_type = section_data[offset_index + 1];
+        let section = v.2.find_section(constant_pointer).unwrap();
 
-        assert_eq!(constant_type, const_tag::INTEGER);
+        let section_data = &section.data;
 
-        let sign = section_data[offset_index + 2];
+        let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-        assert_eq!(sign, 0);
+        let integer_type = section_data[offset_index];
 
-        let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
+        assert_eq!(const_tag::INTEGER, integer_type.to_be());
 
-        assert_eq!(word_length, 1);
+        let sign = section_data[offset_index + 1];
 
-        let value = *section_data[(offset_index + 7)..(offset_index + 11)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
+        assert_eq!(0, sign.to_be());
 
-        assert_eq!(value, 26);
+        let length = section_data[offset_index + 2];
+
+        assert_eq!(1, length.to_be());
+
+        let word = section_data[offset_index + 3];
+
+        assert_eq!(13, word.to_be());
     }
 
-    #[test]
-    fn test_force_delay_error() {
-        let thing = Cek::default();
-
-        let gene = thing.cek_assembly(vec![
-            /*force */ 5, /*delay */ 1, /*error */ 6, 0,
-        ]);
-
-        gene.save_to_file("test_force.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_force.o",
-                "test_force.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_force.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_force.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_force.elf").unwrap();
-
-        match v.0 {
-            ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
-            _ => unreachable!("HOW?"),
-        }
-    }
-
-    #[test]
-    fn test_case_constr_lambda_lambda_var_constant() {
-        let thing = Cek::default();
-
-        let gene = thing.cek_assembly(vec![
-            /*case */ 9, /*const pointer */ 17, 0, 0, 144, /*branches length */ 2,
-            0, 0, 0, /*first branch pointer */ 58, 0, 0, 144,
-            /*second branch pointer */ 59, 0, 0, 144, /*constr*/ 8, /* tag*/ 1, 0,
-            0, 0, /*fields length */ 2, 0, 0, 0, /*first field pointer */ 34, 0, 0, 144,
-            /*second field pointer */ 46, 0, 0, 144, /* first field constant */ 4,
-            /* type length in bytes */ 1, /* integer */ 0, /* sign */ 0,
-            /* length */ 1, 0, 0, 0, /*integer 99 */ 99, 0, 0, 0,
-            /*second field constant */ 4, /* type length in bytes */ 1,
-            /* integer */ 0, /* sign */ 0, /* length */ 1, 0, 0, 0,
-            /*integer 13 */ 13, 0, 0, 0, /*first branch error*/ 6,
-            /*second branch lambda */ 2, /*lambda */ 2, /*var */ 0,
-            /*second debruijn index */ 2, 0, 0, 0, 0, 0,
-        ]);
-
-        gene.save_to_file("test_case_constr.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_case_constr.o",
-                "test_case_constr.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_case_constr.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_case_constr.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_case_constr.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-        //
-
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            _ => unreachable!("HOW?"),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, const_tag::INTEGER);
-
-        let sign = section_data[offset_index + 2];
-
-        assert_eq!(sign, 0);
-
-        let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(word_length, 1);
-
-        let value = *section_data[(offset_index + 7)..(offset_index + 11)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(value, 99);
-    }
-
-    #[test]
-    fn test_force_delay_error_serialize() {
-        let thing = Cek::default();
-
-        let term = Term::Error.delay().force();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_serialize.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_serialize.o",
-                "test_serialize.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_serialize.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_serialize.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_serialize.elf").unwrap();
-
-        match v.0 {
-            ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
-            _ => unreachable!("HOW?"),
-        }
-    }
-
-    #[test]
-    fn test_apply_lambda_force_var_delay_error_serialize() {
-        let thing = Cek::default();
-
-        // (apply (lambda x (force x)) (delay (error)))
-        let term = Term::var("x")
-            .force()
-            .lambda("x")
-            .apply(Term::Error.delay());
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_serialize_2.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_serialize_2.o",
-                "test_serialize_2.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_serialize_2.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_serialize_2.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_serialize_2.elf").unwrap();
-
-        match v.0 {
-            ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
-            _ => unreachable!("HOW?"),
-        }
-    }
-    #[test]
-    fn test_apply_apply_builtin_serialize() {
-        let thing = Cek::default();
-
-        // (apply (lambda x (force x)) (delay (error)))
-        let term: Term<Name> = Term::add_integer()
-            .apply(Term::Error.delay())
-            .apply(Term::Error.delay());
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_serialize_3.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_serialize_3.o",
-                "test_serialize_3.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_serialize_3.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_serialize_3.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_serialize_3.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
-        match v.0 {
-            ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
-            g => unreachable!("HOW? {:#?}", g),
-        }
-    }
-
-    #[test]
-    fn test_add_2_different_size_numbers() {
-        let thing = Cek::default();
-
-        // (apply (lambda x (force x)) (delay (error)))
-        let term: Term<Name> = Term::add_integer()
-            .apply(Term::integer((-5_000_000_000_i128).into()))
-            .apply(Term::integer((-5).into()));
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        // println!("{:#?}", riscv_program);
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_add_big_int.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_add_big_int.o",
-                "test_add_big_int.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_add_big_int.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_add_big_int.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_add_big_int.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            _ => unreachable!("HOW?"),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, const_tag::INTEGER);
-
-        let sign = section_data[offset_index + 2];
-
-        assert_eq!(sign, 1);
-
-        let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(word_length, 2);
-
-        let value = section_data[(offset_index + 7)..(offset_index + 15)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>();
-
-        let result = value[0] as u64 + value[1] as u64 * 256_u64.pow(4);
-
-        assert_eq!(result, 5000000005);
-    }
-
-    #[test]
-    fn test_add_2_different_sign_numbers() {
-        let thing = Cek::default();
-
-        // (apply (lambda x (force x)) (delay (error)))
-        let term: Term<Name> = Term::add_integer()
-            .apply(Term::integer((-5_000_000_000_i128).into()))
-            .apply(Term::integer((5).into()));
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_add_big_int_sign.s").unwrap();
-
-        Command::new("ls").args(["../../linker"]).status().unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_add_big_int_sign.o",
-                "test_add_big_int_sign.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("ls").args(["."]).status().unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_add_big_int_sign.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_add_big_int_sign.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_add_big_int_sign.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            a => unreachable!("HOW? {:#?}", a),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, const_tag::INTEGER);
-
-        let sign = section_data[offset_index + 2];
-
-        assert_eq!(sign, 1);
-
-        let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(word_length, 2);
-
-        let value = section_data[(offset_index + 7)..(offset_index + 15)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>();
-
-        let result = value[0] as u64 + value[1] as u64 * 256_u64.pow(4);
-
-        assert_eq!(result, 4999999995);
-    }
-
-    #[test]
-    fn test_sub_2_numbers() {
-        let thing = Cek::default();
-
-        // (apply (lambda x (force x)) (delay (error)))
-        let term: Term<Name> = Term::subtract_integer()
-            .apply(Term::integer((5_000_000_000_i128).into()))
-            .apply(Term::integer((5).into()));
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_sub_big_int.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_sub_big_int.o",
-                "test_sub_big_int.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_sub_big_int.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_sub_big_int.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_sub_big_int.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            a => unreachable!("HOW? {:#?}", a),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, const_tag::INTEGER);
-
-        let sign = section_data[offset_index + 2];
-
-        assert_eq!(sign, 0);
-
-        let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(word_length, 2);
-
-        let value = section_data[(offset_index + 7)..(offset_index + 15)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>();
-
-        let result = value[0] as u64 + value[1] as u64 * 256_u64.pow(4);
-
-        assert_eq!(result, 4999999995);
-    }
-
-    #[test]
-    fn test_equals_numbers() {
-        let thing = Cek::default();
-
-        // (apply (lambda x (force x)) (delay (error)))
-        let term: Term<Name> = Term::equals_integer()
-            .apply(
-                Term::subtract_integer()
-                    .apply(Term::integer((5_000_000_000_i128).into()))
-                    .apply(Term::integer((5).into())),
-            )
-            .apply(Term::integer((4_999_999_995_i128).into()));
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_equal_big_int.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_equal_big_int.o",
-                "test_equal_big_int.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_equal_big_int.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_equal_big_int.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_equal_big_int.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            a => unreachable!("HOW? {:#?}", a),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, const_tag::BOOL);
-
-        let boolean = section_data[offset_index + 2];
-
-        assert_eq!(boolean, 1)
-    }
-
-    #[test]
-    fn test_less_numbers() {
-        let thing = Cek::default();
-
-        // (apply (lambda x (force x)) (delay (error)))
-        let term: Term<Name> = Term::less_than_integer()
-            .apply(
-                Term::subtract_integer()
-                    .apply(Term::integer((5_000_000_000_i128).into()))
-                    .apply(Term::integer((5).into())),
-            )
-            .apply(Term::integer((4_999_999_995_i128).into()));
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_less_big_int.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_less_big_int.o",
-                "test_less_big_int.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_less_big_int.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_less_big_int.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_less_big_int.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            a => unreachable!("HOW? {:#?}", a),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, const_tag::BOOL);
-
-        let boolean = section_data[offset_index + 2];
-
-        assert_eq!(boolean, 0)
-    }
-
-    #[test]
-    fn test_less_equals_numbers() {
-        let thing = Cek::default();
-
-        // (apply (lambda x (force x)) (delay (error)))
-        let term: Term<Name> = Term::less_than_equals_integer()
-            .apply(
-                Term::subtract_integer()
-                    .apply(Term::integer((5_000_000_000_i128).into()))
-                    .apply(Term::integer((5).into())),
-            )
-            .apply(Term::integer((4_999_999_995_i128).into()));
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_less_equals_big_int.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_less_equals_big_int.o",
-                "test_less_equals_big_int.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_less_equals_big_int.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_less_equals_big_int.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_less_equals_big_int.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            a => unreachable!("HOW? {:#?}", a),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, const_tag::BOOL);
-
-        let boolean = section_data[offset_index + 2];
-
-        assert_eq!(boolean, 1)
-    }
-
-    #[test]
-    fn test_append_bytestring() {
-        let thing = Cek::default();
-
-        let term: Term<Name> = Term::append_bytearray()
-            .apply(Term::byte_string(vec![255, 255]))
-            .apply(Term::byte_string(vec![254, 245]));
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_append_bytes.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_append_bytes.o",
-                "test_append_bytes.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_append_bytes.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_append_bytes.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_append_bytes.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            a => unreachable!("HOW? {:#?}", a),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, const_tag::BYTESTRING);
-
-        let byte_length = *section_data[(offset_index + 2)..(offset_index + 6)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(byte_length, 4);
-
-        let value = section_data[(offset_index + 6)..(offset_index + 22)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>();
-
-        assert_eq!(value, vec![255, 255, 254, 245])
-    }
-
-    #[test]
-    fn test_con_bytestring() {
-        let thing = Cek::default();
-
-        let term: Term<Name> = Term::cons_bytearray()
-            .apply(Term::integer(20.into()))
-            .apply(Term::byte_string(vec![254, 245]));
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_cons_bytes.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_cons_bytes.o",
-                "test_cons_bytes.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_cons_bytes.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_cons_bytes.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_cons_bytes.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            a => unreachable!("HOW? {:#?}", a),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, const_tag::BYTESTRING);
-
-        let byte_length = *section_data[(offset_index + 2)..(offset_index + 6)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(byte_length, 3);
-
-        let value = section_data[(offset_index + 6)..(offset_index + 18)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>();
-
-        assert_eq!(value, vec![20, 254, 245])
-    }
-
-    #[test]
-    fn test_slice_bytestring() {
-        let thing = Cek::default();
-
-        let term: Term<Name> = Term::slice_bytearray()
-            .apply(Term::integer(1.into()))
-            .apply(Term::integer(2.into()))
-            .apply(Term::byte_string(vec![251, 251, 254, 254]));
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_slice_bytes.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_slice_bytes.o",
-                "test_slice_bytes.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_slice_bytes.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_slice_bytes.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_slice_bytes.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            a => unreachable!("HOW? {:#?}", a),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, const_tag::BYTESTRING);
-
-        let byte_length = *section_data[(offset_index + 2)..(offset_index + 6)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(byte_length, 2);
-
-        let value = section_data[(offset_index + 6)..(offset_index + 14)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>();
-
-        assert_eq!(value, vec![251, 254])
-    }
-
-    #[test]
-    fn test_bytestring_length() {
-        let thing = Cek::default();
-
-        let term: Term<Name> =
-            Term::length_of_bytearray().apply(Term::byte_string(vec![251, 251, 254, 254]));
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_len_bytes.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_len_bytes.o",
-                "test_len_bytes.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_len_bytes.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_len_bytes.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_len_bytes.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            a => unreachable!("HOW? {:#?}", a),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, const_tag::INTEGER);
-
-        let sign = section_data[offset_index + 2];
-
-        assert_eq!(sign, 0);
-
-        let integer_length = *section_data[(offset_index + 3)..(offset_index + 7)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(integer_length, 1);
-
-        let value = *section_data[(offset_index + 7)..(offset_index + 11)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(value, 4);
-    }
-
-    #[test]
-    fn test_index_bytestring() {
-        let thing = Cek::default();
-
-        let term: Term<Name> = Term::index_bytearray()
-            .apply(Term::byte_string(vec![251, 251, 254, 254]))
-            .apply(Term::integer(2.into()));
-
-        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
-
-        let program: Program<DeBruijn> = Program {
-            version: (1, 1, 0),
-            term: term_debruijn,
-        };
-
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
-
-        let gene = thing.cek_assembly(riscv_program);
-
-        gene.save_to_file("test_index_bytes.s").unwrap();
-
-        Command::new("riscv64-elf-as")
-            .args([
-                "-march=rv32i",
-                "-mabi=ilp32",
-                "-o",
-                "test_index_bytes.o",
-                "test_index_bytes.s",
-            ])
-            .status()
-            .unwrap();
-
-        Command::new("riscv64-elf-ld")
-            .args([
-                "-m",
-                "elf32lriscv",
-                "-o",
-                "test_index_bytes.elf",
-                "-T",
-                "../../linker/link.ld",
-                "test_index_bytes.o",
-            ])
-            .status()
-            .unwrap();
-
-        let v = verify_file("test_index_bytes.elf").unwrap();
-
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
-        let result_pointer = match v.0 {
-            ExecutionResult::Halt(result, _step) => result,
-            a => unreachable!("HOW? {:#?}", a),
-        };
-
-        assert_ne!(result_pointer, u32::MAX);
-
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = u32_vec_to_u8_vec(section.data.clone());
-
-        let offset_index = (result_pointer - section.start) as usize;
-
-        let type_length = section_data[offset_index];
-
-        assert_eq!(type_length, 1);
-
-        let constant_type = section_data[offset_index + 1];
-
-        assert_eq!(constant_type, const_tag::INTEGER);
-
-        let sign = section_data[offset_index + 2];
-
-        assert_eq!(sign, 0);
-
-        let integer_length = *section_data[(offset_index + 3)..(offset_index + 7)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(integer_length, 1);
-
-        let value = *section_data[(offset_index + 7)..(offset_index + 11)]
-            .chunks_exact(4)
-            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            .collect::<Vec<u32>>()
-            .first()
-            .unwrap();
-
-        assert_eq!(value, 254);
-    }
-
-    #[test]
-    fn blocks() {
-        let mut thing = Cek::default();
-
-        argument!(yes = thing.first_arg);
-
-        create_block!(thing, {
-            var!(no = thing.second_arg);
-            constnt!(sure = thing.third_arg);
-
-            thing
-                .generator
-                .add_instruction(Instruction::li(&mut no, 42));
-
-            thing
-                .generator
-                .add_instruction(Instruction::li(&mut sure, 421));
-
-            thing
-                .generator
-                .add_instruction(Instruction::mv(&mut no, &yes));
-        });
-        println!("THING {:#?}", thing.generator);
-    }
+    // #[test]
+    // fn test_add_integer_double() {
+    //     let thing = Cek::default();
+
+    //     let gene = thing.cek_assembly(vec![
+    //         /*apply*/ 3, /* arg pointer*/ 28, 0, 0, 144, /*lambda*/ 2,
+    //         /*apply */ 3, /* arg pointer*/ 18, 0, 0, 144, /*apply */ 3,
+    //         /* arg pointer*/ 23, 0, 0, 144, /*add_integer */ 7, 0, /*var*/ 0, 1, 0,
+    //         0, 0, /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4,
+    //         /* type length in bytes */ 1, /* integer */ 0, /* sign */ 0,
+    //         /* length */ 1, 0, 0, 0, /*value (little-endian) */ 13, 0, 0, 0,
+    //     ]);
+
+    //     // println!("{}", gene.generate());
+
+    //     gene.save_to_file("test_add.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_add.o",
+    //             "test_add.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_add.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_add.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_add.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         _ => unreachable!("HOW?"),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::INTEGER);
+
+    //     let sign = section_data[offset_index + 2];
+
+    //     assert_eq!(sign, 0);
+
+    //     let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(word_length, 1);
+
+    //     let value = *section_data[(offset_index + 7)..(offset_index + 11)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(value, 26);
+    // }
+
+    // #[test]
+    // fn test_force_delay_error() {
+    //     let thing = Cek::default();
+
+    //     let gene = thing.cek_assembly(vec![
+    //         /*force */ 5, /*delay */ 1, /*error */ 6, 0,
+    //     ]);
+
+    //     gene.save_to_file("test_force.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_force.o",
+    //             "test_force.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_force.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_force.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_force.elf").unwrap();
+
+    //     match v.0 {
+    //         ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
+    //         _ => unreachable!("HOW?"),
+    //     }
+    // }
+
+    // #[test]
+    // fn test_case_constr_lambda_lambda_var_constant() {
+    //     let thing = Cek::default();
+
+    //     let gene = thing.cek_assembly(vec![
+    //         /*case */ 9, /*const pointer */ 17, 0, 0, 144, /*branches length */ 2,
+    //         0, 0, 0, /*first branch pointer */ 58, 0, 0, 144,
+    //         /*second branch pointer */ 59, 0, 0, 144, /*constr*/ 8, /* tag*/ 1, 0,
+    //         0, 0, /*fields length */ 2, 0, 0, 0, /*first field pointer */ 34, 0, 0, 144,
+    //         /*second field pointer */ 46, 0, 0, 144, /* first field constant */ 4,
+    //         /* type length in bytes */ 1, /* integer */ 0, /* sign */ 0,
+    //         /* length */ 1, 0, 0, 0, /*integer 99 */ 99, 0, 0, 0,
+    //         /*second field constant */ 4, /* type length in bytes */ 1,
+    //         /* integer */ 0, /* sign */ 0, /* length */ 1, 0, 0, 0,
+    //         /*integer 13 */ 13, 0, 0, 0, /*first branch error*/ 6,
+    //         /*second branch lambda */ 2, /*lambda */ 2, /*var */ 0,
+    //         /*second debruijn index */ 2, 0, 0, 0, 0, 0,
+    //     ]);
+
+    //     gene.save_to_file("test_case_constr.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_case_constr.o",
+    //             "test_case_constr.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_case_constr.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_case_constr.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_case_constr.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+    //     //
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         _ => unreachable!("HOW?"),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::INTEGER);
+
+    //     let sign = section_data[offset_index + 2];
+
+    //     assert_eq!(sign, 0);
+
+    //     let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(word_length, 1);
+
+    //     let value = *section_data[(offset_index + 7)..(offset_index + 11)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(value, 99);
+    // }
+
+    // #[test]
+    // fn test_force_delay_error_serialize() {
+    //     let thing = Cek::default();
+
+    //     let term = Term::Error.delay().force();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_serialize.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_serialize.o",
+    //             "test_serialize.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_serialize.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_serialize.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_serialize.elf").unwrap();
+
+    //     match v.0 {
+    //         ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
+    //         _ => unreachable!("HOW?"),
+    //     }
+    // }
+
+    // #[test]
+    // fn test_apply_lambda_force_var_delay_error_serialize() {
+    //     let thing = Cek::default();
+
+    //     // (apply (lambda x (force x)) (delay (error)))
+    //     let term = Term::var("x")
+    //         .force()
+    //         .lambda("x")
+    //         .apply(Term::Error.delay());
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_serialize_2.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_serialize_2.o",
+    //             "test_serialize_2.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_serialize_2.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_serialize_2.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_serialize_2.elf").unwrap();
+
+    //     match v.0 {
+    //         ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
+    //         _ => unreachable!("HOW?"),
+    //     }
+    // }
+    // #[test]
+    // fn test_apply_apply_builtin_serialize() {
+    //     let thing = Cek::default();
+
+    //     // (apply (lambda x (force x)) (delay (error)))
+    //     let term: Term<Name> = Term::add_integer()
+    //         .apply(Term::Error.delay())
+    //         .apply(Term::Error.delay());
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_serialize_3.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_serialize_3.o",
+    //             "test_serialize_3.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_serialize_3.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_serialize_3.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_serialize_3.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     match v.0 {
+    //         ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
+    //         g => unreachable!("HOW? {:#?}", g),
+    //     }
+    // }
+
+    // #[test]
+    // fn test_add_2_different_size_numbers() {
+    //     let thing = Cek::default();
+
+    //     // (apply (lambda x (force x)) (delay (error)))
+    //     let term: Term<Name> = Term::add_integer()
+    //         .apply(Term::integer((-5_000_000_000_i128).into()))
+    //         .apply(Term::integer((-5).into()));
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     // println!("{:#?}", riscv_program);
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_add_big_int.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_add_big_int.o",
+    //             "test_add_big_int.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_add_big_int.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_add_big_int.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_add_big_int.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         _ => unreachable!("HOW?"),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::INTEGER);
+
+    //     let sign = section_data[offset_index + 2];
+
+    //     assert_eq!(sign, 1);
+
+    //     let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(word_length, 2);
+
+    //     let value = section_data[(offset_index + 7)..(offset_index + 15)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>();
+
+    //     let result = value[0] as u64 + value[1] as u64 * 256_u64.pow(4);
+
+    //     assert_eq!(result, 5000000005);
+    // }
+
+    // #[test]
+    // fn test_add_2_different_sign_numbers() {
+    //     let thing = Cek::default();
+
+    //     // (apply (lambda x (force x)) (delay (error)))
+    //     let term: Term<Name> = Term::add_integer()
+    //         .apply(Term::integer((-5_000_000_000_i128).into()))
+    //         .apply(Term::integer((5).into()));
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_add_big_int_sign.s").unwrap();
+
+    //     Command::new("ls").args(["../../linker"]).status().unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_add_big_int_sign.o",
+    //             "test_add_big_int_sign.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("ls").args(["."]).status().unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_add_big_int_sign.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_add_big_int_sign.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_add_big_int_sign.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         a => unreachable!("HOW? {:#?}", a),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::INTEGER);
+
+    //     let sign = section_data[offset_index + 2];
+
+    //     assert_eq!(sign, 1);
+
+    //     let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(word_length, 2);
+
+    //     let value = section_data[(offset_index + 7)..(offset_index + 15)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>();
+
+    //     let result = value[0] as u64 + value[1] as u64 * 256_u64.pow(4);
+
+    //     assert_eq!(result, 4999999995);
+    // }
+
+    // #[test]
+    // fn test_sub_2_numbers() {
+    //     let thing = Cek::default();
+
+    //     // (apply (lambda x (force x)) (delay (error)))
+    //     let term: Term<Name> = Term::subtract_integer()
+    //         .apply(Term::integer((5_000_000_000_i128).into()))
+    //         .apply(Term::integer((5).into()));
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_sub_big_int.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_sub_big_int.o",
+    //             "test_sub_big_int.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_sub_big_int.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_sub_big_int.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_sub_big_int.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         a => unreachable!("HOW? {:#?}", a),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::INTEGER);
+
+    //     let sign = section_data[offset_index + 2];
+
+    //     assert_eq!(sign, 0);
+
+    //     let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(word_length, 2);
+
+    //     let value = section_data[(offset_index + 7)..(offset_index + 15)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>();
+
+    //     let result = value[0] as u64 + value[1] as u64 * 256_u64.pow(4);
+
+    //     assert_eq!(result, 4999999995);
+    // }
+
+    // #[test]
+    // fn test_equals_numbers() {
+    //     let thing = Cek::default();
+
+    //     // (apply (lambda x (force x)) (delay (error)))
+    //     let term: Term<Name> = Term::equals_integer()
+    //         .apply(
+    //             Term::subtract_integer()
+    //                 .apply(Term::integer((5_000_000_000_i128).into()))
+    //                 .apply(Term::integer((5).into())),
+    //         )
+    //         .apply(Term::integer((4_999_999_995_i128).into()));
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_equal_big_int.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_equal_big_int.o",
+    //             "test_equal_big_int.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_equal_big_int.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_equal_big_int.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_equal_big_int.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         a => unreachable!("HOW? {:#?}", a),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::BOOL);
+
+    //     let boolean = section_data[offset_index + 2];
+
+    //     assert_eq!(boolean, 1)
+    // }
+
+    // #[test]
+    // fn test_less_numbers() {
+    //     let thing = Cek::default();
+
+    //     // (apply (lambda x (force x)) (delay (error)))
+    //     let term: Term<Name> = Term::less_than_integer()
+    //         .apply(
+    //             Term::subtract_integer()
+    //                 .apply(Term::integer((5_000_000_000_i128).into()))
+    //                 .apply(Term::integer((5).into())),
+    //         )
+    //         .apply(Term::integer((4_999_999_995_i128).into()));
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_less_big_int.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_less_big_int.o",
+    //             "test_less_big_int.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_less_big_int.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_less_big_int.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_less_big_int.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         a => unreachable!("HOW? {:#?}", a),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::BOOL);
+
+    //     let boolean = section_data[offset_index + 2];
+
+    //     assert_eq!(boolean, 0)
+    // }
+
+    // #[test]
+    // fn test_less_equals_numbers() {
+    //     let thing = Cek::default();
+
+    //     // (apply (lambda x (force x)) (delay (error)))
+    //     let term: Term<Name> = Term::less_than_equals_integer()
+    //         .apply(
+    //             Term::subtract_integer()
+    //                 .apply(Term::integer((5_000_000_000_i128).into()))
+    //                 .apply(Term::integer((5).into())),
+    //         )
+    //         .apply(Term::integer((4_999_999_995_i128).into()));
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_less_equals_big_int.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_less_equals_big_int.o",
+    //             "test_less_equals_big_int.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_less_equals_big_int.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_less_equals_big_int.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_less_equals_big_int.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         a => unreachable!("HOW? {:#?}", a),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::BOOL);
+
+    //     let boolean = section_data[offset_index + 2];
+
+    //     assert_eq!(boolean, 1)
+    // }
+
+    // #[test]
+    // fn test_append_bytestring() {
+    //     let thing = Cek::default();
+
+    //     let term: Term<Name> = Term::append_bytearray()
+    //         .apply(Term::byte_string(vec![255, 255]))
+    //         .apply(Term::byte_string(vec![254, 245]));
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_append_bytes.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_append_bytes.o",
+    //             "test_append_bytes.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_append_bytes.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_append_bytes.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_append_bytes.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         a => unreachable!("HOW? {:#?}", a),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::BYTESTRING);
+
+    //     let byte_length = *section_data[(offset_index + 2)..(offset_index + 6)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(byte_length, 4);
+
+    //     let value = section_data[(offset_index + 6)..(offset_index + 22)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>();
+
+    //     assert_eq!(value, vec![255, 255, 254, 245])
+    // }
+
+    // #[test]
+    // fn test_con_bytestring() {
+    //     let thing = Cek::default();
+
+    //     let term: Term<Name> = Term::cons_bytearray()
+    //         .apply(Term::integer(20.into()))
+    //         .apply(Term::byte_string(vec![254, 245]));
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_cons_bytes.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_cons_bytes.o",
+    //             "test_cons_bytes.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_cons_bytes.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_cons_bytes.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_cons_bytes.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         a => unreachable!("HOW? {:#?}", a),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::BYTESTRING);
+
+    //     let byte_length = *section_data[(offset_index + 2)..(offset_index + 6)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(byte_length, 3);
+
+    //     let value = section_data[(offset_index + 6)..(offset_index + 18)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>();
+
+    //     assert_eq!(value, vec![20, 254, 245])
+    // }
+
+    // #[test]
+    // fn test_slice_bytestring() {
+    //     let thing = Cek::default();
+
+    //     let term: Term<Name> = Term::slice_bytearray()
+    //         .apply(Term::integer(1.into()))
+    //         .apply(Term::integer(2.into()))
+    //         .apply(Term::byte_string(vec![251, 251, 254, 254]));
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_slice_bytes.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_slice_bytes.o",
+    //             "test_slice_bytes.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_slice_bytes.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_slice_bytes.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_slice_bytes.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         a => unreachable!("HOW? {:#?}", a),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::BYTESTRING);
+
+    //     let byte_length = *section_data[(offset_index + 2)..(offset_index + 6)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(byte_length, 2);
+
+    //     let value = section_data[(offset_index + 6)..(offset_index + 14)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>();
+
+    //     assert_eq!(value, vec![251, 254])
+    // }
+
+    // #[test]
+    // fn test_bytestring_length() {
+    //     let thing = Cek::default();
+
+    //     let term: Term<Name> =
+    //         Term::length_of_bytearray().apply(Term::byte_string(vec![251, 251, 254, 254]));
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_len_bytes.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_len_bytes.o",
+    //             "test_len_bytes.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_len_bytes.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_len_bytes.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_len_bytes.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         a => unreachable!("HOW? {:#?}", a),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::INTEGER);
+
+    //     let sign = section_data[offset_index + 2];
+
+    //     assert_eq!(sign, 0);
+
+    //     let integer_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(integer_length, 1);
+
+    //     let value = *section_data[(offset_index + 7)..(offset_index + 11)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(value, 4);
+    // }
+
+    // #[test]
+    // fn test_index_bytestring() {
+    //     let thing = Cek::default();
+
+    //     let term: Term<Name> = Term::index_bytearray()
+    //         .apply(Term::byte_string(vec![251, 251, 254, 254]))
+    //         .apply(Term::integer(2.into()));
+
+    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+
+    //     let program: Program<DeBruijn> = Program {
+    //         version: (1, 1, 0),
+    //         term: term_debruijn,
+    //     };
+
+    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+
+    //     let gene = thing.cek_assembly(riscv_program);
+
+    //     gene.save_to_file("test_index_bytes.s").unwrap();
+
+    //     Command::new("riscv64-elf-as")
+    //         .args([
+    //             "-march=rv32i",
+    //             "-mabi=ilp32",
+    //             "-o",
+    //             "test_index_bytes.o",
+    //             "test_index_bytes.s",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     Command::new("riscv64-elf-ld")
+    //         .args([
+    //             "-m",
+    //             "elf32lriscv",
+    //             "-o",
+    //             "test_index_bytes.elf",
+    //             "-T",
+    //             "../../linker/link.ld",
+    //             "test_index_bytes.o",
+    //         ])
+    //         .status()
+    //         .unwrap();
+
+    //     let v = verify_file("test_index_bytes.elf").unwrap();
+
+    //     // let mut file = File::create("bbbb.txt").unwrap();
+    //     // write!(
+    //     //     &mut file,
+    //     //     "{}",
+    //     //     v.1.iter()
+    //     //         .map(|(item, _)| {
+    //     //             format!(
+    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+    //     //                 item.step_number,
+    //     //                 riscv_decode::decode(item.read_pc.opcode),
+    //     //                 item.read_pc.opcode,
+    //     //                 item,
+    //     //             )
+    //     //         })
+    //     //         .collect::<Vec<String>>()
+    //     //         .join("\n")
+    //     // )
+    //     // .unwrap();
+    //     // file.flush().unwrap();
+
+    //     let result_pointer = match v.0 {
+    //         ExecutionResult::Halt(result, _step) => result,
+    //         a => unreachable!("HOW? {:#?}", a),
+    //     };
+
+    //     assert_ne!(result_pointer, u32::MAX);
+
+    //     let section = v.2.find_section(result_pointer).unwrap();
+
+    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+
+    //     let offset_index = (result_pointer - section.start) as usize;
+
+    //     let type_length = section_data[offset_index];
+
+    //     assert_eq!(type_length, 1);
+
+    //     let constant_type = section_data[offset_index + 1];
+
+    //     assert_eq!(constant_type, const_tag::INTEGER);
+
+    //     let sign = section_data[offset_index + 2];
+
+    //     assert_eq!(sign, 0);
+
+    //     let integer_length = *section_data[(offset_index + 3)..(offset_index + 7)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(integer_length, 1);
+
+    //     let value = *section_data[(offset_index + 7)..(offset_index + 11)]
+    //         .chunks_exact(4)
+    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+    //         .collect::<Vec<u32>>()
+    //         .first()
+    //         .unwrap();
+
+    //     assert_eq!(value, 254);
+    // }
+
+    // #[test]
+    // fn blocks() {
+    //     let mut thing = Cek::default();
+
+    //     argument!(yes = thing.first_arg);
+
+    //     create_block!(thing, {
+    //         var!(no = thing.second_arg);
+    //         constnt!(sure = thing.third_arg);
+
+    //         thing
+    //             .generator
+    //             .add_instruction(Instruction::li(&mut no, 42));
+
+    //         thing
+    //             .generator
+    //             .add_instruction(Instruction::li(&mut sure, 421));
+
+    //         thing
+    //             .generator
+    //             .add_instruction(Instruction::mv(&mut no, &yes));
+    //     });
+    //     println!("THING {:#?}", thing.generator);
+    // }
 }
