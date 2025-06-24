@@ -64,7 +64,7 @@ const Builtin = struct {
 };
 
 const Value = union(enum(u32)) {
-    constant: *Constant,
+    constant: *const Constant,
     delay: struct {
         env: ?*Env,
         body: *const Term,
@@ -224,6 +224,462 @@ pub const State = union(enum(u32)) {
     done: *const Value,
 };
 
+pub const builtinFunctions = [_]*const fn (*Machine, *LinkedValues) *const Value{
+    &addInteger,
+    &subInteger,
+    &multiplyInteger,
+    &divideInteger,
+    &quotientInteger,
+    &remainderInteger,
+    &modInteger,
+    &equalsInteger,
+    &lessThanInteger,
+    &lessThanEqualsInteger,
+    &appendByteString,
+    &consByteString,
+    &sliceByteString,
+    &lengthOfByteString,
+    &indexByteString,
+    &equalsByteString,
+    &lessThanByteString,
+    &lessThanEqualsByteString,
+    &sha2_256,
+    &sha3_256,
+    &blake2b_256,
+    &verifyEd25519Signature,
+    &appendString,
+    &equalsString,
+    &encodeUtf8,
+    &decodeUtf8,
+    &ifThenElse,
+    &chooseUnit,
+    &trace,
+    &fstPair,
+    &sndPair,
+    &chooseList,
+    &mkCons,
+    &headList,
+    &tailList,
+    &nullList,
+    &chooseData,
+    &constrData,
+    &mapData,
+    &listData,
+    &iData,
+    &bData,
+    &unConstrData,
+    &unMapData,
+    &unListData,
+    &unIData,
+    &unBData,
+    &equalsData,
+    &mkPairData,
+    &mkNilData,
+    &mkNilPairData,
+    &serialiseData,
+    &verifyEcdsaSecp256k1Signature,
+    &verifySchnorrSecp256k1Signature,
+    &bls12_381_G1_Add,
+    &bls12_381_G1_Neg,
+    &bls12_381_G1_ScalarMul,
+    &bls12_381_G1_Equal,
+    &bls12_381_G1_Compress,
+    &bls12_381_G1_Uncompress,
+    &bls12_381_G1_HashToGroup,
+    &bls12_381_G2_Add,
+    &bls12_381_G2_Neg,
+    &bls12_381_G2_ScalarMul,
+    &bls12_381_G2_Equal,
+    &bls12_381_G2_Compress,
+    &bls12_381_G2_Uncompress,
+    &bls12_381_G2_HashToGroup,
+    &bls12_381_MillerLoop,
+    &bls12_381_MulMlResult,
+    &bls12_381_FinalVerify,
+    &keccak_256,
+    &blake2b_224,
+    &integerToByteString,
+    &byteStringToInteger,
+    &andByteString,
+    &orByteString,
+    &xorByteString,
+    &complementByteString,
+    &readBit,
+    &writeBits,
+    &replicateByte,
+    &shiftByteString,
+    &rotateByteString,
+    &countSetBits,
+    &findFirstSetBit,
+    &ripemd_160,
+};
+
+pub fn addInteger(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn subInteger(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn multiplyInteger(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn divideInteger(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn quotientInteger(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn remainderInteger(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn modInteger(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn equalsInteger(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn lessThanInteger(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn lessThanEqualsInteger(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// ByteString functions
+pub fn appendByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn consByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn sliceByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn lengthOfByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn indexByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn equalsByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn lessThanByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn lessThanEqualsByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// Cryptography and hash functions
+pub fn sha2_256(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn sha3_256(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn blake2b_256(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn verifyEd25519Signature(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// String functions
+pub fn appendString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn equalsString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn encodeUtf8(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn decodeUtf8(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// Bool function
+pub fn ifThenElse(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// Unit function
+pub fn chooseUnit(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// Tracing function
+pub fn trace(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// Pairs functions
+pub fn fstPair(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn sndPair(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// List functions
+pub fn chooseList(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn mkCons(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn headList(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn tailList(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn nullList(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// Data functions
+pub fn chooseData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn constrData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn mapData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn listData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn iData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn unConstrData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn unMapData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn unListData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn unIData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn unBData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn equalsData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// Misc constructors
+pub fn mkPairData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn mkNilData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn mkNilPairData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn serialiseData(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn verifyEcdsaSecp256k1Signature(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn verifySchnorrSecp256k1Signature(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// BLS Builtins
+pub fn bls12_381_G1_Add(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G1_Neg(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G1_ScalarMul(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G1_Equal(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G1_Compress(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G1_Uncompress(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G1_HashToGroup(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G2_Add(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G2_Neg(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G2_ScalarMul(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G2_Equal(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G2_Compress(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G2_Uncompress(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_G2_HashToGroup(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_MillerLoop(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_MulMlResult(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn bls12_381_FinalVerify(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn keccak_256(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn blake2b_224(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// Conversions
+pub fn integerToByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn byteStringToInteger(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// Logical
+pub fn andByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn orByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn xorByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn complementByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn readBit(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn writeBits(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn replicateByte(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// Bitwise
+pub fn shiftByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn rotateByteString(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn countSetBits(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn findFirstSetBit(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+// Ripemd_160
+pub fn ripemd_160(_: *Machine, _: *LinkedValues) *const Value {
+    @panic("TODO");
+}
+
+pub fn addSignedIntegers() void {}
+pub fn subSignedIntegers() void {}
+
 pub const Machine = struct {
     heap: *Heap,
     frames: *Frames,
@@ -237,7 +693,7 @@ pub const Machine = struct {
         };
     }
 
-    pub fn run(self: *Self, t: *const Term) void {
+    pub fn runValidator(self: *Self, t: *const Term) void {
         self.frames.addFrame(&.no_frame);
 
         var state = State{
@@ -261,6 +717,31 @@ pub const Machine = struct {
                     } else {
                         @panic("Returned term other than unit");
                     }
+                },
+            }
+        }
+    }
+
+    pub fn runFunction(self: *Self, t: *const Term) *const Value {
+        self.frames.addFrame(&.no_frame);
+
+        var state = State{
+            .compute = .{
+                .env = null,
+                .term = t,
+            },
+        };
+
+        while (true) {
+            switch (state) {
+                .compute => |c| {
+                    state = self.compute(c.env, c.term);
+                },
+                .ret => |r| {
+                    state = self.ret(r.value);
+                },
+                .done => |d| {
+                    return d;
                 },
             }
         }
@@ -573,109 +1054,100 @@ pub const Machine = struct {
         }
     }
 
-    fn callBuiltin(_: *Self, _: DefaultFunction, _: ?*LinkedValues) *const Value {
-        @panic("TODO");
-    }
-
-    // fn unwrapInt(_: *Self, v: *Value) i128 {
-    //     if (v.* != .constant) @panic("expected integer constant");
-    //     return v.constant.*.integer;
-    // }
-    // fn wrapInt(self: *Self, i: i128) *Value {
-    //     const c = self.heap.allocType(Constant);
-    //     c.* = Constant{ .integer = i };
-    //     return self.makeConst(c);
-    // }
-
-    test "lambda compute" {
-        var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
-        defer allocator.deinit();
-
-        var heap = try Heap.createTestHeap(&allocator);
-        var frames = try Frames.createTestFrames(&allocator);
-        var machine = Machine{
-            .heap = &heap,
-            .frames = &frames,
-        };
-
-        const v = Term.tvar;
-
-        const expected = createLambda(&heap, null, &v);
-
-        const memory: []const u32 = &.{ 2, 0, 1 };
-        const ptr: *const Term = @ptrCast(memory);
-
-        machine.frames.addFrame(&.no_frame);
-
-        const state = machine.compute(null, ptr);
-
-        switch (state) {
-            .ret => |r| {
-                const frame = machine.frames.popFrame();
-                try testing.expectEqualDeep(frame, .no_frame);
-                try testing.expectEqualDeep(r.value, expected);
-            },
-            else => {
-                @panic("HOW");
-            },
-        }
-    }
-
-    test "apply compute and ret" {
-        var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
-        defer allocator.deinit();
-
-        var heap = try Heap.createTestHeap(&allocator);
-        var frames = try Frames.createTestFrames(&allocator);
-        var machine = Machine{
-            .heap = &heap,
-            .frames = &frames,
-        };
-
-        const v = Term.tvar;
-
-        const expected = createLambda(&heap, null, &v);
-
-        const argument: []const u32 = &.{ 1, 0, 2 };
-        const argPointer: *const u32 = @ptrCast(argument);
-        const thing: u32 = @truncate(@intFromPtr(argPointer));
-        const function: []const u32 = &.{ 3, thing, 2, 0, 1 };
-        const ptr: *const Term = @ptrCast(function);
-
-        machine.frames.addFrame(&.no_frame);
-
-        const state = machine.compute(null, ptr);
-
-        const next = switch (state) {
-            .compute => |c| machine.compute(c.env, c.term),
-            else => @panic("HOW1"),
-        };
-
-        const finally = switch (next) {
-            .ret => |r| machine.ret(r.value),
-            else => @panic("HOW2"),
-        };
-
-        switch (finally) {
-            .compute => |c| {
-                const frame = machine.frames.popFrame();
-                try testing.expectEqualDeep(
-                    frame,
-                    Frame{
-                        .frame_await_arg = .{
-                            .function = expected,
-                        },
-                    },
-                );
-                const noFrame = machine.frames.popFrame();
-
-                try testing.expectEqualDeep(noFrame, .no_frame);
-                try testing.expectEqualDeep(c.term.*, Term.delay);
-            },
-            else => @panic("HOW3"),
-        }
+    fn callBuiltin(self: *Self, df: DefaultFunction, args: *LinkedValues) *const Value {
+        const index = @intFromEnum(df);
+        return builtinFunctions[index](self, args);
     }
 };
+
+test "lambda compute" {
+    var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer allocator.deinit();
+
+    var heap = try Heap.createTestHeap(&allocator);
+    var frames = try Frames.createTestFrames(&allocator);
+    var machine = Machine{
+        .heap = &heap,
+        .frames = &frames,
+    };
+
+    const v = Term.tvar;
+
+    const expected = createLambda(&heap, null, &v);
+
+    const memory: []const u32 = &.{ 2, 0, 1 };
+    const ptr: *const Term = @ptrCast(memory);
+
+    machine.frames.addFrame(&.no_frame);
+
+    const state = machine.compute(null, ptr);
+
+    switch (state) {
+        .ret => |r| {
+            const frame = machine.frames.popFrame();
+            try testing.expectEqualDeep(frame, .no_frame);
+            try testing.expectEqualDeep(r.value, expected);
+        },
+        else => {
+            @panic("HOW");
+        },
+    }
+}
+
+test "apply compute and ret" {
+    var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer allocator.deinit();
+
+    var heap = try Heap.createTestHeap(&allocator);
+    var frames = try Frames.createTestFrames(&allocator);
+    var machine = Machine{
+        .heap = &heap,
+        .frames = &frames,
+    };
+
+    const v = Term.tvar;
+
+    const expected = createLambda(&heap, null, &v);
+
+    const argument: []const u32 = &.{ 1, 0, 2 };
+    const argPointer: *const u32 = @ptrCast(argument);
+    const thing: u32 = @truncate(@intFromPtr(argPointer));
+    const function: []const u32 = &.{ 3, thing, 2, 0, 1 };
+    const ptr: *const Term = @ptrCast(function);
+
+    machine.frames.addFrame(&.no_frame);
+
+    const state = machine.compute(null, ptr);
+
+    const next = switch (state) {
+        .compute => |c| machine.compute(c.env, c.term),
+        else => @panic("HOW1"),
+    };
+
+    const finally = switch (next) {
+        .ret => |r| machine.ret(r.value),
+        else => @panic("HOW2"),
+    };
+
+    switch (finally) {
+        .compute => |c| {
+            const frame = machine.frames.popFrame();
+            try testing.expectEqualDeep(
+                frame,
+                Frame{
+                    .frame_await_arg = .{
+                        .function = expected,
+                    },
+                },
+            );
+            const noFrame = machine.frames.popFrame();
+
+            try testing.expectEqualDeep(noFrame, .no_frame);
+            try testing.expectEqualDeep(c.term.*, Term.delay);
+        },
+        else => @panic("HOW3"),
+    }
+}
 
 test "constr compute" {
     var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -936,7 +1408,7 @@ test "constant compute" {
 
     machine.frames.addFrame(&.no_frame);
 
-    machine.run(ptr);
+    machine.runValidator(ptr);
 }
 
 test "constant compute big int" {

@@ -117,7 +117,7 @@ pub const BigInt = extern struct {
 
 pub const Bytes = extern struct {
     length: u32,
-    words: [*]const u32,
+    bytes: [*]const u32,
 };
 
 pub const Constant = enum(u32) {
@@ -149,7 +149,13 @@ pub const Constant = enum(u32) {
 
         return Bytes{
             .length = length.*,
-            .words = bytes,
+            .bytes = bytes,
         };
+    }
+
+    pub fn bln(self: *const Self) bool {
+        const b: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+
+        return b.* == 1;
     }
 };
