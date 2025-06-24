@@ -1,8 +1,5 @@
 const std = @import("std");
 
-// Although this function looks imperative, note that its job is to
-// declaratively construct a build graph that will be executed by an external
-// runner.
 pub fn build(b: *std.Build) !void {
     const riscv_build_target_query = try std.Build.parseTargetQuery(.{
         .arch_os_abi = "riscv32-freestanding",
@@ -12,16 +9,13 @@ pub fn build(b: *std.Build) !void {
     // Force RISC-V 32-bit freestanding target for builds
     const riscv_build_target = b.resolveTargetQuery(riscv_build_target_query);
 
-    // Standard optimization options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
-    // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
     const obj = b.addObject(.{
         .name = "runtime",
         .root_source_file = b.path("src/root.zig"),
         .target = riscv_build_target,
-        .optimize = optimize,
+        .optimize = .ReleaseFast,
     });
 
     const loc = obj.getEmittedBin();
@@ -47,9 +41,6 @@ pub fn build(b: *std.Build) !void {
     const qemu_run = b.addSystemCommand(&.{"qemu-riscv32"});
     qemu_run.addArtifactArg(lib_unit_tests);
 
-    // Similar to creating the run step earlier, this exposes a `test` step to
-    // the `zig build --help` menu, providing a way for the user to request
-    // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&qemu_run.step);
     qemu_run.step.dependOn(&lib_unit_tests.step);

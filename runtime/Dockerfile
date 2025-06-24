@@ -14,4 +14,4 @@ RUN curl -L https://ziglang.org/builds/zig-x86_64-linux-0.15.0-dev.832+1ca213dab
 ENV PATH="/opt/zig-x86_64-linux-0.15.0-dev.832+1ca213dab:$PATH"
 
 WORKDIR /work
-CMD ["zig", "build", "test"]
+CMD ["zig", "build", "test", "--summary", "all"]
