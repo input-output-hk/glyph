@@ -5631,26 +5631,6 @@ mod tests {
 
         let v = verify_file("test_apply.elf").unwrap();
 
-        // let mut file = File::create("bbbb.txt").unwrap();
-        // write!(
-        //     &mut file,
-        //     "{}",
-        //     v.1.iter()
-        //         .map(|(item, _)| {
-        //             format!(
-        //                 "Step number: {}, Opcode: {:#x?}, hex: {:#x}\nFull: {:#x?}",
-        //                 item.step_number,
-        //                 riscv_decode::decode(item.read_pc.opcode),
-        //                 item.read_pc.opcode,
-        //                 item,
-        //             )
-        //         })
-        //         .collect::<Vec<String>>()
-        //         .join("\n")
-        // )
-        // .unwrap();
-        // file.flush().unwrap();
-
         let result_pointer = match v.0 {
             ExecutionResult::Halt(result, _step) => result,
             d => unreachable!("HOW? {:#?}", d),

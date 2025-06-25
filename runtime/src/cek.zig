@@ -6,6 +6,7 @@ const Term = expr.Term;
 const TermList = expr.TermList;
 const Constant = expr.Constant;
 const DefaultFunction = expr.DefaultFunction;
+const BigInt = expr.BigInt;
 
 const Frame = union(enum(u32)) {
     no_frame,
@@ -320,8 +321,16 @@ pub const builtinFunctions = [_]*const fn (*Machine, *LinkedValues) *const Value
     &ripemd_160,
 };
 
-pub fn addInteger(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn addInteger(m: *Machine, args: *LinkedValues) *const Value {
+    const y = unwrapInteger(args.value);
+
+    const x = unwrapInteger(args.next.?.value);
+
+    if (x.sign == y.sign) {
+        return addSignedIntegers(m, x, y);
+    } else {
+        return subSignedIntegers(m, x, y);
+    }
 }
 
 pub fn subInteger(_: *Machine, _: *LinkedValues) *const Value {
@@ -683,8 +692,26 @@ pub fn ripemd_160(_: *Machine, _: *LinkedValues) *const Value {
     @panic("TODO");
 }
 
-pub fn addSignedIntegers() void {}
-pub fn subSignedIntegers() void {}
+pub fn addSignedIntegers(_: *Machine, _: BigInt, _: BigInt) *const Value {
+    @panic("TODO");
+}
+pub fn subSignedIntegers(_: *Machine, _: BigInt, _: BigInt) *const Value {
+    @panic("TODO");
+}
+
+pub fn unwrapInteger(v: *const Value) BigInt {
+    switch (v.*) {
+        .constant => |c| {
+            switch (c.*) {
+                .integer => {
+                    return c.bigInt();
+                },
+                else => @panic("MESSAGE"),
+            }
+        },
+        else => @panic("MESSAGE"),
+    }
+}
 
 pub const Machine = struct {
     heap: *Heap,

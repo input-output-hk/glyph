@@ -32,17 +32,28 @@ pub fn create(heap: *Self, comptime T: type, v: *const T) *T {
     return value;
 }
 
-pub fn createArray(heap: *Self, comptime T: type, v: [*]T, len: u32) [*]T {
+// Create an unintialized array of len (not-zeroed out)
+pub fn createArray(heap: *Self, comptime T: type, len: u32) [*]T {
     if (@alignOf(T) < 4) {
         // How to print type?
         @compileError("Type {} is not aligned to 4 bytes");
     }
 
     const ptr_bytes: [*]align(4) u8 = @alignCast(heap.heap_ptr);
-    @memcpy(ptr_bytes, std.mem.asBytes(v));
 
     const value: [*]T = @ptrCast(ptr_bytes);
 
     heap.heap_ptr = @ptrFromInt(@intFromPtr(heap.heap_ptr) + @sizeOf(T) * len);
     return value;
+}
+
+// Use only in very specific situations
+// This can easily cause memory corruption
+pub fn reclaimHeap(heap: *Self, comptime T: type, amount: u32) void {
+    if (@alignOf(T) < 4) {
+        // How to print type?
+        @compileError("Type {} is not aligned to 4 bytes");
+    }
+
+    heap.heap_ptr = @ptrFromInt(@intFromPtr(heap.heap_ptr) - @sizeOf(T) * amount);
 }
