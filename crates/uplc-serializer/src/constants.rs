@@ -1,49 +1,49 @@
 /// Term type tags (1 byte)
 pub mod term_tag {
-    pub const VARIABLE: u8 = 0x00;
-    pub const DELAY: u8 = 0x01;
-    pub const LAMBDA: u8 = 0x02;
-    pub const APPLY: u8 = 0x03;
-    pub const CONSTANT: u8 = 0x04;
-    pub const FORCE: u8 = 0x05;
-    pub const ERROR: u8 = 0x06;
-    pub const BUILTIN: u8 = 0x07;
-    pub const CONSTRUCTOR: u8 = 0x08;
-    pub const CASE: u8 = 0x09;
+    pub const VARIABLE: u32 = 0x00;
+    pub const DELAY: u32 = 0x01;
+    pub const LAMBDA: u32 = 0x02;
+    pub const APPLY: u32 = 0x03;
+    pub const CONSTANT: u32 = 0x04;
+    pub const FORCE: u32 = 0x05;
+    pub const ERROR: u32 = 0x06;
+    pub const BUILTIN: u32 = 0x07;
+    pub const CONSTRUCTOR: u32 = 0x08;
+    pub const CASE: u32 = 0x09;
 }
 
 /// Constant type tags (1 byte)
 pub mod const_tag {
-    pub const INTEGER: u8 = 0x00;
-    pub const BYTESTRING: u8 = 0x01;
-    pub const STRING: u8 = 0x02;
-    pub const UNIT: u8 = 0x03;
-    pub const BOOL: u8 = 0x04;
-    pub const DATA: u8 = 0x05;
+    pub const INTEGER: u32 = 0x00;
+    pub const BYTESTRING: u32 = 0x01;
+    pub const STRING: u32 = 0x02;
+    pub const UNIT: u32 = 0x03;
+    pub const BOOL: u32 = 0x04;
+    pub const DATA: u32 = 0x05;
 }
 
 /// Data variant tags (1 byte)
 pub mod data_tag {
-    pub const CONSTR: u8 = 0x00;
-    pub const MAP: u8 = 0x01;
-    pub const LIST: u8 = 0x02;
-    pub const INTEGER: u8 = 0x03;
-    pub const BYTESTRING: u8 = 0x04;
+    pub const CONSTR: u32 = 0x00;
+    pub const MAP: u32 = 0x01;
+    pub const LIST: u32 = 0x02;
+    pub const INTEGER: u32 = 0x03;
+    pub const BYTESTRING: u32 = 0x04;
 }
 
 /// Integer size indicators
 pub mod int_size {
-    pub const SMALL: u8 = 0x01; // 1 byte (-128 to 127)
-    pub const MEDIUM: u8 = 0x02; // 2 bytes (-32768 to 32767)
-    pub const LARGE: u8 = 0x04; // 4 bytes (-2^31 to 2^31-1)
-    pub const XLARGE: u8 = 0x08; // 8 bytes (64-bit integers)
-    pub const BIGINT: u8 = 0xFF; // Variable length BigInt
+    pub const SMALL: u32 = 0x01; // 1 byte (-128 to 127)
+    pub const MEDIUM: u32 = 0x02; // 2 bytes (-32768 to 32767)
+    pub const LARGE: u32 = 0x04; // 4 bytes (-2^31 to 2^31-1)
+    pub const XLARGE: u32 = 0x08; // 8 bytes (64-bit integers)
+    pub const BIGINT: u32 = 0xFF; // Variable length BigInt
 }
 
 /// Boolean values
 pub mod bool_val {
-    pub const FALSE: u8 = 0x00;
-    pub const TRUE: u8 = 0x01;
+    pub const FALSE: u32 = 0x00;
+    pub const TRUE: u32 = 0x01;
 }
 
 /// Memory regions (base addresses)

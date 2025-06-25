@@ -55,7 +55,7 @@ fn serialize_term(preceeding_byte_size: u32, term: &Term<DeBruijn>) -> Result<Ve
 fn serialize_var(index: usize) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte
-    x.write_u8(term_tag::VARIABLE)?;
+    x.write_u32::<LittleEndian>(term_tag::VARIABLE)?;
 
     // DeBruijn index (4 bytes, little-endian)
     x.write_u32::<LittleEndian>(index as u32)?;
@@ -67,7 +67,7 @@ fn serialize_var(index: usize) -> Result<Vec<u8>> {
 fn serialize_lambda(preceeding_byte_size: u32, body: &Rc<Term<DeBruijn>>) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte
-    x.write_u8(term_tag::LAMBDA)?;
+    x.write_u32::<LittleEndian>(term_tag::LAMBDA)?;
 
     // Serialize the body (recursively)
     let body_ser = serialize_term(preceeding_byte_size + 1, body)?;
@@ -86,7 +86,7 @@ fn serialize_apply(
 ) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte
-    x.write_u8(term_tag::APPLY)?;
+    x.write_u32::<LittleEndian>(term_tag::APPLY)?;
 
     // Serialize the function and argument (recursively)
     let function_pointer = preceeding_byte_size + 5;
@@ -108,7 +108,7 @@ fn serialize_apply(
 fn serialize_force(preceeding_byte_size: u32, term: &Rc<Term<DeBruijn>>) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte
-    x.write_u8(term_tag::FORCE)?;
+    x.write_u32::<LittleEndian>(term_tag::FORCE)?;
 
     // Serialize the term being forced (recursively)
     // preceeding_byte_size + 1 for the force tag
@@ -124,7 +124,7 @@ fn serialize_force(preceeding_byte_size: u32, term: &Rc<Term<DeBruijn>>) -> Resu
 fn serialize_delay(preceeding_byte_size: u32, term: &Rc<Term<DeBruijn>>) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte
-    x.write_u8(term_tag::DELAY)?;
+    x.write_u32::<LittleEndian>(term_tag::DELAY)?;
 
     // Serialize the term being delayed (recursively)
     // preceeding_byte_size + 1 for the delay tag
@@ -140,7 +140,7 @@ fn serialize_delay(preceeding_byte_size: u32, term: &Rc<Term<DeBruijn>>) -> Resu
 fn serialize_constant(constant: &Rc<Constant>) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte for constant
-    x.write_u8(term_tag::CONSTANT)?;
+    x.write_u32::<LittleEndian>(term_tag::CONSTANT)?;
 
     // Determine the type length and store it
     // (This is a placeholder - you may need to calculate the actual type length)
@@ -173,7 +173,7 @@ fn serialize_constant(constant: &Rc<Constant>) -> Result<Vec<u8>> {
 fn serialize_integer_constant(int: &num_bigint::BigInt) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Write constant type tag
-    x.write_u8(const_tag::INTEGER)?;
+    x.write_u32::<LittleEndian>(const_tag::INTEGER)?;
 
     // BigInt (variable size)
     let (sign, bytes) = int.to_u32_digits();
@@ -185,7 +185,7 @@ fn serialize_integer_constant(int: &num_bigint::BigInt) -> Result<Vec<u8>> {
         0
     };
 
-    x.write_u8(sign_byte)?;
+    x.write_u32::<LittleEndian>(sign_byte)?;
 
     x.write_u32::<LittleEndian>(bytes.len().try_into().unwrap())?;
 
@@ -212,7 +212,7 @@ fn serialize_bytestring_constant(bytes: &[u8]) -> Result<Vec<u8>> {
     }
 
     // Write constant type tag
-    x.write_u8(const_tag::BYTESTRING)?;
+    x.write_u32::<LittleEndian>(const_tag::BYTESTRING)?;
 
     // Write actual length in bytes
     x.write_u32::<LittleEndian>(bytes.len() as u32)?;
@@ -232,7 +232,7 @@ fn serialize_bytestring_constant(bytes: &[u8]) -> Result<Vec<u8>> {
 fn serialize_unit_constant() -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Write constant type tag
-    x.write_u8(const_tag::UNIT)?;
+    x.write_u32::<LittleEndian>(const_tag::UNIT)?;
 
     // No additional data for unit
     Ok(x)
@@ -242,10 +242,10 @@ fn serialize_unit_constant() -> Result<Vec<u8>> {
 fn serialize_bool_constant(value: bool) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Write constant type tag
-    x.write_u8(const_tag::BOOL)?;
+    x.write_u32::<LittleEndian>(const_tag::BOOL)?;
 
     // Write boolean value (0x00 for false, 0x01 for true)
-    x.write_u8(if value {
+    x.write_u32::<LittleEndian>(if value {
         bool_val::TRUE
     } else {
         bool_val::FALSE
@@ -258,7 +258,7 @@ fn serialize_bool_constant(value: bool) -> Result<Vec<u8>> {
 fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Constant type tag
-    x.write_u8(const_tag::DATA)?;
+    x.write_u32::<LittleEndian>(const_tag::DATA)?;
 
     // For this implementation, we'll treat all Data as "black-box" with a simple representation
     // A full implementation would serialize the structure recursively
@@ -270,7 +270,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
     match data {
         PlutusData::Constr(constr_data) => {
             // Write the tag
-            data_buffer.write_u8(data_tag::CONSTR)?;
+            data_buffer.write_u32::<LittleEndian>(data_tag::CONSTR)?;
 
             // Serialize constructor tag - in PlutusData, the tag is a usize
             data_buffer.write_u32::<LittleEndian>(constr_data.tag as u32)?;
@@ -281,7 +281,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
         },
         PlutusData::Map(map_data) => {
             // Write the map tag
-            data_buffer.write_u8(data_tag::MAP)?;
+            data_buffer.write_u32::<LittleEndian>(data_tag::MAP)?;
 
             // Write map size
             data_buffer.write_u32::<LittleEndian>(map_data.len() as u32)?;
@@ -291,7 +291,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
         },
         PlutusData::Array(array_data) => {
             // Write the list tag
-            data_buffer.write_u8(data_tag::LIST)?;
+            data_buffer.write_u32::<LittleEndian>(data_tag::LIST)?;
 
             // Write list size
             data_buffer.write_u32::<LittleEndian>(array_data.len() as u32)?;
@@ -301,7 +301,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
         },
         PlutusData::BigInt(int_data) => {
             // Write the integer tag
-            data_buffer.write_u8(data_tag::INTEGER)?;
+            data_buffer.write_u32::<LittleEndian>(data_tag::INTEGER)?;
 
             match int_data {
                 BigInt::Int(int_val) => {
@@ -353,7 +353,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
         },
         PlutusData::BoundedBytes(bytes) => {
             // Write the bytestring tag
-            data_buffer.write_u8(data_tag::BYTESTRING)?;
+            data_buffer.write_u32::<LittleEndian>(data_tag::BYTESTRING)?;
 
             // Write length and bytes
             data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
@@ -384,10 +384,10 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
 fn serialize_builtin(builtin: DefaultFunction) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte
-    x.write_u8(term_tag::BUILTIN)?;
+    x.write_u32::<LittleEndian>(term_tag::BUILTIN)?;
 
     // Builtin function identifier
-    x.write_u8(builtin as u8)?;
+    x.write_u32::<LittleEndian>(builtin as u32)?;
 
     Ok(x)
 }
@@ -396,7 +396,7 @@ fn serialize_builtin(builtin: DefaultFunction) -> Result<Vec<u8>> {
 fn serialize_error() -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte
-    x.write_u8(term_tag::ERROR)?;
+    x.write_u32::<LittleEndian>(term_tag::ERROR)?;
 
     // No additional data for error
 
@@ -411,21 +411,21 @@ fn serialize_constructor(
 ) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte
-    x.write_u8(term_tag::CONSTRUCTOR)?;
+    x.write_u32::<LittleEndian>(term_tag::CONSTRUCTOR)?;
 
-    // Constructor tag (16-bit)
-    x.write_u16::<LittleEndian>(tag as u16)?;
+    // Constructor tag (32-bit)
+    x.write_u32::<LittleEndian>(tag as u32)?;
 
     // Field count (32-bit)
     x.write_u32::<LittleEndian>(fields.len() as u32)?;
 
     // Calculate the base offset for the first field
     // Initial offset includes:
-    // - 1 byte for constructor tag
-    // - 2 bytes for constructor tag value
+    // - 4 byte for constructor term tag
+    // - 4 bytes for constructor tag value
     // - 4 bytes for field count
     // - 4 bytes per field for pointers
-    let mut current_offset = preceeding_byte_size + 1 + 2 + 4 + (fields.len() as u32 * 4);
+    let mut current_offset = preceeding_byte_size + 4 + 4 + 4 + (fields.len() as u32 * 4);
 
     // Serialize each field with its appropriate offset and collect results
     let mut field_bodies = Vec::with_capacity(fields.len());
@@ -459,15 +459,15 @@ fn serialize_case(
 ) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte
-    x.write_u8(term_tag::CASE)?;
+    x.write_u32::<LittleEndian>(term_tag::CASE)?;
 
     // Calculate base offset for the constructor expression
     // Initial offset includes:
-    // - 1 byte for the case tag
-    // - 4 bytes for the branch count
+    // - 4 bytes for case term tag
     // - 4 bytes for the constructor pointer
+    // - 4 bytes for the branch count
     // - 4 bytes per branch for branch pointers
-    let mut current_offset = preceeding_byte_size + 1 + 4 + 4 + (branches.len() as u32 * 4);
+    let mut current_offset = preceeding_byte_size + 4 + 4 + 4 + (branches.len() as u32 * 4);
 
     // Serialize the constructor expression
     let constr_pointer = current_offset;

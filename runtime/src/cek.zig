@@ -25,7 +25,7 @@ const Frame = union(enum(u32)) {
     },
 };
 
-const Frames = struct {
+pub const Frames = struct {
     frame_ptr: [*]u8,
 
     const Self = @This();
@@ -33,6 +33,12 @@ const Frames = struct {
     pub fn createTestFrames(arena: *std.heap.ArenaAllocator) !Frames {
         const frameMemory = try arena.allocator().alloc(Frame, 1000);
         const framePointer: [*]u8 = @ptrCast(frameMemory);
+
+        return Self{ .frame_ptr = framePointer };
+    }
+
+    pub fn createFrames(ptr: u32) Frames {
+        const framePointer: [*]u8 = @ptrFromInt(ptr);
 
         return Self{ .frame_ptr = framePointer };
     }
