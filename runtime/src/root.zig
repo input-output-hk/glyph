@@ -11,15 +11,15 @@ const allocType = cek.allocType;
 const Machine = cek.Machine;
 
 // Since this is the entry point, we need to handle the exit
-export fn _start() callconv(.C) noreturn {
-    init();
+// export fn _start() callconv(.C) noreturn {
+//     init();
 
-    asm volatile (
-        \\li a7, 93
-        \\ecall
-        ::: "a7");
-    unreachable;
-}
+//     asm volatile (
+//         \\li a7, 93
+//         \\ecall
+//         ::: "a7");
+//     unreachable;
+// }
 
 pub export fn init() void {
     const initial_term_addr: u32 = 0x90000000;
@@ -39,6 +39,12 @@ pub export fn init() void {
         : [val] "r" (result),
         : "a0"
     );
+    asm volatile (
+        \\li a7, 93
+        \\ecall
+        ::: "a7");
+
+    unreachable;
 }
 
 test "basic functionality" {

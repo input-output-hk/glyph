@@ -375,9 +375,13 @@ impl Cek {
 
     pub fn cek_assembly(mut self, bytes: Vec<u8>) -> CodeGenerator {
         // Generate the core CEK implementation
-        // self.generator
-        //     .add_instruction(Instruction::global("_start".to_string()));
-        // self.generator
+        self.generator
+            .add_instruction(Instruction::global("_start".to_string()));
+        self.generator
+            .add_instruction(Instruction::label("_start".to_string()));
+
+        self.generator
+            .add_instruction(Instruction::section("text".to_string()));
 
         self.generator
             .add_instruction(Instruction::section("data".to_string()));
@@ -5619,8 +5623,8 @@ mod tests {
                 "test_apply.elf",
                 "-T",
                 "../../linker/link.ld",
-                "../../runtime/zig-out/lib/runtime.o",
                 "test_apply.o",
+                "../../runtime/zig-out/lib/runtime.o",
             ])
             .status()
             .unwrap();

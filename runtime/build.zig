@@ -27,7 +27,7 @@ pub fn build(b: *std.Build) !void {
     // Force RISC-V 32-bit Linux target for tests
     const riscv_test_target_query = try std.Build.parseTargetQuery(.{
         .arch_os_abi = "riscv32-linux",
-        .cpu_features = "baseline+i+m-f-d-c-a-zicsr",
+        .cpu_features = "baseline+i+m-f-d-c",
     });
 
     const riscv_test_target = b.resolveTargetQuery(riscv_test_target_query);
