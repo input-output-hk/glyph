@@ -1,10 +1,10 @@
 use emulator::{
+    ExecutionResult,
     executor::{
-        fetcher::{execute_program, FullTrace},
+        fetcher::{FullTrace, execute_program},
         utils::FailConfiguration,
     },
-    loader::program::{load_elf, Program},
-    ExecutionResult,
+    loader::program::{Program, load_elf},
 };
 
 /// Verify a RISC-V ELF file by executing it in the BitVMX emulator

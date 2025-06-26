@@ -3,10 +3,10 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use byteorder::{LittleEndian, WriteBytesExt};
-use uplc::ast::{Constant, DeBruijn, Program, Term};
-use uplc::builtins::DefaultFunction;
 use uplc::BigInt;
 use uplc::PlutusData;
+use uplc::ast::{Constant, DeBruijn, Program, Term};
+use uplc::builtins::DefaultFunction;
 
 use crate::constants::{bool_val, const_tag, data_tag, term_tag};
 use crate::{Result, SerializationError};
@@ -159,7 +159,7 @@ fn serialize_constant(constant: &Rc<Constant>) -> Result<Vec<u8>> {
             return Err(SerializationError::InvalidTermType(format!(
                 "Unsupported constant type: {:?}",
                 constant
-            )))
+            )));
         },
     };
 
