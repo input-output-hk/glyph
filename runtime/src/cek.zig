@@ -333,8 +333,17 @@ pub fn addInteger(m: *Machine, args: *LinkedValues) *const Value {
     }
 }
 
-pub fn subInteger(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn subInteger(m: *Machine, args: *LinkedValues) *const Value {
+    var y = unwrapInteger(args.value);
+    y.sign ^= 1;
+
+    const x = unwrapInteger(args.next.?.value);
+
+    if (x.sign == y.sign) {
+        return addSignedIntegers(m, x, y);
+    } else {
+        return subSignedIntegers(m, x, y);
+    }
 }
 
 pub fn multiplyInteger(_: *Machine, _: *LinkedValues) *const Value {
@@ -696,9 +705,9 @@ pub fn addSignedIntegers(m: *Machine, x: BigInt, y: BigInt) *const Value {
     // We overallocate and then claim later if necessary
     // integer 4 bytes, sign 4 bytes, length 4 bytes, list of words 4 * (max length + 1)
     const maxLength = @max(x.length, y.length);
-    const result_length = maxLength + 4;
+    const resultLength = maxLength + 4;
 
-    var result = m.heap.createArray(u32, result_length);
+    var result = m.heap.createArray(u32, resultLength);
 
     result[0] = @intFromEnum(Constant.integer);
     result[1] = x.sign;
@@ -708,20 +717,20 @@ pub fn addSignedIntegers(m: *Machine, x: BigInt, y: BigInt) *const Value {
     var resultWords = result + 3;
 
     while (i < maxLength) : (i += 1) {
-        var x_word: u32 = 0;
+        var xWord: u32 = 0;
         if (x.length > i) {
-            x_word = x.words[i];
+            xWord = x.words[i];
         }
 
-        var y_word: u32 = 0;
+        var yWord: u32 = 0;
         if (y.length > i) {
-            y_word = y.words[i];
+            yWord = y.words[i];
         }
 
-        const wordResult: u32 = x_word +% y_word;
+        const wordResult: u32 = xWord +% yWord;
         const carryResult: u32 = wordResult +% carry;
 
-        carry = @intFromBool((wordResult < x_word) or (carryResult < wordResult));
+        carry = @intFromBool((wordResult < xWord) or (carryResult < wordResult));
 
         resultWords[i] = carryResult;
     }
@@ -750,22 +759,22 @@ test "add same signed integers" {
         .frames = &frames,
     };
 
-    const x_words: [*]const u32 = &.{ 5, 6, 7 };
+    const xWords: [*]const u32 = &.{ 5, 6, 7 };
 
-    const y_words: [*]const u32 = &.{ 5, 99 };
+    const yWords: [*]const u32 = &.{ 5, 99 };
 
-    const result_words: [*]const u32 = &.{ 10, 105, 7 };
+    const resultWords: [*]const u32 = &.{ 10, 105, 7 };
 
     const x = BigInt{
         .length = 3,
         .sign = 0,
-        .words = x_words,
+        .words = xWords,
     };
 
     const y = BigInt{
         .length = 2,
         .sign = 0,
-        .words = y_words,
+        .words = yWords,
     };
 
     const newVal = addSignedIntegers(&machine, x, y);
@@ -777,9 +786,9 @@ test "add same signed integers" {
                     const result = c.bigInt();
                     try testing.expect(result.length == 3);
                     try testing.expect(result.sign == 0);
-                    try testing.expect(result.words[0] == result_words[0]);
-                    try testing.expect(result.words[1] == result_words[1]);
-                    try testing.expect(result.words[2] == result_words[2]);
+                    try testing.expect(result.words[0] == resultWords[0]);
+                    try testing.expect(result.words[1] == resultWords[1]);
+                    try testing.expect(result.words[2] == resultWords[2]);
                 },
                 else => @panic("TODO"),
             }
@@ -799,25 +808,25 @@ test "add same signed integers overflow" {
         .frames = &frames,
     };
 
-    const x_words: [*]const u32 = &.{ 5, 6 };
+    const xWords: [*]const u32 = &.{ 5, 6 };
 
-    const y_words: [*]const u32 = &.{
+    const yWords: [*]const u32 = &.{
         5,
         std.math.maxInt(u32),
     };
 
-    const result_words: [*]const u32 = &.{ 10, 5, 1 };
+    const resultWords: [*]const u32 = &.{ 10, 5, 1 };
 
     const x = BigInt{
         .length = 2,
         .sign = 0,
-        .words = x_words,
+        .words = xWords,
     };
 
     const y = BigInt{
         .length = 2,
         .sign = 0,
-        .words = y_words,
+        .words = yWords,
     };
 
     const newVal = addSignedIntegers(&machine, x, y);
@@ -829,9 +838,9 @@ test "add same signed integers overflow" {
                     const result = c.bigInt();
                     try testing.expect(result.length == 3);
                     try testing.expect(result.sign == 0);
-                    try testing.expect(result.words[0] == result_words[0]);
-                    try testing.expect(result.words[1] == result_words[1]);
-                    try testing.expect(result.words[2] == result_words[2]);
+                    try testing.expect(result.words[0] == resultWords[0]);
+                    try testing.expect(result.words[1] == resultWords[1]);
+                    try testing.expect(result.words[2] == resultWords[2]);
                 },
                 else => @panic("TODO"),
             }
@@ -840,8 +849,189 @@ test "add same signed integers overflow" {
     }
 }
 
-pub fn subSignedIntegers(_: *Machine, _: BigInt, _: BigInt) *const Value {
-    @panic("TODO");
+pub fn subSignedIntegers(m: *Machine, x: BigInt, y: BigInt) *const Value {
+    const compare = compareMagnitude(&x, &y);
+
+    // equal values so we return 0
+    if (compare[0]) {
+        var result = m.heap.createArray(u32, 4);
+        result[0] = @intFromEnum(Constant.integer);
+        // sign
+        result[1] = 0;
+        // length
+        result[2] = 1;
+        // zero-value
+        result[3] = 0;
+
+        return createConst(m.heap, @ptrCast(result));
+    }
+
+    const greater: *const BigInt = compare[1];
+    const lesser: *const BigInt = compare[2];
+
+    const maxLength = greater.length;
+    const resultLength = maxLength + 3;
+
+    var result = m.heap.createArray(u32, resultLength);
+
+    result[0] = @intFromEnum(Constant.integer);
+    result[1] = greater.sign;
+
+    var i: u32 = 0;
+    var carry: u32 = 0;
+    var resultWords = result + 3;
+    var reclaim: u32 = 0;
+    var finalLength: u32 = 0;
+
+    while (i < maxLength) : (i += 1) {
+        var lesserWord: u32 = 0;
+        if (lesser.length > i) {
+            lesserWord = lesser.words[i];
+        }
+
+        const greaterWord = greater.words[i];
+
+        const wordResult: u32 = greaterWord -% lesserWord;
+        const carryResult: u32 = wordResult -% carry;
+
+        carry = @intFromBool((wordResult > greaterWord) or (carryResult > wordResult));
+
+        resultWords[i] = carryResult;
+
+        if (carryResult == 0) {
+            reclaim += 1;
+        } else {
+            finalLength += reclaim;
+            finalLength += 1;
+            reclaim = 0;
+        }
+    }
+
+    // carry should always be 0 after this since we subtracted greater from the lesser value
+    result[2] = finalLength;
+    m.heap.reclaimHeap(u32, reclaim);
+    return createConst(m.heap, @ptrCast(result));
+}
+
+test "sub signed integers overflow" {
+    var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer allocator.deinit();
+
+    var heap = try Heap.createTestHeap(&allocator);
+    var frames = try Frames.createTestFrames(&allocator);
+    var machine = Machine{
+        .heap = &heap,
+        .frames = &frames,
+    };
+
+    const xWords: [*]const u32 = &.{ 5, 6, 7 };
+
+    const yWords: [*]const u32 = &.{ 5, 99 };
+
+    const resultWords: [*]const u32 = &.{ 0, 4294967203, 6 };
+
+    const x = BigInt{
+        .length = 3,
+        .sign = 1,
+        .words = xWords,
+    };
+
+    const y = BigInt{
+        .length = 2,
+        .sign = 0,
+        .words = yWords,
+    };
+
+    const newVal = subSignedIntegers(&machine, x, y);
+
+    switch (newVal.*) {
+        .constant => |c| {
+            switch (c.*) {
+                .integer => {
+                    const result = c.bigInt();
+                    try testing.expect(result.length == 3);
+                    try testing.expect(result.sign == 1);
+                    try testing.expect(result.words[0] == resultWords[0]);
+                    try testing.expectEqual(result.words[1], resultWords[1]);
+                    try testing.expect(result.words[2] == resultWords[2]);
+                },
+                else => @panic("TODO"),
+            }
+        },
+        else => @panic("TODO"),
+    }
+}
+
+test "sub signed integers reclaim" {
+    var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer allocator.deinit();
+
+    var heap = try Heap.createTestHeap(&allocator);
+    var frames = try Frames.createTestFrames(&allocator);
+    var machine = Machine{
+        .heap = &heap,
+        .frames = &frames,
+    };
+
+    const xWords: [*]const u32 = &.{ 8, 6, 1 };
+
+    const yWords: [*]const u32 = &.{ 10, 5, 1 };
+
+    const resultWords: [*]const u32 = &.{
+        4294967294,
+    };
+
+    const x = BigInt{
+        .length = 2,
+        .sign = 0,
+        .words = xWords,
+    };
+
+    const y = BigInt{
+        .length = 2,
+        .sign = 1,
+        .words = yWords,
+    };
+
+    const newVal = subSignedIntegers(&machine, x, y);
+
+    switch (newVal.*) {
+        .constant => |c| {
+            switch (c.*) {
+                .integer => {
+                    const result = c.bigInt();
+                    try testing.expectEqual(result.length, 1);
+                    try testing.expect(result.sign == 0);
+                    try testing.expectEqual(result.words[0], resultWords[0]);
+                },
+                else => @panic("TODO"),
+            }
+        },
+        else => @panic("TODO"),
+    }
+}
+
+pub fn compareMagnitude(x: *const BigInt, y: *const BigInt) struct { bool, *const BigInt, *const BigInt } {
+    if (x.length > y.length) {
+        return .{ false, x, y };
+    }
+
+    if (y.length > x.length) {
+        return .{ false, y, x };
+    }
+
+    var i: u32 = x.length - 1;
+    while (i >= 0) : (i -= 1) {
+        if (x.words[i] > y.words[i]) {
+            return .{ false, x, y };
+        }
+
+        if (y.words[i] > x.words[i]) {
+            return .{ false, y, x };
+        }
+    }
+
+    return .{ true, x, y };
 }
 
 pub fn unwrapInteger(v: *const Value) BigInt {
@@ -1068,7 +1258,7 @@ pub const Machine = struct {
             },
 
             .frame_constr => |f| {
-                const next_resolved = self.heap.create(
+                const nextResolved = self.heap.create(
                     LinkedValues,
                     &LinkedValues{ .value = v, .next = f.resolved_fields },
                 );
@@ -1079,7 +1269,7 @@ pub const Machine = struct {
                             .value = createConstr(
                                 self.heap,
                                 f.tag,
-                                next_resolved,
+                                nextResolved,
                             ),
                         },
                     };
@@ -1095,7 +1285,7 @@ pub const Machine = struct {
                                 .tag = f.tag,
                                 .env = f.env,
                                 .fields = rest,
-                                .resolved_fields = next_resolved,
+                                .resolved_fields = nextResolved,
                             },
                         },
                     );
@@ -1171,7 +1361,7 @@ pub const Machine = struct {
     ) State {
         switch (funVal.*) {
             .lambda => |lam| {
-                const new_env = if (lam.env) |env| blk: {
+                const newEnv = if (lam.env) |env| blk: {
                     break :blk env.preprend(argVal, self.heap);
                 } else blk: {
                     break :blk Env.init(argVal, self.heap);
@@ -1179,7 +1369,7 @@ pub const Machine = struct {
 
                 return State{
                     .compute = .{
-                        .env = new_env,
+                        .env = newEnv,
                         .term = lam.body,
                     },
                 };
@@ -1193,7 +1383,7 @@ pub const Machine = struct {
                     @panic("unexpected built-in term argument");
                 }
 
-                const next_arity = b.arity - 1;
+                const nextArity = b.arity - 1;
 
                 const nextArg = self.heap.create(
                     LinkedValues,
@@ -1204,7 +1394,7 @@ pub const Machine = struct {
                 );
 
                 const builtinValue = blk: {
-                    if (next_arity == 0) {
+                    if (nextArity == 0) {
                         break :blk self.callBuiltin(b.fun, nextArg);
                     } else {
                         break :blk self.heap.create(
@@ -1213,7 +1403,7 @@ pub const Machine = struct {
                                 .builtin = .{
                                     .fun = b.fun,
                                     .force_count = b.force_count,
-                                    .arity = next_arity,
+                                    .arity = nextArity,
                                     .args = nextArg,
                                 },
                             },
@@ -1407,14 +1597,14 @@ test "constr compute ret" {
 
     const state = machine.compute(null, ptr);
 
-    const next_state = switch (state) {
+    const nextState = switch (state) {
         .compute => |c| blk: {
             break :blk machine.compute(c.env, c.term);
         },
         else => @panic("HERE???"),
     };
 
-    const final = switch (next_state) {
+    const final = switch (nextState) {
         .ret => |r| blk: {
             break :blk machine.ret(r.value);
         },
@@ -1486,41 +1676,41 @@ test "case compute ret" {
 
     const state = machine.compute(null, ptr);
 
-    var next_state = switch (state) {
+    var nextState = switch (state) {
         .compute => |c| blk: {
             break :blk machine.compute(c.env, c.term);
         },
         else => @panic("HERE???1"),
     };
 
-    next_state = switch (next_state) {
+    nextState = switch (nextState) {
         .ret => |r| blk: {
             break :blk machine.ret(r.value);
         },
         else => {
-            std.debug.print("{}", .{next_state});
+            std.debug.print("{}", .{nextState});
             @panic("HERE???2");
         },
     };
 
-    next_state = switch (next_state) {
+    nextState = switch (nextState) {
         .compute => |c| blk: {
             break :blk machine.compute(c.env, c.term);
         },
         else => @panic("HERE???4"),
     };
 
-    const final = switch (next_state) {
+    const final = switch (nextState) {
         .ret => |r| blk: {
             break :blk machine.ret(r.value);
         },
         else => {
-            std.debug.print("{}", .{next_state});
+            std.debug.print("{}", .{nextState});
             @panic("HERE???2");
         },
     };
 
-    const first_field = LinkedValues{
+    const firstField = LinkedValues{
         .value = &Value{
             .delay = .{
                 .body = &Term.tvar,
@@ -1537,7 +1727,7 @@ test "case compute ret" {
                 .env = null,
             },
         },
-        .next = &first_field,
+        .next = &firstField,
     };
 
     switch (final) {
