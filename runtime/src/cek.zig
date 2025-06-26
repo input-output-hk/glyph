@@ -692,9 +692,154 @@ pub fn ripemd_160(_: *Machine, _: *LinkedValues) *const Value {
     @panic("TODO");
 }
 
-pub fn addSignedIntegers(_: *Machine, _: BigInt, _: BigInt) *const Value {
-    @panic("TODO");
+pub fn addSignedIntegers(m: *Machine, x: BigInt, y: BigInt) *const Value {
+    // We overallocate and then claim later if necessary
+    // integer 4 bytes, sign 4 bytes, length 4 bytes, list of words 4 * (max length + 1)
+    const maxLength = @max(x.length, y.length);
+    const result_length = maxLength + 4;
+
+    var result = m.heap.createArray(u32, result_length);
+
+    result[0] = @intFromEnum(Constant.integer);
+    result[1] = x.sign;
+
+    var i: u32 = 0;
+    var carry: u32 = 0;
+    var resultWords = result + 3;
+
+    while (i < maxLength) : (i += 1) {
+        var x_word: u32 = 0;
+        if (x.length > i) {
+            x_word = x.words[i];
+        }
+
+        var y_word: u32 = 0;
+        if (y.length > i) {
+            y_word = y.words[i];
+        }
+
+        const wordResult: u32 = x_word +% y_word;
+        const carryResult: u32 = wordResult +% carry;
+
+        carry = @intFromBool((wordResult < x_word) or (carryResult < wordResult));
+
+        resultWords[i] = carryResult;
+    }
+
+    // length = to max_length + 1 if carry else max_length
+    result[2] = if (carry == 1) blk: {
+        resultWords[maxLength] = 1;
+        break :blk maxLength + 1;
+    } else blk: {
+        // We reclaim one unused heap word here
+        m.heap.reclaimHeap(u32, 1);
+        break :blk maxLength;
+    };
+
+    return createConst(m.heap, @ptrCast(result));
 }
+
+test "add same signed integers" {
+    var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer allocator.deinit();
+
+    var heap = try Heap.createTestHeap(&allocator);
+    var frames = try Frames.createTestFrames(&allocator);
+    var machine = Machine{
+        .heap = &heap,
+        .frames = &frames,
+    };
+
+    const x_words: [*]const u32 = &.{ 5, 6, 7 };
+
+    const y_words: [*]const u32 = &.{ 5, 99 };
+
+    const result_words: [*]const u32 = &.{ 10, 105, 7 };
+
+    const x = BigInt{
+        .length = 3,
+        .sign = 0,
+        .words = x_words,
+    };
+
+    const y = BigInt{
+        .length = 2,
+        .sign = 0,
+        .words = y_words,
+    };
+
+    const newVal = addSignedIntegers(&machine, x, y);
+
+    switch (newVal.*) {
+        .constant => |c| {
+            switch (c.*) {
+                .integer => {
+                    const result = c.bigInt();
+                    try testing.expect(result.length == 3);
+                    try testing.expect(result.sign == 0);
+                    try testing.expect(result.words[0] == result_words[0]);
+                    try testing.expect(result.words[1] == result_words[1]);
+                    try testing.expect(result.words[2] == result_words[2]);
+                },
+                else => @panic("TODO"),
+            }
+        },
+        else => @panic("TODO"),
+    }
+}
+
+test "add same signed integers overflow" {
+    var allocator = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer allocator.deinit();
+
+    var heap = try Heap.createTestHeap(&allocator);
+    var frames = try Frames.createTestFrames(&allocator);
+    var machine = Machine{
+        .heap = &heap,
+        .frames = &frames,
+    };
+
+    const x_words: [*]const u32 = &.{ 5, 6 };
+
+    const y_words: [*]const u32 = &.{
+        5,
+        std.math.maxInt(u32),
+    };
+
+    const result_words: [*]const u32 = &.{ 10, 5, 1 };
+
+    const x = BigInt{
+        .length = 2,
+        .sign = 0,
+        .words = x_words,
+    };
+
+    const y = BigInt{
+        .length = 2,
+        .sign = 0,
+        .words = y_words,
+    };
+
+    const newVal = addSignedIntegers(&machine, x, y);
+
+    switch (newVal.*) {
+        .constant => |c| {
+            switch (c.*) {
+                .integer => {
+                    const result = c.bigInt();
+                    try testing.expect(result.length == 3);
+                    try testing.expect(result.sign == 0);
+                    try testing.expect(result.words[0] == result_words[0]);
+                    try testing.expect(result.words[1] == result_words[1]);
+                    try testing.expect(result.words[2] == result_words[2]);
+                },
+                else => @panic("TODO"),
+            }
+        },
+        else => @panic("TODO"),
+    }
+}
+
 pub fn subSignedIntegers(_: *Machine, _: BigInt, _: BigInt) *const Value {
     @panic("TODO");
 }
