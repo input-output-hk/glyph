@@ -1,7 +1,8 @@
 mod cmd;
 
-fn main() {
-    let res = glyph::add(1, 2);
+#[tokio::main]
+async fn main() -> miette::Result<()> {
+    let cli = cmd::Cli::default();
 
-    println!("{res}");
+    cli.exec().await
 }
