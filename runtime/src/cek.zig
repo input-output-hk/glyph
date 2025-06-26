@@ -346,8 +346,210 @@ pub fn subInteger(m: *Machine, args: *LinkedValues) *const Value {
     }
 }
 
-pub fn multiplyInteger(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn multiplyInteger(m: *Machine, args: *LinkedValues) *const Value {
+    const a = unwrapInteger(args.value);
+    const b = unwrapInteger(args.next.?.value);
+
+    const result_sign: u32 = a.sign ^ b.sign;
+
+    const a_words = a.words[0..a.length];
+    const b_words = b.words[0..b.length];
+
+    // Allocate space for the worst-case length: |a| + |b|
+    const max_len = a_words.len + b_words.len;
+    const result_ptr = m.heap.createArray(u32, max_len + 3); // bump-allocate
+    const result = result_ptr[3 .. max_len + 3]; // slice view (TODO - Should we be doing -1 here?)
+
+    // The buffer comes back with arbitrary bytes ‑ clear it so that the
+    // length‑trimming logic sees genuine zeroes in the untouched limbs.
+    for (0..max_len) |i| {
+        result[i] = 0;
+    }
+
+    // Core multiplication loop (32-bit words split into 16-bit halves)
+    for (a_words, 0..) |a_word, i| {
+        const a_low = a_word & 0xFFFF;
+        const a_high = a_word >> 16;
+
+        for (b_words, 0..) |b_word, j| {
+            const b_low = b_word & 0xFFFF;
+            const b_high = b_word >> 16;
+
+            // 16-bit partial products, promoted to u64 to avoid overflow
+            const p1: u64 = @as(u64, a_low) * b_low; // bits  0-31
+            const p2: u64 = @as(u64, a_low) * b_high; // bits 16-47
+            const p3: u64 = @as(u64, a_high) * b_low; // bits 16-47
+            const p4: u64 = @as(u64, a_high) * b_high; // bits 32-63
+
+            // Re-assemble a 64-bit product from the four partials
+            const low: u64 = p1 & 0xFFFF;
+            const mid: u64 = (p1 >> 16) + (p2 & 0xFFFF) + (p3 & 0xFFFF);
+            const high: u64 = (p2 >> 16) + (p3 >> 16) + p4;
+
+            const product: u64 = low + ((mid & 0xFFFF) << 16); // 32-bit value
+            var carry: u64 = (mid >> 16) + high; // carry ≥ 0, < 2³²
+
+            // Add the 32-bit product into result[i + j] with carry propagation
+            var idx: usize = i + j;
+            var tmp: u64 = @as(u64, result[idx]) + product;
+            result[idx] = @truncate(tmp);
+            carry += tmp >> 32;
+
+            idx += 1;
+            while (carry != 0) : (idx += 1) {
+                tmp = @as(u64, result[idx]) + carry;
+                result[idx] = @truncate(tmp);
+                carry = tmp >> 32;
+            }
+        }
+    }
+
+    // Trim leading zero words
+    var final_len: usize = max_len;
+    while (final_len > 1 and result[final_len - 1] == 0) {
+        final_len -= 1;
+    }
+
+    result_ptr[0] = @intFromEnum(expr.Constant.integer);
+    result_ptr[1] = result_sign;
+    result_ptr[2] = @intCast(final_len);
+
+    return createConst(m.heap, @ptrCast(result_ptr));
+}
+
+/// Allocate a Constant.integer in the bump‑heap from an `expr.BigInt` that
+/// already lives elsewhere in memory.  The layout exactly matches what
+/// `Constant.bigInt()` expects.
+///
+/// returns: pointer to the freshly‑allocated `Constant`
+fn makeIntConstant(heap: *Heap, bi: expr.BigInt) *expr.Constant {
+    const total_words: u32 = bi.length + 3; // tag | sign | length | words…
+    var buf = heap.createArray(u32, total_words);
+
+    buf[0] = @intFromEnum(expr.Constant.integer);
+    buf[1] = bi.sign;
+    buf[2] = bi.length;
+
+    var i: u32 = 0;
+    while (i < bi.length) : (i += 1) {
+        buf[i + 3] = bi.words[i];
+    }
+
+    return @ptrCast(buf);
+}
+
+/// Build the (a, b) argument list for an integer binary builtin.
+/// Both nodes live in the bump‑heap, so their lifetime is unlimited.
+fn createIntArgs(m: *Machine, a: expr.BigInt, b: expr.BigInt) *LinkedValues {
+    const a_val = createConst(m.heap, makeIntConstant(m.heap, a));
+    const b_val = createConst(m.heap, makeIntConstant(m.heap, b));
+
+    const tail = m.heap.create(LinkedValues, &.{ .value = b_val, .next = null });
+    return m.heap.create(LinkedValues, &.{ .value = a_val, .next = tail });
+}
+
+test "multiply same‑signed single‑word integers" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const a_words: [*]const u32 = &.{3};
+    const b_words: [*]const u32 = &.{4};
+
+    const a = expr.BigInt{ .sign = 0, .length = 1, .words = a_words };
+    const b = expr.BigInt{ .sign = 0, .length = 1, .words = b_words };
+
+    const args = createIntArgs(&machine, a, b);
+    const newVal = multiplyInteger(&machine, args);
+
+    const result_words: [*]const u32 = &.{12};
+
+    switch (newVal.*) {
+        .constant => |c| switch (c.*) {
+            .integer => {
+                const result = c.bigInt();
+                // std.debug.print(comptime fmt: []const u8, args: anytype)
+                std.debug.print("Len: {}\n", .{result.length});
+                std.debug.print("Sign: {}\n", .{result.sign});
+                std.debug.print("Result: {} vs Expected: {}\n", .{ result.words[0], result_words[0] });
+                try testing.expect(result.length == 1);
+                try testing.expect(result.sign == 0);
+                try testing.expect(result.words[0] == result_words[0]);
+            },
+            else => @panic("TODO"),
+        },
+        else => @panic("TODO"),
+    }
+}
+
+test "multiply same‑signed integers with 32‑bit carry" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const a_words: [*]const u32 = &.{std.math.maxInt(u32)}; // 0xFFFFFFFF
+    const b_words: [*]const u32 = &.{2};
+
+    const a = expr.BigInt{ .sign = 0, .length = 1, .words = a_words };
+    const b = expr.BigInt{ .sign = 0, .length = 1, .words = b_words };
+
+    const args = createIntArgs(&machine, a, b);
+    const newVal = multiplyInteger(&machine, args);
+
+    const result_words: [*]const u32 = &.{ 0xFFFFFFFE, 1 }; // low word, high carry
+
+    switch (newVal.*) {
+        .constant => |c| switch (c.*) {
+            .integer => {
+                const result = c.bigInt();
+                try testing.expect(result.length == 2);
+                try testing.expect(result.sign == 0);
+                try testing.expect(result.words[0] == result_words[0]);
+                try testing.expect(result.words[1] == result_words[1]);
+            },
+            else => @panic("TODO"),
+        },
+        else => @panic("TODO"),
+    }
+}
+
+test "multiply differing‑signed integers" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const a_words: [*]const u32 = &.{3};
+    const b_words: [*]const u32 = &.{4};
+
+    const a = expr.BigInt{ .sign = 1, .length = 1, .words = a_words }; // negative
+    const b = expr.BigInt{ .sign = 0, .length = 1, .words = b_words }; // positive
+
+    const args = createIntArgs(&machine, a, b);
+    const newVal = multiplyInteger(&machine, args);
+
+    const result_words: [*]const u32 = &.{12};
+
+    switch (newVal.*) {
+        .constant => |c| switch (c.*) {
+            .integer => {
+                const result = c.bigInt();
+                try testing.expect(result.length == 1);
+                try testing.expect(result.sign == 1);
+                try testing.expect(result.words[0] == result_words[0]);
+            },
+            else => @panic("TODO"),
+        },
+        else => @panic("TODO"),
+    }
 }
 
 pub fn divideInteger(_: *Machine, _: *LinkedValues) *const Value {
