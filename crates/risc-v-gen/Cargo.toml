@@ -1,10 +1,13 @@
 [package]
 name = "risc-v-gen"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+metadata.workspace = true
 description = "RISC-V code generation utilities"
-license = "Apache-2.0"
-repository = "https://github.com/input-output-hk/uplc-risc"
 
 [dependencies]
 # Core dependencies
@@ -23,7 +26,7 @@ hex = "0.4.3"
 
 # ELF generation dependencies
 object = { version = "0.32.1", features = ["write"] }
-nom = "7.1.3"                                         # For parsing linker scripts
+nom = "7.1.3"                                               # For parsing linker scripts
 strum = { version = "0.27.1", features = ["strum_macros"] }
 strum_macros = "0.27.1"
 

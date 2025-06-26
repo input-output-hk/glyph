@@ -1,11 +1,13 @@
 [package]
 name = "uplc-serializer"
-version = "0.1.0"
-edition = "2021"
 description = "Serializer for UPLC terms to a compact binary format for RISC-V CEK machine"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/input-output-hk/uplc-risc"
-authors = ["IOG"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+metadata.workspace = true
 
 [dependencies]
 log = "0.4"
