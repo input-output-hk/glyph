@@ -5596,8 +5596,8 @@ mod tests {
         let gene = thing.cek_assembly(vec![
             /*apply*/ 3, 0, 0, 0, /* arg pointer*/ 20, 0, 0, 144, /*lambda*/ 2, 0,
             0, 0, /*var*/ 0, 0, 0, 0, /*index */ 1, 0, 0, 0, /*constant*/ 4, 0, 0,
-            0, /* integer */ 0, 0, 0, 0, /* sign */ 0, 0, 0, 0, /* length */ 1, 0,
-            0, 0, /*value (little-endian) */ 13, 0, 0, 0,
+            0, /*type length*/ 1, 0, 0, 0, /* integer */ 0, 0, 0, 0, /* sign */ 0,
+            0, 0, 0, /* length */ 1, 0, 0, 0, /*value (little-endian) */ 13, 0, 0, 0,
         ]);
 
         // println!("{}", gene.generate());
@@ -5625,6 +5625,7 @@ mod tests {
                 "../../linker/link.ld",
                 "test_apply.o",
                 "../../runtime/zig-out/lib/runtime.o",
+                "../../runtime/zig-out/lib/memset.o",
             ])
             .status()
             .unwrap();
@@ -5654,19 +5655,23 @@ mod tests {
 
         let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-        let integer_type = section_data[offset_index];
+        let type_length = section_data[offset_index];
+
+        assert_eq!(1, type_length.to_be());
+
+        let integer_type = section_data[offset_index + 1];
 
         assert_eq!(const_tag::INTEGER, integer_type.to_be());
 
-        let sign = section_data[offset_index + 1];
+        let sign = section_data[offset_index + 2];
 
         assert_eq!(0, sign.to_be());
 
-        let length = section_data[offset_index + 2];
+        let length = section_data[offset_index + 3];
 
         assert_eq!(1, length.to_be());
 
-        let word = section_data[offset_index + 3];
+        let word = section_data[offset_index + 4];
 
         assert_eq!(13, word.to_be());
     }

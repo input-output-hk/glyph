@@ -1,20 +1,20 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) !void {
-    const riscv_build_target_query = try std.Build.parseTargetQuery(.{
+    const riscvBuildTargetQuery = try std.Build.parseTargetQuery(.{
         .arch_os_abi = "riscv32-freestanding",
-        .cpu_features = "baseline+i+m-f-d-c-a-zicsr",
+        .cpu_features = "baseline+i+m-f-d-c",
     });
 
     // Force RISC-V 32-bit freestanding target for builds
-    const riscv_build_target = b.resolveTargetQuery(riscv_build_target_query);
+    const riscvBuildTarget = b.resolveTargetQuery(riscvBuildTargetQuery);
 
     const optimize = b.standardOptimizeOption(.{});
 
     const obj = b.addObject(.{
         .name = "runtime",
         .root_source_file = b.path("src/root.zig"),
-        .target = riscv_build_target,
+        .target = riscvBuildTarget,
         .optimize = .ReleaseFast,
     });
 
@@ -23,6 +23,19 @@ pub fn build(b: *std.Build) !void {
     const file = b.addInstallFile(loc, "lib/runtime.o");
 
     b.getInstallStep().dependOn(&file.step);
+
+    const memsetObj = b.addObject(.{
+        .name = "memset",
+        .root_source_file = b.path("src/utils.zig"),
+        .target = riscvBuildTarget,
+        .optimize = .ReleaseFast,
+    });
+
+    const memLoc = memsetObj.getEmittedBin();
+
+    const otherFile = b.addInstallFile(memLoc, "lib/memset.o");
+
+    b.getInstallStep().dependOn(&otherFile.step);
 
     // Force RISC-V 32-bit Linux target for tests
     const riscv_test_target_query = try std.Build.parseTargetQuery(.{

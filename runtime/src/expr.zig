@@ -120,20 +120,41 @@ pub const Bytes = extern struct {
     bytes: [*]const u32,
 };
 
-pub const Constant = enum(u32) {
-    integer,
-    bytes,
-    string,
-    unit,
-    boolean,
+pub const Constant = extern struct {
+    length: u32,
 
     const Self = @This();
 
-    pub fn bigInt(self: *const Self) BigInt {
-        const sign: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+    pub fn constType(self: *const Self) *const ConstantType {
+        const cType: *const ConstantType = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
 
-        const words: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 3);
+        return cType;
+    }
+
+    pub fn canListHoldType(self: *const Self, listInnerType: *const ConstantType, len: u32) bool {
+        const selfTypes: [*]const ConstantType = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+        const otherTypes: [*]const ConstantType = @ptrCast(listInnerType);
+
+        if (self.length != len) {
+            return false;
+        }
+
+        var i: u32 = 0;
+        while (i < self.length) : (i += 1) {
+            if (selfTypes[i] != otherTypes[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    pub fn bigInt(self: *const Self) BigInt {
+        const offset: *const u32 = @ptrFromInt(@intFromPtr(self) + self.length * @sizeOf(u32));
+
+        const sign: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
+        const length: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32) * 2);
+
+        const words: [*]const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32) * 3);
 
         return BigInt{
             .sign = sign.*,
@@ -143,9 +164,11 @@ pub const Constant = enum(u32) {
     }
 
     pub fn innerBytes(self: *const Self) Bytes {
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+        const offset: *const u32 = @ptrFromInt(@intFromPtr(self) + self.length * @sizeOf(u32));
 
-        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+        const length: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
+
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32) * 2);
 
         return Bytes{
             .length = length.*,
@@ -154,8 +177,30 @@ pub const Constant = enum(u32) {
     }
 
     pub fn bln(self: *const Self) bool {
-        const b: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+        const offset: *const u32 = @ptrFromInt(@intFromPtr(self) + self.length * @sizeOf(u32));
+
+        const b: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
 
         return b.* == 1;
+    }
+};
+
+pub const ConstantType = enum(u32) {
+    integer,
+    bytes,
+    string,
+    unit,
+    boolean,
+    list,
+    pair,
+    data,
+
+    pub fn listData() *const ConstantType {
+        return @ptrCast(
+            [2]ConstantType{
+                ConstantType.list,
+                ConstantType.data,
+            },
+        );
     }
 };
