@@ -42,17 +42,17 @@ fn run_file() {
     let test_file = "../../test.elf";
 
     if !std::path::Path::new(test_file).exists() {
-        println!("Test file {} does not exist, skipping test", test_file);
+        println!("Test file {test_file} does not exist, skipping test");
         return;
     }
 
     match verify_file(test_file) {
         Ok((_traces, result, _program)) => {
-            println!("Execution result: {:?}", result);
+            println!("Execution result: {result:?}");
             // for trace in traces {
             // println!("Trace: {}", trace);
             // }
         },
-        Err(e) => println!("Failed to verify file: {:?}", e),
+        Err(e) => println!("Failed to verify file: {e:?}"),
     }
 }

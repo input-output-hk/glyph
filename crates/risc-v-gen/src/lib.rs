@@ -694,22 +694,22 @@ impl CodeGenerator {
         for instruction in &self.instructions {
             match instruction {
                 Instruction::Label(label) => {
-                    result.push_str(&format!("{}:\n", label));
+                    result.push_str(&format!("{label}:\n"));
                 },
                 Instruction::Comment(comment) => {
-                    result.push_str(&format!("    # {}\n", comment));
+                    result.push_str(&format!("    # {comment}\n"));
                 },
                 Instruction::Global(symbol) => {
-                    result.push_str(&format!(".global {}\n", symbol));
+                    result.push_str(&format!(".global {symbol}\n"));
                 },
                 Instruction::Section(section) => {
-                    result.push_str(&format!(".section .{}\n", section));
+                    result.push_str(&format!(".section .{section}\n"));
                 },
                 Instruction::Align(align) => {
-                    result.push_str(&format!("    .align {}\n", align));
+                    result.push_str(&format!("    .align {align}\n"));
                 },
                 Instruction::Word(value) => {
-                    result.push_str(&format!("    .word {}\n", value));
+                    result.push_str(&format!("    .word {value}\n"));
                 },
                 Instruction::Byte(value) => {
                     result.push_str(&format!(
@@ -722,13 +722,13 @@ impl CodeGenerator {
                     ));
                 },
                 Instruction::Ascii(string) => {
-                    result.push_str(&format!("    .ascii \"{}\"\n", string));
+                    result.push_str(&format!("    .ascii \"{string}\"\n"));
                 },
                 Instruction::Asciiz(string) => {
-                    result.push_str(&format!("    .asciiz \"{}\"\n", string));
+                    result.push_str(&format!("    .asciiz \"{string}\"\n"));
                 },
                 Instruction::Space(size) => {
-                    result.push_str(&format!("    .space {}\n", size));
+                    result.push_str(&format!("    .space {size}\n"));
                 },
                 _ => {
                     result.push_str("    ");

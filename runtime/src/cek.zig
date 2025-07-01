@@ -1243,7 +1243,10 @@ pub const Machine = struct {
             },
 
             .builtin => |b| {
-                if (b.force_count == 0) @panic("builtin term argument expected");
+                if (b.force_count == 0) {
+                    utils.printString("builtin term argument expected");
+                    utils.exit(std.math.maxInt(u32));
+                }
 
                 return State{
                     .ret = .{
@@ -1251,7 +1254,10 @@ pub const Machine = struct {
                     },
                 };
             },
-            else => @panic("non-polymorphic instantiation"),
+            else => {
+                utils.printString("non-polymorphic instantiation");
+                utils.exit(std.math.maxInt(u32));
+            },
         }
     }
 
@@ -1277,11 +1283,14 @@ pub const Machine = struct {
             },
 
             .builtin => |b| {
-                if (b.force_count != 0)
-                    @panic("unexpected built-in term argument");
+                if (b.force_count != 0) {
+                    utils.printString("unexpected built-in term argument");
+                    utils.exit(std.math.maxInt(u32));
+                }
 
                 if (b.arity == 0) {
-                    @panic("unexpected built-in term argument");
+                    utils.printString("unexpected built-in term argument");
+                    utils.exit(std.math.maxInt(u32));
                 }
 
                 const nextArity = b.arity - 1;
@@ -1319,7 +1328,10 @@ pub const Machine = struct {
                 };
             },
 
-            else => @panic("apply on non-callable"),
+            else => {
+                utils.printString("apply on non-callable");
+                utils.exit(std.math.maxInt(u32));
+            },
         }
     }
 

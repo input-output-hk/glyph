@@ -99,10 +99,10 @@ pub fn serialize_program(program: &Program<DeBruijn>) -> Result<Vec<u8>> {
 /// A `Result` containing the serialized program as a `Vec<u8>` or a `SerializationError`
 pub fn parse_and_serialize(uplc_text: &str) -> Result<Vec<u8>> {
     let program = uplc::parser::program(uplc_text)
-        .map_err(|e| SerializationError::InvalidTermType(format!("Parse error: {}", e)))?
+        .map_err(|e| SerializationError::InvalidTermType(format!("Parse error: {e}")))?
         .to_debruijn()
         .map_err(|e| {
-            SerializationError::InvalidTermType(format!("DeBruijn conversion error: {}", e))
+            SerializationError::InvalidTermType(format!("DeBruijn conversion error: {e}"))
         })?;
 
     serialize_program(&program)

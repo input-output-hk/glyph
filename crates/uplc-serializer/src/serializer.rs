@@ -157,8 +157,7 @@ fn serialize_constant(constant: &Rc<Constant>) -> Result<Vec<u8>> {
         Constant::Data(data) => serialize_data_constant(data)?,
         _ => {
             return Err(SerializationError::InvalidTermType(format!(
-                "Unsupported constant type: {:?}",
-                constant
+                "Unsupported constant type: {constant:?}",
             )));
         },
     };
@@ -307,7 +306,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
                 BigInt::Int(int_val) => {
                     // Since we don't have access to details about the Int type's internals,
                     // we'll convert it to a string and use the first character to check sign
-                    let int_str = format!("{:?}", int_val);
+                    let int_str = format!("{int_val:?}");
                     let is_negative = int_str.starts_with('-');
 
                     // Write sign (0 for positive, 1 for negative)

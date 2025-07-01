@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let uplc_text = r#"
     (program 1.0.0
       [
-        (lam f 
+        (lam f
           (lam x
             [
               [
@@ -84,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                           (builtin ifThenElse)
                           b
                           (delay x)
-                          (delay 
+                          (delay
                             [
                               [
                                 (builtin appendString)
@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("{:08x}  ", i * 16);
 
         for b in chunk {
-            print!("{:02x} ", b);
+            print!("{b:02x} ");
         }
 
         // Pad if less than 16 bytes

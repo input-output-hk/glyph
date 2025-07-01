@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("{:08x}  ", i * 16);
 
         for b in chunk {
-            print!("{:02x} ", b);
+            print!("{b:02x} ");
         }
 
         // Pad if less than 16 bytes
