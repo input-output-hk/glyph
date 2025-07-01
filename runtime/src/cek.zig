@@ -104,10 +104,16 @@ const Value = union(enum(u32)) {
                     .integer => {
                         return c.bigInt();
                     },
-                    else => @panic("MESSAGE"),
+                    else => {
+                        utils.printString("Not an integer constant\n");
+                        utils.exit(std.math.maxInt(u32));
+                    },
                 }
             },
-            else => @panic("MESSAGE"),
+            else => {
+                utils.printString("Not a constant\n");
+                utils.exit(std.math.maxInt(u32));
+            },
         }
     }
 };
@@ -1056,7 +1062,10 @@ pub const Machine = struct {
                 };
             },
 
-            .terror => @panic("evaluation failure"),
+            .terror => {
+                utils.printString("Eval Failure\n");
+                utils.exit(std.math.maxInt(u32));
+            },
 
             .builtin => return State{
                 .ret = .{

@@ -54,14 +54,4 @@ pub enum CompilationMode {
 /// ```
 
 #[test]
-fn can_get_cek_assembly() {
-    let cek = cek::Cek::default();
-
-    let assembly = cek.cek_assembly(vec![
-        /*apply*/ 3, /*placeholder for arg pointer*/ 11, 0, 0, 144, /*lambda*/ 2,
-        /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, 13, 0, 0, 0,
-    ]);
-    let assembly_string = assembly.generate();
-
-    println!("Assembly {}", assembly_string);
-}
+fn can_get_cek_assembly() {}

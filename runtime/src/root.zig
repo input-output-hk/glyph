@@ -9,7 +9,7 @@ const Env = cek.Env;
 const Frames = cek.Frames;
 const allocType = cek.allocType;
 const Machine = cek.Machine;
-
+const utils = @import("utils.zig");
 // Since this is the entry point, we need to handle the exit
 // export fn _start() callconv(.C) noreturn {
 //     init();
@@ -34,17 +34,7 @@ pub export fn init() void {
 
     const result = runtime.runFunction(initial_term);
 
-    asm volatile ("mv a0, %[val]"
-        :
-        : [val] "r" (result),
-        : "a0"
-    );
-    asm volatile (
-        \\li a7, 93
-        \\ecall
-        ::: "a7");
-
-    unreachable;
+    utils.exit(@intFromPtr(result));
 }
 
 test "basic functionality" {

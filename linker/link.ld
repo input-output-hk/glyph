@@ -4,7 +4,7 @@ ENTRY(_start)
 MEMORY
 {
   TEXT  (rx)  : ORIGIN = 0x80000000, LENGTH = 0x1000000   /* 16MB */
-  DATA  (rw)  : ORIGIN = 0x90000000, LENGTH = 0x1000000   /* 16MB */
+  DATA  (r)  : ORIGIN = 0x90000000, LENGTH = 0x1000000   /* 16MB */
   BSS   (rw)  : ORIGIN = 0xA0000000, LENGTH = 0x1000000   /* 16MB */
   HEAP  (rw)  : ORIGIN = 0xC0000000, LENGTH = 0x1000000   /* 16MB */
   FRAME (rw)  : ORIGIN = 0xD0000000, LENGTH = 0x1000000   /* 16MB */
@@ -28,7 +28,9 @@ SECTIONS
   . = ORIGIN(BSS);
   .bss ALIGN(4) :
   {
-    *(.bss*)
+    __bss_bottom = .;
+    . = . + LENGTH(BSS);
+    __bss_top = .;
   } > BSS
 
   . = ORIGIN(HEAP);

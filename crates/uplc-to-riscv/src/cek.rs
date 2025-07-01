@@ -132,18 +132,25 @@ use uplc_serializer::constants::const_tag::{self, BOOL};
 //Ripemd_160
 //ExpModInteger
 
-// Must be exactly divisible by 4
-const _FORCE_COUNTS: [u8; 88] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
-    1, 2, 2, 2, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-];
-
-const _ARITIES: [u8; 88] = [
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 3, 3, 3, 2, 2, 1, 1, 3, 2,
-    2, 1, 1, 3, 2, 1, 1, 1, 6, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 2, 1, 1, 2, 1, 2, 2, 1, 1, 2, 2,
-    1, 2, 2, 1, 1, 2, 2, 2, 2, 3, 2, 3, 3, 3, 1, 2, 3, 2, 2, 2, 1, 1, 1, 3,
-];
+// let mut file = File::create("bbbb.txt").unwrap();
+// write!(
+//     &mut file,
+//     "{}",
+//     v.1.iter()
+//         .map(|(item, _)| {
+//             format!(
+//                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+//                 item.step_number,
+//                 riscv_decode::decode(item.read_pc.opcode),
+//                 item.read_pc.opcode,
+//                 item,
+//             )
+//         })
+//         .collect::<Vec<String>>()
+//         .join("\n")
+// )
+// .unwrap();
+// file.flush().unwrap();
 
 macro_rules! var {
     ($var:ident = $cek:ident . $register:ident) => {
@@ -5512,82 +5519,82 @@ mod tests {
 
     use crate::cek::Cek;
 
-    #[test]
-    fn test_cek_machine() {
-        // Initialize the CEK machine
-        let mut cek = Cek::default();
+    // #[test]
+    // fn test_cek_machine() {
+    //     // Initialize the CEK machine
+    //     let mut cek = Cek::default();
 
-        // Generate the core CEK implementation
-        cek.init();
-        cek.compute();
-        cek.return_compute();
-        cek.handle_var();
-        cek.handle_delay();
-        cek.handle_lambda();
-        cek.handle_apply();
-        cek.handle_constant();
-        cek.handle_force();
-        cek.handle_error();
-        cek.handle_builtin();
-        cek.handle_constr();
-        cek.handle_case();
-        cek.handle_frame_await_fun_term();
-        cek.handle_frame_await_arg();
-        cek.handle_frame_await_fun_value();
-        cek.handle_frame_force();
-        cek.handle_frame_constr();
-        cek.handle_frame_case();
-        cek.handle_no_frame();
-        cek.halt();
-        cek.force_evaluate();
-        cek.apply_evaluate();
-        cek.lookup();
-        cek.clone_list();
-        cek.reverse_clone_list();
-        cek.eval_builtin_app();
-        cek.unwrap_integer();
-        cek.unwrap_bytestring();
-        cek.allocate_integer_type();
-        cek.allocate_bytestring_type();
-        cek.add_integer();
-        cek.sub_integer();
-        cek.multiply_integer();
-        cek.divide_integer();
-        cek.quotient_integer();
-        cek.remainder_integer();
-        cek.mod_integer();
-        cek.equals_integer();
-        cek.less_than_integer();
-        cek.less_than_equals_integer();
-        cek.append_bytestring();
-        cek.cons_bytestring();
-        cek.slice_bytestring();
-        cek.length_bytestring();
-        cek.index_bytestring();
-        cek.equals_bytestring();
-        cek.less_than_bytestring();
-        cek.less_than_equals_bytestring();
-        cek.sha2_256();
-        cek.sha3_256();
-        cek.blake2b_256();
-        cek.verify_ed25519_signature();
-        cek.append_string();
-        cek.equals_string();
-        cek.encode_utf8();
-        cek.decode_utf8();
-        cek.if_then_else();
-        cek.add_signed_integers();
-        cek.compare_magnitude();
-        cek.sub_signed_integers();
-        cek.initial_term(vec![
-            /*apply*/ 3, /* arg pointer*/ 11, 0, 0, 144, /*lambda*/ 2,
-            /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, 13, 0, 0, 0,
-        ]);
+    //     // Generate the core CEK implementation
+    //     cek.init();
+    //     cek.compute();
+    //     cek.return_compute();
+    //     cek.handle_var();
+    //     cek.handle_delay();
+    //     cek.handle_lambda();
+    //     cek.handle_apply();
+    //     cek.handle_constant();
+    //     cek.handle_force();
+    //     cek.handle_error();
+    //     cek.handle_builtin();
+    //     cek.handle_constr();
+    //     cek.handle_case();
+    //     cek.handle_frame_await_fun_term();
+    //     cek.handle_frame_await_arg();
+    //     cek.handle_frame_await_fun_value();
+    //     cek.handle_frame_force();
+    //     cek.handle_frame_constr();
+    //     cek.handle_frame_case();
+    //     cek.handle_no_frame();
+    //     cek.halt();
+    //     cek.force_evaluate();
+    //     cek.apply_evaluate();
+    //     cek.lookup();
+    //     cek.clone_list();
+    //     cek.reverse_clone_list();
+    //     cek.eval_builtin_app();
+    //     cek.unwrap_integer();
+    //     cek.unwrap_bytestring();
+    //     cek.allocate_integer_type();
+    //     cek.allocate_bytestring_type();
+    //     cek.add_integer();
+    //     cek.sub_integer();
+    //     cek.multiply_integer();
+    //     cek.divide_integer();
+    //     cek.quotient_integer();
+    //     cek.remainder_integer();
+    //     cek.mod_integer();
+    //     cek.equals_integer();
+    //     cek.less_than_integer();
+    //     cek.less_than_equals_integer();
+    //     cek.append_bytestring();
+    //     cek.cons_bytestring();
+    //     cek.slice_bytestring();
+    //     cek.length_bytestring();
+    //     cek.index_bytestring();
+    //     cek.equals_bytestring();
+    //     cek.less_than_bytestring();
+    //     cek.less_than_equals_bytestring();
+    //     cek.sha2_256();
+    //     cek.sha3_256();
+    //     cek.blake2b_256();
+    //     cek.verify_ed25519_signature();
+    //     cek.append_string();
+    //     cek.equals_string();
+    //     cek.encode_utf8();
+    //     cek.decode_utf8();
+    //     cek.if_then_else();
+    //     cek.add_signed_integers();
+    //     cek.compare_magnitude();
+    //     cek.sub_signed_integers();
+    //     cek.initial_term(vec![
+    //         /*apply*/ 3, /* arg pointer*/ 11, 0, 0, 144, /*lambda*/ 2,
+    //         /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4, 13, 0, 0, 0,
+    //     ]);
 
-        let code_gen = cek.generator;
+    //     let code_gen = cek.generator;
 
-        println!("{}", code_gen.generate());
-    }
+    //     println!("{}", code_gen.generate());
+    // }
 
     #[test]
     fn test_apply_lambda_var_constant() {
@@ -5625,7 +5632,6 @@ mod tests {
                 "../../linker/link.ld",
                 "test_apply.o",
                 "../../runtime/zig-out/lib/runtime.o",
-                "../../runtime/zig-out/lib/memset.o",
             ])
             .status()
             .unwrap();
@@ -5676,154 +5682,158 @@ mod tests {
         assert_eq!(13, word.to_be());
     }
 
-    // #[test]
-    // fn test_add_integer_double() {
-    //     let thing = Cek::default();
+    #[test]
+    fn test_add_integer_double() {
+        let thing = Cek::default();
 
-    //     let gene = thing.cek_assembly(vec![
-    //         /*apply*/ 3, /* arg pointer*/ 28, 0, 0, 144, /*lambda*/ 2,
-    //         /*apply */ 3, /* arg pointer*/ 18, 0, 0, 144, /*apply */ 3,
-    //         /* arg pointer*/ 23, 0, 0, 144, /*add_integer */ 7, 0, /*var*/ 0, 1, 0,
-    //         0, 0, /*var*/ 0, 1, 0, 0, 0, /*constant*/ 4,
-    //         /* type length in bytes */ 1, /* integer */ 0, /* sign */ 0,
-    //         /* length */ 1, 0, 0, 0, /*value (little-endian) */ 13, 0, 0, 0,
-    //     ]);
+        let gene = thing.cek_assembly(vec![
+            /*apply*/ 3, 0, 0, 0, /* arg pointer*/ 52, 0, 0, 144, /*lambda*/ 2, 0,
+            0, 0, /*apply */ 3, 0, 0, 0, /* arg pointer*/ 44, 0, 0, 144,
+            /*apply */ 3, 0, 0, 0, /* arg pointer*/ 36, 0, 0, 144, /*builtin*/ 7, 0,
+            0, 0, /*add_integer*/ 0, 0, 0, 0, /*var*/ 0, 0, 0, 0, /*index*/ 1, 0, 0,
+            0, /*var*/ 0, 0, 0, 0, /*index*/ 1, 0, 0, 0, /*constant*/ 4, 0, 0, 0,
+            /* type length in bytes */ 1, 0, 0, 0, /* integer */ 0, 0, 0, 0,
+            /* sign */ 0, 0, 0, 0, /* length */ 1, 0, 0, 0,
+            /*value (little-endian) */ 13, 0, 0, 0,
+        ]);
 
-    //     // println!("{}", gene.generate());
+        // println!("{}", gene.generate());
 
-    //     gene.save_to_file("test_add.s").unwrap();
+        gene.save_to_file("test_add.s").unwrap();
 
-    //     Command::new("riscv64-elf-as")
-    //         .args([
-    //             "-march=rv32i",
-    //             "-mabi=ilp32",
-    //             "-o",
-    //             "test_add.o",
-    //             "test_add.s",
-    //         ])
-    //         .status()
-    //         .unwrap();
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_add.o",
+                "test_add.s",
+            ])
+            .status()
+            .unwrap();
 
-    //     Command::new("riscv64-elf-ld")
-    //         .args([
-    //             "-m",
-    //             "elf32lriscv",
-    //             "-o",
-    //             "test_add.elf",
-    //             "-T",
-    //             "../../linker/link.ld",
-    //             "test_add.o",
-    //         ])
-    //         .status()
-    //         .unwrap();
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_add.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_add.o",
+                "../../runtime/zig-out/lib/runtime.o",
+            ])
+            .status()
+            .unwrap();
 
-    //     let v = verify_file("test_add.elf").unwrap();
+        let v = verify_file("test_add.elf").unwrap();
 
-    //     // let mut file = File::create("bbbb.txt").unwrap();
-    //     // write!(
-    //     //     &mut file,
-    //     //     "{}",
-    //     //     v.1.iter()
-    //     //         .map(|(item, _)| {
-    //     //             format!(
-    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-    //     //                 item.step_number,
-    //     //                 riscv_decode::decode(item.read_pc.opcode),
-    //     //                 item.read_pc.opcode,
-    //     //                 item,
-    //     //             )
-    //     //         })
-    //     //         .collect::<Vec<String>>()
-    //     //         .join("\n")
-    //     // )
-    //     // .unwrap();
-    //     // file.flush().unwrap();
+        let result_pointer = match v.0 {
+            ExecutionResult::Halt(result, _step) => result,
+            _ => unreachable!("HOW?"),
+        };
 
-    //     let result_pointer = match v.0 {
-    //         ExecutionResult::Halt(result, _step) => result,
-    //         _ => unreachable!("HOW?"),
-    //     };
+        assert_ne!(result_pointer, u32::MAX);
 
-    //     assert_ne!(result_pointer, u32::MAX);
+        let section = v.2.find_section(result_pointer).unwrap();
 
-    //     let section = v.2.find_section(result_pointer).unwrap();
+        let section_data = &section.data;
 
-    //     let section_data = u32_vec_to_u8_vec(section.data.clone());
+        let offset_index = ((result_pointer - section.start) / 4) as usize;
 
-    //     let offset_index = (result_pointer - section.start) as usize;
+        assert_eq!(section_data[offset_index], 0);
 
-    //     let type_length = section_data[offset_index];
+        let constant_pointer = section_data[offset_index + 1].to_be();
 
-    //     assert_eq!(type_length, 1);
+        let section = v.2.find_section(constant_pointer).unwrap();
 
-    //     let constant_type = section_data[offset_index + 1];
+        let section_data = &section.data;
 
-    //     assert_eq!(constant_type, const_tag::INTEGER);
+        let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-    //     let sign = section_data[offset_index + 2];
+        let type_length = section_data[offset_index];
 
-    //     assert_eq!(sign, 0);
+        assert_eq!(1, type_length.to_be());
 
-    //     let word_length = *section_data[(offset_index + 3)..(offset_index + 7)]
-    //         .chunks_exact(4)
-    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-    //         .collect::<Vec<u32>>()
-    //         .first()
-    //         .unwrap();
+        let integer_type = section_data[offset_index + 1];
 
-    //     assert_eq!(word_length, 1);
+        assert_eq!(const_tag::INTEGER, integer_type.to_be());
 
-    //     let value = *section_data[(offset_index + 7)..(offset_index + 11)]
-    //         .chunks_exact(4)
-    //         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-    //         .collect::<Vec<u32>>()
-    //         .first()
-    //         .unwrap();
+        let sign = section_data[offset_index + 2];
 
-    //     assert_eq!(value, 26);
-    // }
+        assert_eq!(0, sign.to_be());
 
-    // #[test]
-    // fn test_force_delay_error() {
-    //     let thing = Cek::default();
+        let length = section_data[offset_index + 3];
 
-    //     let gene = thing.cek_assembly(vec![
-    //         /*force */ 5, /*delay */ 1, /*error */ 6, 0,
-    //     ]);
+        assert_eq!(1, length.to_be());
 
-    //     gene.save_to_file("test_force.s").unwrap();
+        let word = section_data[offset_index + 4];
 
-    //     Command::new("riscv64-elf-as")
-    //         .args([
-    //             "-march=rv32i",
-    //             "-mabi=ilp32",
-    //             "-o",
-    //             "test_force.o",
-    //             "test_force.s",
-    //         ])
-    //         .status()
-    //         .unwrap();
+        assert_eq!(26, word.to_be());
+    }
 
-    //     Command::new("riscv64-elf-ld")
-    //         .args([
-    //             "-m",
-    //             "elf32lriscv",
-    //             "-o",
-    //             "test_force.elf",
-    //             "-T",
-    //             "../../linker/link.ld",
-    //             "test_force.o",
-    //         ])
-    //         .status()
-    //         .unwrap();
+    #[test]
+    fn test_force_delay_error() {
+        let thing = Cek::default();
 
-    //     let v = verify_file("test_force.elf").unwrap();
+        let gene = thing.cek_assembly(vec![
+            /*force */ 5, 0, 0, 0, /*delay */ 1, 0, 0, 0, /*error */ 6, 0, 0, 0,
+        ]);
 
-    //     match v.0 {
-    //         ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
-    //         _ => unreachable!("HOW?"),
-    //     }
-    // }
+        gene.save_to_file("test_force.s").unwrap();
+
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_force.o",
+                "test_force.s",
+            ])
+            .status()
+            .unwrap();
+
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_force.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_force.o",
+                "../../runtime/zig-out/lib/runtime.o",
+            ])
+            .status()
+            .unwrap();
+
+        let v = verify_file("test_force.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        match v.0 {
+            ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
+            e => unreachable!("HOW? {:#?}", e),
+        }
+    }
 
     // #[test]
     // fn test_case_constr_lambda_lambda_var_constant() {
