@@ -142,7 +142,7 @@ pub const Env = struct {
             }
             cur = n.next;
         }
-        @panic("open term during evaluation");
+        unreachable;
     }
 
     test "init" {
@@ -976,7 +976,8 @@ pub const Machine = struct {
                     if (d.isUnit()) {
                         return;
                     } else {
-                        @panic("Returned term other than unit");
+                        utils.printString("Returned term other than unit\n");
+                        utils.exit(std.math.maxInt(u32));
                     }
                 },
             }
@@ -1199,7 +1200,8 @@ pub const Machine = struct {
                 switch (v.*) {
                     .constr => |c| {
                         if (c.tag >= f.branches.length) {
-                            @panic("constructor tag out of range");
+                            utils.printString("constructor tag out of range");
+                            utils.exit(std.math.maxInt(u32));
                         }
 
                         const branch = f.branches.list[c.tag];
@@ -1222,7 +1224,10 @@ pub const Machine = struct {
                             },
                         };
                     },
-                    else => @panic("case on non-constructor"),
+                    else => {
+                        utils.printString("case on non-constructor");
+                        utils.exit(std.math.maxInt(u32));
+                    },
                 }
             },
         }

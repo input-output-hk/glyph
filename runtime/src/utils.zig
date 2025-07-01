@@ -8,7 +8,7 @@ pub fn exit(exitVal: u32) noreturn {
     unreachable;
 }
 
-pub fn padTo4(comptime str: []const u8) [((str.len + 3) / 4) * 4]u8 {
+fn padTo4(comptime str: []const u8) [((str.len + 3) / 4) * 4]u8 {
     const padded_len = ((str.len + 3) / 4) * 4;
     var result: [padded_len]u8 = [_]u8{0} ** padded_len;
 
