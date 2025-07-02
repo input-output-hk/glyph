@@ -144,8 +144,8 @@ fn serialize_constant(constant: &Rc<Constant>) -> Result<Vec<u8>> {
 
     // Determine the type length and store it
     // (This is a placeholder - you may need to calculate the actual type length)
-    let type_length: u8 = 1; // For simple types
-    x.write_u8(type_length)?;
+    let type_length: u32 = 1; // For simple types
+    x.write_u32::<LittleEndian>(type_length)?;
 
     // Serialize the constant based on its type
     let serialized_data = match &**constant {
