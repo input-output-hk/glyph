@@ -901,7 +901,7 @@ impl CodeGenerator {
                 format!("snez {}, {}", rd.name(), rs.name())
             },
             Instruction::J(imm) => {
-                format!("j {}", imm)
+                format!("j {imm}")
             },
             Instruction::Nop => "nop".to_string(),
             Instruction::Label(_) => unreachable!("Labels are handled separately"),

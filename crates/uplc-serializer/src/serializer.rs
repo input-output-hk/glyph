@@ -89,7 +89,7 @@ fn serialize_apply(
     x.write_u32::<LittleEndian>(term_tag::APPLY)?;
 
     // Serialize the function and argument (recursively)
-    let function_pointer = preceeding_byte_size + 5;
+    let function_pointer = preceeding_byte_size + 8;
     let function_ser = serialize_term(function_pointer, function).unwrap();
     let argument_pointer = function_pointer + function_ser.len() as u32;
     let argument_ser = serialize_term(argument_pointer, argument).unwrap();

@@ -132,26 +132,6 @@ use uplc_serializer::constants::const_tag::{self, BOOL};
 //Ripemd_160
 //ExpModInteger
 
-// let mut file = File::create("bbbb.txt").unwrap();
-// write!(
-//     &mut file,
-//     "{}",
-//     v.1.iter()
-//         .map(|(item, _)| {
-//             format!(
-//                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-//                 item.step_number,
-//                 riscv_decode::decode(item.read_pc.opcode),
-//                 item.read_pc.opcode,
-//                 item,
-//             )
-//         })
-//         .collect::<Vec<String>>()
-//         .join("\n")
-// )
-// .unwrap();
-// file.flush().unwrap();
-
 macro_rules! var {
     ($var:ident = $cek:ident . $register:ident) => {
         let mut $var = $cek.register_map.var(stringify!($var), $cek.$register);
@@ -5515,7 +5495,8 @@ mod tests {
 
     use emulator::ExecutionResult;
     use risc_v_gen::emulator::verify_file;
-    use uplc_serializer::constants::const_tag;
+    use uplc::ast::{DeBruijn, Name, Program, Term};
+    use uplc_serializer::{constants::const_tag, serialize};
 
     use crate::cek::Cek;
 
@@ -5704,7 +5685,7 @@ mod tests {
 
         Command::new("riscv64-elf-as")
             .args([
-                "-march=rv32i",
+                "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
                 "test_add.o",
@@ -5786,7 +5767,7 @@ mod tests {
 
         Command::new("riscv64-elf-as")
             .args([
-                "-march=rv32i",
+                "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
                 "test_force.o",
@@ -5930,182 +5911,209 @@ mod tests {
     //     assert_eq!(value, 99);
     // }
 
-    // #[test]
-    // fn test_force_delay_error_serialize() {
-    //     let thing = Cek::default();
+    #[test]
+    fn test_force_delay_error_serialize() {
+        let thing = Cek::default();
 
-    //     let term = Term::Error.delay().force();
+        let term = Term::Error.delay().force();
 
-    //     let program: Program<DeBruijn> = Program {
-    //         version: (1, 1, 0),
-    //         term,
-    //     };
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term,
+        };
 
-    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
 
-    //     let gene = thing.cek_assembly(riscv_program);
+        let gene = thing.cek_assembly(riscv_program);
 
-    //     gene.save_to_file("test_serialize.s").unwrap();
+        gene.save_to_file("test_serialize.s").unwrap();
 
-    //     Command::new("riscv64-elf-as")
-    //         .args([
-    //             "-march=rv32i",
-    //             "-mabi=ilp32",
-    //             "-o",
-    //             "test_serialize.o",
-    //             "test_serialize.s",
-    //         ])
-    //         .status()
-    //         .unwrap();
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32im",
+                "-mabi=ilp32",
+                "-o",
+                "test_serialize.o",
+                "test_serialize.s",
+            ])
+            .status()
+            .unwrap();
 
-    //     Command::new("riscv64-elf-ld")
-    //         .args([
-    //             "-m",
-    //             "elf32lriscv",
-    //             "-o",
-    //             "test_serialize.elf",
-    //             "-T",
-    //             "../../linker/link.ld",
-    //             "test_serialize.o",
-    //         ])
-    //         .status()
-    //         .unwrap();
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_serialize.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_serialize.o",
+                "../../runtime/zig-out/lib/runtime.o",
+                "../../runtime/zig-out/lib/memset.o",
+            ])
+            .status()
+            .unwrap();
 
-    //     let v = verify_file("test_serialize.elf").unwrap();
+        let v = verify_file("test_serialize.elf").unwrap();
 
-    //     match v.0 {
-    //         ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
-    //         _ => unreachable!("HOW?"),
-    //     }
-    // }
+        match v.0 {
+            ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
+            _ => unreachable!("HOW?"),
+        }
+    }
 
-    // #[test]
-    // fn test_apply_lambda_force_var_delay_error_serialize() {
-    //     let thing = Cek::default();
+    #[test]
+    fn test_apply_lambda_force_var_delay_error_serialize() {
+        let thing = Cek::default();
 
-    //     // (apply (lambda x (force x)) (delay (error)))
-    //     let term = Term::var("x")
-    //         .force()
-    //         .lambda("x")
-    //         .apply(Term::Error.delay());
+        // (apply (lambda x (force x)) (delay (error)))
+        let term = Term::var("x")
+            .force()
+            .lambda("x")
+            .apply(Term::Error.delay());
 
-    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
 
-    //     let program: Program<DeBruijn> = Program {
-    //         version: (1, 1, 0),
-    //         term: term_debruijn,
-    //     };
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
 
-    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
 
-    //     let gene = thing.cek_assembly(riscv_program);
+        let gene = thing.cek_assembly(riscv_program);
 
-    //     gene.save_to_file("test_serialize_2.s").unwrap();
+        gene.save_to_file("test_serialize_2.s").unwrap();
 
-    //     Command::new("riscv64-elf-as")
-    //         .args([
-    //             "-march=rv32i",
-    //             "-mabi=ilp32",
-    //             "-o",
-    //             "test_serialize_2.o",
-    //             "test_serialize_2.s",
-    //         ])
-    //         .status()
-    //         .unwrap();
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32i",
+                "-mabi=ilp32",
+                "-o",
+                "test_serialize_2.o",
+                "test_serialize_2.s",
+            ])
+            .status()
+            .unwrap();
 
-    //     Command::new("riscv64-elf-ld")
-    //         .args([
-    //             "-m",
-    //             "elf32lriscv",
-    //             "-o",
-    //             "test_serialize_2.elf",
-    //             "-T",
-    //             "../../linker/link.ld",
-    //             "test_serialize_2.o",
-    //         ])
-    //         .status()
-    //         .unwrap();
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_serialize_2.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_serialize_2.o",
+                "../../runtime/zig-out/lib/runtime.o",
+                "../../runtime/zig-out/lib/memset.o",
+            ])
+            .status()
+            .unwrap();
 
-    //     let v = verify_file("test_serialize_2.elf").unwrap();
+        let v = verify_file("test_serialize_2.elf").unwrap();
 
-    //     match v.0 {
-    //         ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
-    //         _ => unreachable!("HOW?"),
-    //     }
-    // }
-    // #[test]
-    // fn test_apply_apply_builtin_serialize() {
-    //     let thing = Cek::default();
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
 
-    //     // (apply (lambda x (force x)) (delay (error)))
-    //     let term: Term<Name> = Term::add_integer()
-    //         .apply(Term::Error.delay())
-    //         .apply(Term::Error.delay());
+        match v.0 {
+            ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
+            e => unreachable!("HOW? {e:#?}"),
+        }
+    }
 
-    //     let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
+    #[test]
+    fn test_apply_apply_builtin_serialize() {
+        let thing = Cek::default();
 
-    //     let program: Program<DeBruijn> = Program {
-    //         version: (1, 1, 0),
-    //         term: term_debruijn,
-    //     };
+        // (apply (lambda x (force x)) (delay (error)))
+        let term: Term<Name> = Term::add_integer()
+            .apply(Term::Error.delay())
+            .apply(Term::Error.delay());
 
-    //     let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let term_debruijn: Term<DeBruijn> = term.try_into().unwrap();
 
-    //     let gene = thing.cek_assembly(riscv_program);
+        let program: Program<DeBruijn> = Program {
+            version: (1, 1, 0),
+            term: term_debruijn,
+        };
 
-    //     gene.save_to_file("test_serialize_3.s").unwrap();
+        let riscv_program = serialize(&program, 0x90000000).unwrap();
 
-    //     Command::new("riscv64-elf-as")
-    //         .args([
-    //             "-march=rv32i",
-    //             "-mabi=ilp32",
-    //             "-o",
-    //             "test_serialize_3.o",
-    //             "test_serialize_3.s",
-    //         ])
-    //         .status()
-    //         .unwrap();
+        let gene = thing.cek_assembly(riscv_program);
 
-    //     Command::new("riscv64-elf-ld")
-    //         .args([
-    //             "-m",
-    //             "elf32lriscv",
-    //             "-o",
-    //             "test_serialize_3.elf",
-    //             "-T",
-    //             "../../linker/link.ld",
-    //             "test_serialize_3.o",
-    //         ])
-    //         .status()
-    //         .unwrap();
+        gene.save_to_file("test_serialize_3.s").unwrap();
 
-    //     let v = verify_file("test_serialize_3.elf").unwrap();
+        Command::new("riscv64-elf-as")
+            .args([
+                "-march=rv32im",
+                "-mabi=ilp32",
+                "-o",
+                "test_serialize_3.o",
+                "test_serialize_3.s",
+            ])
+            .status()
+            .unwrap();
 
-    //     // let mut file = File::create("bbbb.txt").unwrap();
-    //     // write!(
-    //     //     &mut file,
-    //     //     "{}",
-    //     //     v.1.iter()
-    //     //         .map(|(item, _)| {
-    //     //             format!(
-    //     //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
-    //     //                 item.step_number,
-    //     //                 riscv_decode::decode(item.read_pc.opcode),
-    //     //                 item.read_pc.opcode,
-    //     //                 item,
-    //     //             )
-    //     //         })
-    //     //         .collect::<Vec<String>>()
-    //     //         .join("\n")
-    //     // )
-    //     // .unwrap();
-    //     // file.flush().unwrap();
+        Command::new("riscv64-elf-ld")
+            .args([
+                "-m",
+                "elf32lriscv",
+                "-o",
+                "test_serialize_3.elf",
+                "-T",
+                "../../linker/link.ld",
+                "test_serialize_3.o",
+                "../../runtime/zig-out/lib/runtime.o",
+                "../../runtime/zig-out/lib/memset.o",
+            ])
+            .status()
+            .unwrap();
 
-    //     match v.0 {
-    //         ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
-    //         g => unreachable!("HOW? {:#?}", g),
-    //     }
-    // }
+        let v = verify_file("test_serialize_3.elf").unwrap();
+
+        // let mut file = File::create("bbbb.txt").unwrap();
+        // write!(
+        //     &mut file,
+        //     "{}",
+        //     v.1.iter()
+        //         .map(|(item, _)| {
+        //             format!(
+        //                 "Step number: {}, Opcode: {:#?}, hex: {:#x}\nFull: {:#?}",
+        //                 item.step_number,
+        //                 riscv_decode::decode(item.read_pc.opcode),
+        //                 item.read_pc.opcode,
+        //                 item,
+        //             )
+        //         })
+        //         .collect::<Vec<String>>()
+        //         .join("\n")
+        // )
+        // .unwrap();
+        // file.flush().unwrap();
+
+        match v.0 {
+            ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
+            g => unreachable!("HOW? {:#?}", g),
+        }
+    }
 
     // #[test]
     // fn test_add_2_different_size_numbers() {
