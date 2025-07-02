@@ -928,13 +928,17 @@ pub fn compareMagnitude(x: *const BigInt, y: *const BigInt) struct { bool, *cons
     }
 
     var i: u32 = x.length - 1;
-    while (i >= 0) : (i -= 1) {
+    while (true) : (i -= 1) {
         if (x.words[i] > y.words[i]) {
             return .{ false, x, y };
         }
 
         if (y.words[i] > x.words[i]) {
             return .{ false, y, x };
+        }
+
+        if (i == 0) {
+            break;
         }
     }
 
@@ -1933,7 +1937,7 @@ test "sub signed integers reclaim" {
 /// `Constant.bigInt()` expects.
 ///
 /// returns: pointer to the freshly‑allocated `Constant`
-fn makeIntConstant(heap: *Heap, bi: expr.BigInt) *expr.Constant {
+fn createIntConstant(heap: *Heap, bi: expr.BigInt) *expr.Constant {
     const total_words: u32 = bi.length + 4; // len of type | tag | sign | length | words…
     var buf = heap.createArray(u32, total_words);
 
@@ -1953,8 +1957,8 @@ fn makeIntConstant(heap: *Heap, bi: expr.BigInt) *expr.Constant {
 /// Build the (a, b) argument list for an integer binary builtin.
 /// Both nodes live in the bump‑heap, so their lifetime is unlimited.
 fn createIntArgs(m: *Machine, a: expr.BigInt, b: expr.BigInt) *LinkedValues {
-    const a_val = createConst(m.heap, makeIntConstant(m.heap, a));
-    const b_val = createConst(m.heap, makeIntConstant(m.heap, b));
+    const a_val = createConst(m.heap, createIntConstant(m.heap, a));
+    const b_val = createConst(m.heap, createIntConstant(m.heap, b));
 
     const tail = m.heap.create(LinkedValues, &.{ .value = b_val, .next = null });
     return m.heap.create(LinkedValues, &.{ .value = a_val, .next = tail });
@@ -2057,5 +2061,45 @@ test "multiply differing‑signed integers" {
             else => @panic("TODO"),
         },
         else => @panic("TODO"),
+    }
+}
+
+test "equals integer" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const aWords: [*]const u32 = &.{ 705032704, 1 };
+    const bWords: [*]const u32 = &.{5};
+    const cWords: [*]const u32 = &.{ 705032699, 1 };
+
+    const a = expr.BigInt{ .sign = 1, .length = 2, .words = aWords }; // negative
+    const b = expr.BigInt{ .sign = 0, .length = 1, .words = bWords }; // positive
+    const c = expr.BigInt{ .sign = 1, .length = 2, .words = cWords };
+
+    const resultWords = subSignedIntegers(&machine, a, b);
+
+    const args = createIntArgs(&machine, resultWords.constant.bigInt(), c);
+
+    const newVal = equalsInteger(&machine, args);
+
+    switch (newVal.*) {
+        .constant => |con| {
+            switch (con.constType().*) {
+                .boolean => {
+                    const val = con.bln();
+                    try testing.expect(val);
+                },
+                else => {
+                    @panic("TODO");
+                },
+            }
+        },
+        else => {
+            @panic("TODO");
+        },
     }
 }
