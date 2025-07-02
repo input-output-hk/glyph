@@ -116,6 +116,26 @@ const Value = union(enum(u32)) {
             },
         }
     }
+
+    pub fn unwrapBytestring(v: *const Value) BigInt {
+        switch (v.*) {
+            .constant => |c| {
+                switch (c.constType().*) {
+                    .bytes => {
+                        return c.innerBytes();
+                    },
+                    else => {
+                        utils.printString("Not an bytestring constant\n");
+                        utils.exit(std.math.maxInt(u32));
+                    },
+                }
+            },
+            else => {
+                utils.printString("Not a constant\n");
+                utils.exit(std.math.maxInt(u32));
+            },
+        }
+    }
 };
 
 pub const Env = struct {
@@ -472,12 +492,48 @@ pub fn equalsInteger(m: *Machine, args: *LinkedValues) *const Value {
     return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn lessThanInteger(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn lessThanInteger(m: *Machine, args: *LinkedValues) *const Value {
+    const y = args.value.unwrapInteger();
+
+    const x = args.next.?.value.unwrapInteger();
+
+    const xPtr = &x;
+
+    const equality = compareMagnitude(xPtr, &y);
+
+    var result = m.heap.createArray(u32, 3);
+
+    result[0] = 1;
+
+    result[1] = @intFromEnum(ConstantType.boolean);
+
+    result[2] = @intFromBool(
+        !equality[0] and (@intFromPtr(xPtr) != @intFromPtr(equality[1])),
+    );
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn lessThanEqualsInteger(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn lessThanEqualsInteger(m: *Machine, args: *LinkedValues) *const Value {
+    const y = args.value.unwrapInteger();
+
+    const x = args.next.?.value.unwrapInteger();
+
+    const xPtr = &x;
+
+    const equality = compareMagnitude(xPtr, &y);
+
+    var result = m.heap.createArray(u32, 3);
+
+    result[0] = 1;
+
+    result[1] = @intFromEnum(ConstantType.boolean);
+
+    result[2] = @intFromBool(
+        equality[0] or (@intFromPtr(xPtr) != @intFromPtr(equality[1])),
+    );
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 // ByteString functions
