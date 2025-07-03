@@ -149,7 +149,7 @@ fn serialize_term(preceeding_byte_size: u32, term: &Term<DeBruijn>) -> Result<Ve
         } => serialize_lambda(preceeding_byte_size, body),
         Term::Apply { function, argument } => {
             serialize_apply(preceeding_byte_size, function, argument)
-        },
+        }
         Term::Force(term) => serialize_force(preceeding_byte_size, term),
         Term::Delay(term) => serialize_delay(preceeding_byte_size, term),
         Term::Constant(constant) => serialize_constant(constant),
@@ -268,7 +268,7 @@ fn serialize_constant(constant: &Rc<Constant>) -> Result<Vec<u8>> {
             return Err(SerializationError::InvalidTermType(format!(
                 "Unsupported constant type: {constant:?}",
             )));
-        },
+        }
     };
 
     // Write serialized data to our buffer
@@ -386,7 +386,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
             // Write a simple placeholder for fields
             // In a real implementation, you'd recursively serialize each field
             data_buffer.write_u32::<LittleEndian>(constr_data.fields.len() as u32)?;
-        },
+        }
         PlutusData::Map(map_data) => {
             // Write the map tag
             data_buffer.write_u32::<LittleEndian>(data_tag::MAP)?;
@@ -396,7 +396,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
 
             // A simplified representation - in reality you'd serialize each key-value pair
             // This is just a placeholder
-        },
+        }
         PlutusData::Array(array_data) => {
             // Write the list tag
             data_buffer.write_u32::<LittleEndian>(data_tag::LIST)?;
@@ -406,7 +406,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
 
             // A simplified representation - in reality you'd serialize each list element
             // This is just a placeholder
-        },
+        }
         PlutusData::BigInt(int_data) => {
             // Write the integer tag
             data_buffer.write_u32::<LittleEndian>(data_tag::INTEGER)?;
@@ -430,7 +430,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
 
                     // Write the actual bytes
                     data_buffer.write_all(&bytes)?;
-                },
+                }
                 BigInt::BigUInt(bytes_val) => {
                     // Positive big integer
                     data_buffer.write_u8(0)?; // Sign byte (0 for positive)
@@ -443,7 +443,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
 
                     // Write the actual bytes
                     data_buffer.write_all(bytes)?;
-                },
+                }
                 BigInt::BigNInt(bytes_val) => {
                     // Negative big integer
                     data_buffer.write_u8(1)?; // Sign byte (1 for negative)
@@ -456,9 +456,9 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
 
                     // Write the actual bytes
                     data_buffer.write_all(bytes)?;
-                },
+                }
             }
-        },
+        }
         PlutusData::BoundedBytes(bytes) => {
             // Write the bytestring tag
             data_buffer.write_u32::<LittleEndian>(data_tag::BYTESTRING)?;
@@ -466,7 +466,7 @@ fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
             // Write length and bytes
             data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
             data_buffer.write_all(bytes)?;
-        },
+        }
     }
 
     // Get the serialized data

@@ -4,14 +4,6 @@
 
 use std::{fs::File, io::Write};
 
-use emulator::{
-    ExecutionResult,
-    executor::{
-        fetcher::{FullTrace, execute_program},
-        utils::FailConfiguration,
-    },
-    loader::program::{Program, load_elf},
-};
 use strum_macros::EnumIter;
 
 /// RISC-V register
@@ -683,22 +675,22 @@ impl CodeGenerator {
             match instruction {
                 Instruction::Label(label) => {
                     result.push_str(&format!("{label}:\n"));
-                },
+                }
                 Instruction::Comment(comment) => {
                     result.push_str(&format!("    # {comment}\n"));
-                },
+                }
                 Instruction::Global(symbol) => {
                     result.push_str(&format!(".global {symbol}\n"));
-                },
+                }
                 Instruction::Section(section) => {
                     result.push_str(&format!(".section .{section}\n"));
-                },
+                }
                 Instruction::Align(align) => {
                     result.push_str(&format!("    .align {align}\n"));
-                },
+                }
                 Instruction::Word(value) => {
                     result.push_str(&format!("    .word {value}\n"));
-                },
+                }
                 Instruction::Byte(value) => {
                     result.push_str(&format!(
                         "    .byte {}\n",
@@ -708,21 +700,21 @@ impl CodeGenerator {
                             .collect::<Vec<String>>()
                             .join(", ")
                     ));
-                },
+                }
                 Instruction::Ascii(string) => {
                     result.push_str(&format!("    .ascii \"{string}\"\n"));
-                },
+                }
                 Instruction::Asciiz(string) => {
                     result.push_str(&format!("    .asciiz \"{string}\"\n"));
-                },
+                }
                 Instruction::Space(size) => {
                     result.push_str(&format!("    .space {size}\n"));
-                },
+                }
                 _ => {
                     result.push_str("    ");
                     result.push_str(&self.format_instruction(instruction));
                     result.push('\n');
-                },
+                }
             }
         }
 
@@ -734,163 +726,163 @@ impl CodeGenerator {
         match instruction {
             Instruction::Add(rd, rs1, rs2) => {
                 format!("add {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Sub(rd, rs1, rs2) => {
                 format!("sub {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::And(rd, rs1, rs2) => {
                 format!("and {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Or(rd, rs1, rs2) => {
                 format!("or {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Xor(rd, rs1, rs2) => {
                 format!("xor {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Slt(rd, rs1, rs2) => {
                 format!("slt {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Sltu(rd, rs1, rs2) => {
                 format!("sltu {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Sll(rd, rs1, rs2) => {
                 format!("sll {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Srl(rd, rs1, rs2) => {
                 format!("srl {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Sra(rd, rs1, rs2) => {
                 format!("sra {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Mul(rd, rs1, rs2) => {
                 format!("mul {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Mulh(rd, rs1, rs2) => {
                 format!("mulh {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Mulhsu(rd, rs1, rs2) => {
                 format!("mulhsu {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Mulhu(rd, rs1, rs2) => {
                 format!("mulhu {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Div(rd, rs1, rs2) => {
                 format!("div {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Divu(rd, rs1, rs2) => {
                 format!("divu {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Rem(rd, rs1, rs2) => {
                 format!("rem {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Remu(rd, rs1, rs2) => {
                 format!("remu {}, {}, {}", rd.name(), rs1.name(), rs2.name())
-            },
+            }
             Instruction::Addi(rd, rs1, imm) => {
                 format!("addi {}, {}, {}", rd.name(), rs1.name(), imm)
-            },
+            }
             Instruction::Andi(rd, rs1, imm) => {
                 format!("andi {}, {}, {}", rd.name(), rs1.name(), imm)
-            },
+            }
             Instruction::Ori(rd, rs1, imm) => {
                 format!("ori {}, {}, {}", rd.name(), rs1.name(), imm)
-            },
+            }
             Instruction::Xori(rd, rs1, imm) => {
                 format!("xori {}, {}, {}", rd.name(), rs1.name(), imm)
-            },
+            }
             Instruction::Slti(rd, rs1, imm) => {
                 format!("slti {}, {}, {}", rd.name(), rs1.name(), imm)
-            },
+            }
             Instruction::Sltiu(rd, rs1, imm) => {
                 format!("sltiu {}, {}, {}", rd.name(), rs1.name(), imm)
-            },
+            }
             Instruction::Slli(rd, rs1, imm) => {
                 format!("slli {}, {}, {}", rd.name(), rs1.name(), imm)
-            },
+            }
             Instruction::Srli(rd, rs1, imm) => {
                 format!("srli {}, {}, {}", rd.name(), rs1.name(), imm)
-            },
+            }
             Instruction::Srai(rd, rs1, imm) => {
                 format!("srai {}, {}, {}", rd.name(), rs1.name(), imm)
-            },
+            }
             Instruction::Lw(rd, offset, rs1) => {
                 format!("lw {}, {}({})", rd.name(), offset, rs1.name())
-            },
+            }
             Instruction::Lh(rd, offset, rs1) => {
                 format!("lh {}, {}({})", rd.name(), offset, rs1.name())
-            },
+            }
             Instruction::Lb(rd, offset, rs1) => {
                 format!("lb {}, {}({})", rd.name(), offset, rs1.name())
-            },
+            }
             Instruction::Lhu(rd, offset, rs1) => {
                 format!("lhu {}, {}({})", rd.name(), offset, rs1.name())
-            },
+            }
             Instruction::Lbu(rd, offset, rs1) => {
                 format!("lbu {}, {}({})", rd.name(), offset, rs1.name())
-            },
+            }
             Instruction::Jalr(rd, rs1, imm) => {
                 format!("jalr {}, {}, {}", rd.name(), rs1.name(), imm)
-            },
+            }
             Instruction::Sw(rs2, offset, rs1) => {
                 format!("sw {}, {}({})", rs2.name(), offset, rs1.name())
-            },
+            }
             Instruction::Sh(rs2, offset, rs1) => {
                 format!("sh {}, {}({})", rs2.name(), offset, rs1.name())
-            },
+            }
             Instruction::Sb(rs2, offset, rs1) => {
                 format!("sb {}, {}({})", rs2.name(), offset, rs1.name())
-            },
+            }
             Instruction::Beq(rs1, rs2, label) => {
                 format!("beq {}, {}, {}", rs1.name(), rs2.name(), label)
-            },
+            }
             Instruction::Bne(rs1, rs2, label) => {
                 format!("bne {}, {}, {}", rs1.name(), rs2.name(), label)
-            },
+            }
             Instruction::Blt(rs1, rs2, label) => {
                 format!("blt {}, {}, {}", rs1.name(), rs2.name(), label)
-            },
+            }
             Instruction::Bge(rs1, rs2, label) => {
                 format!("bge {}, {}, {}", rs1.name(), rs2.name(), label)
-            },
+            }
             Instruction::Bltu(rs1, rs2, label) => {
                 format!("bltu {}, {}, {}", rs1.name(), rs2.name(), label)
-            },
+            }
             Instruction::Bgeu(rs1, rs2, label) => {
                 format!("bgeu {}, {}, {}", rs1.name(), rs2.name(), label)
-            },
+            }
             Instruction::Lui(rd, imm) => {
                 format!("lui {}, {}", rd.name(), imm)
-            },
+            }
             Instruction::Auipc(rd, imm) => {
                 format!("auipc {}, {}", rd.name(), imm)
-            },
+            }
             Instruction::Jal(rd, label) => {
                 format!("jal {}, {}", rd.name(), label)
-            },
+            }
             Instruction::Li(rd, imm) => {
                 format!("li {}, {}", rd.name(), imm)
-            },
+            }
             Instruction::La(rd, symbol) => {
                 format!("la {}, {}", rd.name(), symbol)
-            },
+            }
             Instruction::Mv(rd, rs) => {
                 format!("mv {}, {}", rd.name(), rs.name())
-            },
+            }
             Instruction::Not(rd, rs) => {
                 format!("not {}, {}", rd.name(), rs.name())
-            },
+            }
             Instruction::Neg(rd, rs) => {
                 format!("neg {}, {}", rd.name(), rs.name())
-            },
+            }
             Instruction::Seqz(rd, rs) => {
                 format!("seqz {}, {}", rd.name(), rs.name())
-            },
+            }
             Instruction::Snez(rd, rs) => {
                 format!("snez {}, {}", rd.name(), rs.name())
-            },
+            }
             Instruction::J(imm) => {
                 format!("j {imm}")
-            },
+            }
             Instruction::Nop => "nop".to_string(),
             Instruction::Label(_) => unreachable!("Labels are handled separately"),
             Instruction::Global(_) => unreachable!("Global directives are handled separately"),
@@ -916,35 +908,6 @@ impl CodeGenerator {
     // pub fn generate_elf(&self, output_path: &Path, linker_script: &str) -> Result<()> {
     //     elf::build_elf(self, linker_script, output_path)
     // }
-}
-
-/// Verify a RISC-V ELF file by executing it in the BitVMX emulator
-pub fn verify_file(
-    fname: &str,
-) -> std::result::Result<(ExecutionResult, FullTrace, Program), ExecutionResult> {
-    let mut program = load_elf(fname, true).unwrap();
-
-    // Execute the program with default settings
-
-    let (result, trace) = execute_program(
-        &mut program,
-        Vec::new(),
-        ".bss",
-        false,
-        &None,
-        None,
-        true,
-        false,
-        false,
-        true,
-        true,
-        true,
-        None,
-        None,
-        FailConfiguration::default(),
-    );
-
-    Ok((result, trace, program))
 }
 
 // Assemble assembly code from a string and generate an ELF file

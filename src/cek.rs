@@ -5505,14 +5505,51 @@ impl Default for Cek {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::process::Command;
 
-    use crate::emulator::verify_file;
     use crate::serializer::{constants::const_tag, serialize};
-    use emulator::ExecutionResult;
+    use crate::{LINKER_SCRIPT, MEMSET, RUNTIME};
+    use emulator::{
+        ExecutionResult,
+        executor::{
+            fetcher::{FullTrace, execute_program},
+            utils::FailConfiguration,
+        },
+        loader::program::{self, load_elf},
+    };
     use uplc::ast::{DeBruijn, Name, Program, Term};
 
     use crate::cek::Cek;
+
+    /// Verify a RISC-V ELF file by executing it in the BitVMX emulator
+    pub fn verify_file(
+        fname: &str,
+    ) -> std::result::Result<(ExecutionResult, FullTrace, program::Program), ExecutionResult> {
+        let mut program = load_elf(fname, true).unwrap();
+
+        // Execute the program with default settings
+
+        let (result, trace) = execute_program(
+            &mut program,
+            Vec::new(),
+            ".bss",
+            false,
+            &None,
+            None,
+            true,
+            false,
+            false,
+            true,
+            true,
+            true,
+            None,
+            None,
+            FailConfiguration::default(),
+        );
+
+        Ok((result, trace, program))
+    }
 
     #[test]
     fn test_apply_lambda_var_constant() {
@@ -5525,37 +5562,55 @@ mod tests {
             0, 0, 0, /* length */ 1, 0, 0, 0, /*value (little-endian) */ 13, 0, 0, 0,
         ]);
 
-        // println!("{}", gene.generate());
+        let temp_dir = tempfile::tempdir().unwrap();
 
-        gene.save_to_file("test_apply.s").unwrap();
+        let program_s_path = temp_dir.path().join("program.s");
+
+        fs::write(program_s_path, gene.generate()).unwrap();
 
         Command::new("riscv64-elf-as")
+            .current_dir(temp_dir.path())
             .args([
                 "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
-                "test_apply.o",
-                "test_apply.s",
+                "program.o",
+                "program.s",
             ])
             .status()
             .unwrap();
 
+        // create runtime.o file in temp_dir
+        let runtime_o_path = temp_dir.path().join("runtime.o");
+        fs::write(runtime_o_path, RUNTIME).unwrap();
+
+        // create memset.o file in temp_dir
+        let memset_o_path = temp_dir.path().join("memset.o");
+        fs::write(memset_o_path, MEMSET).unwrap();
+
+        // create link.ld file in temp_dir
+        let link_ld_path = temp_dir.path().join("link.ld");
+        fs::write(link_ld_path, LINKER_SCRIPT).unwrap();
+
         Command::new("riscv64-elf-ld")
+            .current_dir(temp_dir.path())
             .args([
                 "-m",
                 "elf32lriscv",
                 "-o",
-                "test_apply.elf",
+                "program.elf",
                 "-T",
-                "./linker/link.ld",
-                "test_apply.o",
-                "./runtime/zig-out/lib/runtime.o",
-                "./runtime/zig-out/lib/memset.o",
+                "link.ld",
+                "program.o",
+                "runtime.o",
+                "memset.o",
             ])
             .status()
             .unwrap();
 
-        let v = verify_file("test_apply.elf").unwrap();
+        let program_elf_path = temp_dir.path().join("program.elf");
+
+        let v = verify_file(program_elf_path.to_str().unwrap()).unwrap();
 
         let result_pointer = match v.0 {
             ExecutionResult::Halt(result, _step) => result,
@@ -5616,37 +5671,55 @@ mod tests {
             /*value (little-endian) */ 13, 0, 0, 0,
         ]);
 
-        // println!("{}", gene.generate());
+        let temp_dir = tempfile::tempdir().unwrap();
 
-        gene.save_to_file("test_add.s").unwrap();
+        let program_s_path = temp_dir.path().join("program.s");
+
+        fs::write(program_s_path, gene.generate()).unwrap();
 
         Command::new("riscv64-elf-as")
+            .current_dir(temp_dir.path())
             .args([
                 "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
-                "test_add.o",
-                "test_add.s",
+                "program.o",
+                "program.s",
             ])
             .status()
             .unwrap();
 
+        // create runtime.o file in temp_dir
+        let runtime_o_path = temp_dir.path().join("runtime.o");
+        fs::write(runtime_o_path, RUNTIME).unwrap();
+
+        // create memset.o file in temp_dir
+        let memset_o_path = temp_dir.path().join("memset.o");
+        fs::write(memset_o_path, MEMSET).unwrap();
+
+        // create link.ld file in temp_dir
+        let link_ld_path = temp_dir.path().join("link.ld");
+        fs::write(link_ld_path, LINKER_SCRIPT).unwrap();
+
         Command::new("riscv64-elf-ld")
+            .current_dir(temp_dir.path())
             .args([
                 "-m",
                 "elf32lriscv",
                 "-o",
-                "test_add.elf",
+                "program.elf",
                 "-T",
-                "../../linker/link.ld",
-                "test_add.o",
-                "../../runtime/zig-out/lib/runtime.o",
-                "../../runtime/zig-out/lib/memset.o",
+                "link.ld",
+                "program.o",
+                "runtime.o",
+                "memset.o",
             ])
             .status()
             .unwrap();
 
-        let v = verify_file("test_add.elf").unwrap();
+        let program_elf_path = temp_dir.path().join("program.elf");
+
+        let v = verify_file(program_elf_path.to_str().unwrap()).unwrap();
 
         let result_pointer = match v.0 {
             ExecutionResult::Halt(result, _step) => result,
@@ -5700,35 +5773,55 @@ mod tests {
             /*force */ 5, 0, 0, 0, /*delay */ 1, 0, 0, 0, /*error */ 6, 0, 0, 0,
         ]);
 
-        gene.save_to_file("test_force.s").unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let program_s_path = temp_dir.path().join("program.s");
+
+        fs::write(program_s_path, gene.generate()).unwrap();
 
         Command::new("riscv64-elf-as")
+            .current_dir(temp_dir.path())
             .args([
                 "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
-                "test_force.o",
-                "test_force.s",
+                "program.o",
+                "program.s",
             ])
             .status()
             .unwrap();
 
+        // create runtime.o file in temp_dir
+        let runtime_o_path = temp_dir.path().join("runtime.o");
+        fs::write(runtime_o_path, RUNTIME).unwrap();
+
+        // create memset.o file in temp_dir
+        let memset_o_path = temp_dir.path().join("memset.o");
+        fs::write(memset_o_path, MEMSET).unwrap();
+
+        // create link.ld file in temp_dir
+        let link_ld_path = temp_dir.path().join("link.ld");
+        fs::write(link_ld_path, LINKER_SCRIPT).unwrap();
+
         Command::new("riscv64-elf-ld")
+            .current_dir(temp_dir.path())
             .args([
                 "-m",
                 "elf32lriscv",
                 "-o",
-                "test_force.elf",
+                "program.elf",
                 "-T",
-                "../../linker/link.ld",
-                "test_force.o",
-                "../../runtime/zig-out/lib/runtime.o",
-                "../../runtime/zig-out/lib/memset.o",
+                "link.ld",
+                "program.o",
+                "runtime.o",
+                "memset.o",
             ])
             .status()
             .unwrap();
 
-        let v = verify_file("test_force.elf").unwrap();
+        let program_elf_path = temp_dir.path().join("program.elf");
+
+        let v = verify_file(program_elf_path.to_str().unwrap()).unwrap();
 
         match v.0 {
             ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
@@ -5863,35 +5956,55 @@ mod tests {
 
         let gene = thing.cek_assembly(riscv_program);
 
-        gene.save_to_file("test_serialize.s").unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let program_s_path = temp_dir.path().join("program.s");
+
+        fs::write(program_s_path, gene.generate()).unwrap();
 
         Command::new("riscv64-elf-as")
+            .current_dir(temp_dir.path())
             .args([
                 "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
-                "test_serialize.o",
-                "test_serialize.s",
+                "program.o",
+                "program.s",
             ])
             .status()
             .unwrap();
 
+        // create runtime.o file in temp_dir
+        let runtime_o_path = temp_dir.path().join("runtime.o");
+        fs::write(runtime_o_path, RUNTIME).unwrap();
+
+        // create memset.o file in temp_dir
+        let memset_o_path = temp_dir.path().join("memset.o");
+        fs::write(memset_o_path, MEMSET).unwrap();
+
+        // create link.ld file in temp_dir
+        let link_ld_path = temp_dir.path().join("link.ld");
+        fs::write(link_ld_path, LINKER_SCRIPT).unwrap();
+
         Command::new("riscv64-elf-ld")
+            .current_dir(temp_dir.path())
             .args([
                 "-m",
                 "elf32lriscv",
                 "-o",
-                "test_serialize.elf",
+                "program.elf",
                 "-T",
-                "../../linker/link.ld",
-                "test_serialize.o",
-                "../../runtime/zig-out/lib/runtime.o",
-                "../../runtime/zig-out/lib/memset.o",
+                "link.ld",
+                "program.o",
+                "runtime.o",
+                "memset.o",
             ])
             .status()
             .unwrap();
 
-        let v = verify_file("test_serialize.elf").unwrap();
+        let program_elf_path = temp_dir.path().join("program.elf");
+
+        let v = verify_file(program_elf_path.to_str().unwrap()).unwrap();
 
         match v.0 {
             ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
@@ -5920,35 +6033,55 @@ mod tests {
 
         let gene = thing.cek_assembly(riscv_program);
 
-        gene.save_to_file("test_serialize_2.s").unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let program_s_path = temp_dir.path().join("program.s");
+
+        fs::write(program_s_path, gene.generate()).unwrap();
 
         Command::new("riscv64-elf-as")
+            .current_dir(temp_dir.path())
             .args([
-                "-march=rv32i",
+                "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
-                "test_serialize_2.o",
-                "test_serialize_2.s",
+                "program.o",
+                "program.s",
             ])
             .status()
             .unwrap();
 
+        // create runtime.o file in temp_dir
+        let runtime_o_path = temp_dir.path().join("runtime.o");
+        fs::write(runtime_o_path, RUNTIME).unwrap();
+
+        // create memset.o file in temp_dir
+        let memset_o_path = temp_dir.path().join("memset.o");
+        fs::write(memset_o_path, MEMSET).unwrap();
+
+        // create link.ld file in temp_dir
+        let link_ld_path = temp_dir.path().join("link.ld");
+        fs::write(link_ld_path, LINKER_SCRIPT).unwrap();
+
         Command::new("riscv64-elf-ld")
+            .current_dir(temp_dir.path())
             .args([
                 "-m",
                 "elf32lriscv",
                 "-o",
-                "test_serialize_2.elf",
+                "program.elf",
                 "-T",
-                "../../linker/link.ld",
-                "test_serialize_2.o",
-                "../../runtime/zig-out/lib/runtime.o",
-                "../../runtime/zig-out/lib/memset.o",
+                "link.ld",
+                "program.o",
+                "runtime.o",
+                "memset.o",
             ])
             .status()
             .unwrap();
 
-        let v = verify_file("test_serialize_2.elf").unwrap();
+        let program_elf_path = temp_dir.path().join("program.elf");
+
+        let v = verify_file(program_elf_path.to_str().unwrap()).unwrap();
 
         match v.0 {
             ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
@@ -5976,35 +6109,55 @@ mod tests {
 
         let gene = thing.cek_assembly(riscv_program);
 
-        gene.save_to_file("test_serialize_3.s").unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let program_s_path = temp_dir.path().join("program.s");
+
+        fs::write(program_s_path, gene.generate()).unwrap();
 
         Command::new("riscv64-elf-as")
+            .current_dir(temp_dir.path())
             .args([
                 "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
-                "test_serialize_3.o",
-                "test_serialize_3.s",
+                "program.o",
+                "program.s",
             ])
             .status()
             .unwrap();
 
+        // create runtime.o file in temp_dir
+        let runtime_o_path = temp_dir.path().join("runtime.o");
+        fs::write(runtime_o_path, RUNTIME).unwrap();
+
+        // create memset.o file in temp_dir
+        let memset_o_path = temp_dir.path().join("memset.o");
+        fs::write(memset_o_path, MEMSET).unwrap();
+
+        // create link.ld file in temp_dir
+        let link_ld_path = temp_dir.path().join("link.ld");
+        fs::write(link_ld_path, LINKER_SCRIPT).unwrap();
+
         Command::new("riscv64-elf-ld")
+            .current_dir(temp_dir.path())
             .args([
                 "-m",
                 "elf32lriscv",
                 "-o",
-                "test_serialize_3.elf",
+                "program.elf",
                 "-T",
-                "../../linker/link.ld",
-                "test_serialize_3.o",
-                "../../runtime/zig-out/lib/runtime.o",
-                "../../runtime/zig-out/lib/memset.o",
+                "link.ld",
+                "program.o",
+                "runtime.o",
+                "memset.o",
             ])
             .status()
             .unwrap();
 
-        let v = verify_file("test_serialize_3.elf").unwrap();
+        let program_elf_path = temp_dir.path().join("program.elf");
+
+        let v = verify_file(program_elf_path.to_str().unwrap()).unwrap();
 
         match v.0 {
             ExecutionResult::Halt(result, _step) => assert_eq!(result, u32::MAX),
@@ -6032,35 +6185,55 @@ mod tests {
 
         let gene = thing.cek_assembly(riscv_program);
 
-        gene.save_to_file("test_add_big_int.s").unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let program_s_path = temp_dir.path().join("program.s");
+
+        fs::write(program_s_path, gene.generate()).unwrap();
 
         Command::new("riscv64-elf-as")
+            .current_dir(temp_dir.path())
             .args([
                 "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
-                "test_add_big_int.o",
-                "test_add_big_int.s",
+                "program.o",
+                "program.s",
             ])
             .status()
             .unwrap();
 
+        // create runtime.o file in temp_dir
+        let runtime_o_path = temp_dir.path().join("runtime.o");
+        fs::write(runtime_o_path, RUNTIME).unwrap();
+
+        // create memset.o file in temp_dir
+        let memset_o_path = temp_dir.path().join("memset.o");
+        fs::write(memset_o_path, MEMSET).unwrap();
+
+        // create link.ld file in temp_dir
+        let link_ld_path = temp_dir.path().join("link.ld");
+        fs::write(link_ld_path, LINKER_SCRIPT).unwrap();
+
         Command::new("riscv64-elf-ld")
+            .current_dir(temp_dir.path())
             .args([
                 "-m",
                 "elf32lriscv",
                 "-o",
-                "test_add_big_int.elf",
+                "program.elf",
                 "-T",
-                "../../linker/link.ld",
-                "test_add_big_int.o",
-                "../../runtime/zig-out/lib/runtime.o",
-                "../../runtime/zig-out/lib/memset.o",
+                "link.ld",
+                "program.o",
+                "runtime.o",
+                "memset.o",
             ])
             .status()
             .unwrap();
 
-        let v = verify_file("test_add_big_int.elf").unwrap();
+        let program_elf_path = temp_dir.path().join("program.elf");
+
+        let v = verify_file(program_elf_path.to_str().unwrap()).unwrap();
 
         let result_pointer = match v.0 {
             ExecutionResult::Halt(result, _step) => result,
@@ -6128,35 +6301,55 @@ mod tests {
 
         let gene = thing.cek_assembly(riscv_program);
 
-        gene.save_to_file("test_add_big_int_sign.s").unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let program_s_path = temp_dir.path().join("program.s");
+
+        fs::write(program_s_path, gene.generate()).unwrap();
 
         Command::new("riscv64-elf-as")
+            .current_dir(temp_dir.path())
             .args([
-                "-march=rv32i",
+                "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
-                "test_add_big_int_sign.o",
-                "test_add_big_int_sign.s",
+                "program.o",
+                "program.s",
             ])
             .status()
             .unwrap();
 
+        // create runtime.o file in temp_dir
+        let runtime_o_path = temp_dir.path().join("runtime.o");
+        fs::write(runtime_o_path, RUNTIME).unwrap();
+
+        // create memset.o file in temp_dir
+        let memset_o_path = temp_dir.path().join("memset.o");
+        fs::write(memset_o_path, MEMSET).unwrap();
+
+        // create link.ld file in temp_dir
+        let link_ld_path = temp_dir.path().join("link.ld");
+        fs::write(link_ld_path, LINKER_SCRIPT).unwrap();
+
         Command::new("riscv64-elf-ld")
+            .current_dir(temp_dir.path())
             .args([
                 "-m",
                 "elf32lriscv",
                 "-o",
-                "test_add_big_int_sign.elf",
+                "program.elf",
                 "-T",
-                "../../linker/link.ld",
-                "test_add_big_int_sign.o",
-                "../../runtime/zig-out/lib/runtime.o",
-                "../../runtime/zig-out/lib/memset.o",
+                "link.ld",
+                "program.o",
+                "runtime.o",
+                "memset.o",
             ])
             .status()
             .unwrap();
 
-        let v = verify_file("test_add_big_int_sign.elf").unwrap();
+        let program_elf_path = temp_dir.path().join("program.elf");
+
+        let v = verify_file(program_elf_path.to_str().unwrap()).unwrap();
 
         let result_pointer = match v.0 {
             ExecutionResult::Halt(result, _step) => result,
@@ -6224,35 +6417,55 @@ mod tests {
 
         let gene = thing.cek_assembly(riscv_program);
 
-        gene.save_to_file("test_sub_big_int.s").unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let program_s_path = temp_dir.path().join("program.s");
+
+        fs::write(program_s_path, gene.generate()).unwrap();
 
         Command::new("riscv64-elf-as")
+            .current_dir(temp_dir.path())
             .args([
-                "-march=rv32i",
+                "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
-                "test_sub_big_int.o",
-                "test_sub_big_int.s",
+                "program.o",
+                "program.s",
             ])
             .status()
             .unwrap();
 
+        // create runtime.o file in temp_dir
+        let runtime_o_path = temp_dir.path().join("runtime.o");
+        fs::write(runtime_o_path, RUNTIME).unwrap();
+
+        // create memset.o file in temp_dir
+        let memset_o_path = temp_dir.path().join("memset.o");
+        fs::write(memset_o_path, MEMSET).unwrap();
+
+        // create link.ld file in temp_dir
+        let link_ld_path = temp_dir.path().join("link.ld");
+        fs::write(link_ld_path, LINKER_SCRIPT).unwrap();
+
         Command::new("riscv64-elf-ld")
+            .current_dir(temp_dir.path())
             .args([
                 "-m",
                 "elf32lriscv",
                 "-o",
-                "test_sub_big_int.elf",
+                "program.elf",
                 "-T",
-                "../../linker/link.ld",
-                "test_sub_big_int.o",
-                "../../runtime/zig-out/lib/runtime.o",
-                "../../runtime/zig-out/lib/memset.o",
+                "link.ld",
+                "program.o",
+                "runtime.o",
+                "memset.o",
             ])
             .status()
             .unwrap();
 
-        let v = verify_file("test_sub_big_int.elf").unwrap();
+        let program_elf_path = temp_dir.path().join("program.elf");
+
+        let v = verify_file(program_elf_path.to_str().unwrap()).unwrap();
 
         let result_pointer = match v.0 {
             ExecutionResult::Halt(result, _step) => result,
@@ -6324,35 +6537,55 @@ mod tests {
 
         let gene = thing.cek_assembly(riscv_program);
 
-        gene.save_to_file("test_equal_big_int.s").unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let program_s_path = temp_dir.path().join("program.s");
+
+        fs::write(program_s_path, gene.generate()).unwrap();
 
         Command::new("riscv64-elf-as")
+            .current_dir(temp_dir.path())
             .args([
-                "-march=rv32i",
+                "-march=rv32im",
                 "-mabi=ilp32",
                 "-o",
-                "test_equal_big_int.o",
-                "test_equal_big_int.s",
+                "program.o",
+                "program.s",
             ])
             .status()
             .unwrap();
 
+        // create runtime.o file in temp_dir
+        let runtime_o_path = temp_dir.path().join("runtime.o");
+        fs::write(runtime_o_path, RUNTIME).unwrap();
+
+        // create memset.o file in temp_dir
+        let memset_o_path = temp_dir.path().join("memset.o");
+        fs::write(memset_o_path, MEMSET).unwrap();
+
+        // create link.ld file in temp_dir
+        let link_ld_path = temp_dir.path().join("link.ld");
+        fs::write(link_ld_path, LINKER_SCRIPT).unwrap();
+
         Command::new("riscv64-elf-ld")
+            .current_dir(temp_dir.path())
             .args([
                 "-m",
                 "elf32lriscv",
                 "-o",
-                "test_equal_big_int.elf",
+                "program.elf",
                 "-T",
-                "../../linker/link.ld",
-                "test_equal_big_int.o",
-                "../../runtime/zig-out/lib/runtime.o",
-                "../../runtime/zig-out/lib/memset.o",
+                "link.ld",
+                "program.o",
+                "runtime.o",
+                "memset.o",
             ])
             .status()
             .unwrap();
 
-        let v = verify_file("test_equal_big_int.elf").unwrap();
+        let program_elf_path = temp_dir.path().join("program.elf");
+
+        let v = verify_file(program_elf_path.to_str().unwrap()).unwrap();
 
         let result_pointer = match v.0 {
             ExecutionResult::Halt(result, _step) => result,
