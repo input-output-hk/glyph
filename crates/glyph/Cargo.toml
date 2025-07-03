@@ -11,5 +11,7 @@ metadata.workspace = true
 [dependencies]
 clap = { version = "4.5.40", features = ["derive"] }
 color-print = "0.3.7"
+hex = "0.4.3"
 miette = { version = "7.6.0", features = ["fancy"] }
 tokio = { version = "1.45.1", features = ["full"] }
+uplc = "1.1.17"

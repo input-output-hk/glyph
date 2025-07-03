@@ -1,6 +1,7 @@
 use clap::Parser;
 
 mod build;
+mod compile;
 
 pub const BANNER: &str = color_print::cstr! {
 r#"
@@ -39,12 +40,14 @@ impl Cli {
 #[derive(clap::Subcommand)]
 pub enum Cmd {
     Build(build::Args),
+    Compile(compile::Args),
 }
 
 impl Cmd {
     pub async fn exec(self) -> miette::Result<()> {
         match self {
             Cmd::Build(args) => args.exec().await,
+            Cmd::Compile(args) => args.exec().await,
         }
     }
 }

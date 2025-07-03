@@ -35,3 +35,5 @@ examples/output/
 
 .zig-cache/
 zig-out/
+
+sample.uplc

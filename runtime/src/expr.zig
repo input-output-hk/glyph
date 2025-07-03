@@ -148,9 +148,9 @@ pub const Bytes = extern struct {
 
     pub fn compareBytes(x: *const Bytes, y: *const Bytes) struct { bool, *const Bytes, *const Bytes } {
         const lenCompare: struct { greater: *const Bytes, less: *const Bytes } = if (x.length >= y.length) blk: {
-            break :blk .{ x, y };
+            break :blk .{ .greater = x, .less = y };
         } else blk: {
-            break :blk .{ y, x };
+            break :blk .{ .greater = y, .less = x };
         };
 
         var i: u32 = 0;
