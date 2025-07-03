@@ -113,11 +113,63 @@ pub const BigInt = extern struct {
     sign: u32,
     length: u32,
     words: [*]const u32,
+
+    pub fn compareMagnitude(x: *const BigInt, y: *const BigInt) struct { bool, *const BigInt, *const BigInt } {
+        if (x.length > y.length) {
+            return .{ false, x, y };
+        }
+
+        if (y.length > x.length) {
+            return .{ false, y, x };
+        }
+
+        var i: u32 = x.length - 1;
+        while (true) : (i -= 1) {
+            if (x.words[i] > y.words[i]) {
+                return .{ false, x, y };
+            }
+
+            if (y.words[i] > x.words[i]) {
+                return .{ false, y, x };
+            }
+
+            if (i == 0) {
+                break;
+            }
+        }
+
+        return .{ true, x, y };
+    }
 };
 
 pub const Bytes = extern struct {
     length: u32,
     bytes: [*]const u32,
+
+    pub fn compareBytes(x: *const Bytes, y: *const Bytes) struct { bool, *const Bytes, *const Bytes } {
+        const lenCompare: struct { greater: *const Bytes, less: *const Bytes } = if (x.length >= y.length) blk: {
+            break :blk .{ x, y };
+        } else blk: {
+            break :blk .{ y, x };
+        };
+
+        var i: u32 = 0;
+        while (i < lenCompare.greater.length) : (i += 1) {
+            if (i >= lenCompare.less.length) {
+                return .{ false, lenCompare.greater, lenCompare.less };
+            }
+
+            if (lenCompare.greater.bytes[i] > lenCompare.less.bytes[i]) {
+                return .{ false, lenCompare.greater, lenCompare.less };
+            }
+
+            if (lenCompare.less.bytes[i] > lenCompare.greater.bytes[i]) {
+                return .{ false, lenCompare.less, lenCompare.greater };
+            }
+        }
+
+        return .{ true, x, y };
+    }
 };
 
 pub const Constant = extern struct {

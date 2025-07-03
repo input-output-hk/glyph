@@ -8,6 +8,7 @@ const ConstantType = expr.ConstantType;
 const Constant = expr.Constant;
 const DefaultFunction = expr.DefaultFunction;
 const BigInt = expr.BigInt;
+const Bytes = expr.Bytes;
 const utils = @import("utils.zig");
 
 const Frame = union(enum(u32)) {
@@ -117,7 +118,7 @@ const Value = union(enum(u32)) {
         }
     }
 
-    pub fn unwrapBytestring(v: *const Value) BigInt {
+    pub fn unwrapBytestring(v: *const Value) Bytes {
         switch (v.*) {
             .constant => |c| {
                 switch (c.constType().*) {
@@ -479,7 +480,7 @@ pub fn equalsInteger(m: *Machine, args: *LinkedValues) *const Value {
 
     const x = args.next.?.value.unwrapInteger();
 
-    const equality = compareMagnitude(&x, &y);
+    const equality = x.compareMagnitude(&y);
 
     var result = m.heap.createArray(u32, 3);
 
@@ -499,7 +500,7 @@ pub fn lessThanInteger(m: *Machine, args: *LinkedValues) *const Value {
 
     const xPtr = &x;
 
-    const equality = compareMagnitude(xPtr, &y);
+    const equality = xPtr.compareMagnitude(&y);
 
     var result = m.heap.createArray(u32, 3);
 
@@ -521,7 +522,7 @@ pub fn lessThanEqualsInteger(m: *Machine, args: *LinkedValues) *const Value {
 
     const xPtr = &x;
 
-    const equality = compareMagnitude(xPtr, &y);
+    const equality = xPtr.compareMagnitude(&y);
 
     var result = m.heap.createArray(u32, 3);
 
@@ -537,28 +538,121 @@ pub fn lessThanEqualsInteger(m: *Machine, args: *LinkedValues) *const Value {
 }
 
 // ByteString functions
-pub fn appendByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn appendByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const y = args.value.unwrapBytestring();
+    const x = args.next.?.value.unwrapBytestring();
+
+    const length = x.length + y.length;
+
+    // type_length 4 bytes, integer 4 bytes,  length 4 bytes, list of words 4 * (x length + y length)
+    var result = m.heap.createArray(u32, length + 3);
+
+    result[0] = 1;
+    result[1] = @intFromEnum(ConstantType.bytes);
+    result[2] = length;
+
+    var resultPtr = result + 3;
+
+    var i: u32 = 0;
+    while (i < x.length) : (i += 1) {
+        resultPtr[0] = x.bytes[i];
+        resultPtr += 1;
+    }
+
+    i = 0;
+    while (i < y.length) : (i += 1) {
+        resultPtr[0] = y.bytes[i];
+        resultPtr += 1;
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn consByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn consByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const y = args.value.unwrapBytestring();
+    const x = args.next.?.value.unwrapInteger();
+
+    if (x.length > 1 or x.words[0] > 255 or x.sign == 1) {
+        utils.printString("Integer larger than byte or negative");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    const length = y.length + 1;
+
+    // type_length 4 bytes, integer 4 bytes,  length 4 bytes, list of words 4 * (y length + 1)
+    var result = m.heap.createArray(u32, length + 3);
+
+    result[0] = 1;
+    result[1] = @intFromEnum(ConstantType.bytes);
+    result[2] = length;
+    result[3] = x.words[0];
+
+    var resultPtr = result + 4;
+
+    var i: u32 = 0;
+    while (i < x.length) : (i += 1) {
+        resultPtr[0] = y.bytes[i];
+        resultPtr += 1;
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn sliceByteString(_: *Machine, _: *LinkedValues) *const Value {
     @panic("TODO");
 }
 
-pub fn lengthOfByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn lengthOfByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const x = args.value.unwrapBytestring();
+
+    var result = m.heap.createArray(u32, 5);
+
+    result[0] = 1;
+    result[1] = @intFromEnum(ConstantType.integer);
+    result[2] = 0;
+    result[3] = 1;
+    result[4] = x.length;
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn indexByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn indexByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const y = args.value.unwrapInteger();
+    const x = args.next.?.value.unwrapBytestring();
+
+    var result = m.heap.createArray(u32, 5);
+
+    // Must be at least 1 byte, y < max(u32), y >= 0, y < x.length
+    if (x.length == 0 or y.length > 1 or y.sign == 1 or y.words[0] > x.length - 1) {
+        utils.printString("Integer larger than bytestring length or negative");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    result[0] = 1;
+    result[1] = @intFromEnum(ConstantType.integer);
+    result[2] = 0;
+    result[3] = 1;
+    // This will work do to above check
+    result[4] = x.bytes[y.words[0]];
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn equalsByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn equalsByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const y = args.value.unwrapBytestring();
+    const x = args.next.?.value.unwrapBytestring();
+
+    const equality = x.compareBytes(&y);
+
+    var result = m.heap.createArray(u32, 3);
+
+    result[0] = 1;
+
+    result[1] = @intFromEnum(ConstantType.boolean);
+
+    result[2] = @intFromBool(equality[0]);
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn lessThanByteString(_: *Machine, _: *LinkedValues) *const Value {
@@ -907,7 +1001,7 @@ pub fn addSignedIntegers(m: *Machine, x: BigInt, y: BigInt) *const Value {
 }
 
 pub fn subSignedIntegers(m: *Machine, x: BigInt, y: BigInt) *const Value {
-    const compare = compareMagnitude(&x, &y);
+    const compare = x.compareMagnitude(&y);
 
     // equal values so we return 0
     if (compare[0]) {
@@ -972,33 +1066,6 @@ pub fn subSignedIntegers(m: *Machine, x: BigInt, y: BigInt) *const Value {
     result[3] = finalLength;
     m.heap.reclaimHeap(u32, reclaim);
     return createConst(m.heap, @ptrCast(result));
-}
-
-pub fn compareMagnitude(x: *const BigInt, y: *const BigInt) struct { bool, *const BigInt, *const BigInt } {
-    if (x.length > y.length) {
-        return .{ false, x, y };
-    }
-
-    if (y.length > x.length) {
-        return .{ false, y, x };
-    }
-
-    var i: u32 = x.length - 1;
-    while (true) : (i -= 1) {
-        if (x.words[i] > y.words[i]) {
-            return .{ false, x, y };
-        }
-
-        if (y.words[i] > x.words[i]) {
-            return .{ false, y, x };
-        }
-
-        if (i == 0) {
-            break;
-        }
-    }
-
-    return .{ true, x, y };
 }
 
 pub const Machine = struct {
