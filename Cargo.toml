@@ -1,8 +1,5 @@
-[workspace]
-resolver = "2"
-members = ["crates/*"]
-
-[workspace.package]
+[package]
+name = "glyph"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.87.0"
@@ -10,9 +7,20 @@ license = "Apache-2.0"
 repository = "https://github.com/input-output-hk/glyph"
 authors = ["IOG"]
 
-[workspace.dependencies]
-log = "0.4"
+[dependencies]
+clap = { version = "4.5.40", features = ["derive"] }
+color-print = "0.3.7"
+hex = "0.4.3"
+emulator = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "main", package = "emulator" }
+miette = { version = "7.6.0", features = ["fancy"] }
+tokio = { version = "1.45.1", features = ["full"] }
+uplc = "1.1.17"
+byteorder = "1.4.3"
 thiserror = "1.0"
+num-bigint = "0.4.6"
+strum = { version = "0.27.1", features = ["strum_macros"] }
+strum_macros = "0.27.1"
+tempfile = "3.20.0"
 
 [profile.release]
 opt-level = 3

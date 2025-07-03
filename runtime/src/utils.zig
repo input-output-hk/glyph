@@ -20,7 +20,7 @@ fn padTo4(comptime str: []const u8) [((str.len + 3) / 4) * 4]u8 {
 }
 
 pub fn printString(comptime str: []const u8) void {
-    const val = padTo4(str);
+    const val = comptime padTo4(str);
 
     for (val) |character| {
         printChar(character);
