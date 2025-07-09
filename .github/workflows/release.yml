@@ -140,10 +140,10 @@ jobs:
       - name: Install dependencies
         run: |
           ${{ matrix.packages_install }}
-      - name: Install Zig # Add this step
+      - name: Install Zig
         uses: goto-bus-stop/setup-zig@v2
         with:
-          version: 0.15.0-dev.832+1ca213dab # or whatever version you need
+          version: 0.14.1
       - name: Build artifacts
         run: |
           # Actually do builds and make zips and whatnot
