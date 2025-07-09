@@ -23,20 +23,10 @@ jobs:
             binfmt-support
           sudo ln -sf /usr/bin/qemu-riscv32-static /usr/bin/qemu-riscv32
 
-      - name: Cache Zig
-        id: cache-zig
-        uses: actions/cache@v4
-        with:
-          path: /opt/zig-x86_64-linux-0.15.0-dev.832+1ca213dab
-          key: zig-0.15.0-dev.832+1ca213dab-x86_64-linux
-
       - name: Install Zig
-        if: steps.cache-zig.outputs.cache-hit != 'true'
-        run: |
-          curl -L https://ziglang.org/builds/zig-x86_64-linux-0.15.0-dev.832+1ca213dab.tar.xz | tar -xJ -C /opt
-
-      - name: Add Zig to PATH
-        run: echo "/opt/zig-x86_64-linux-0.15.0-dev.832+1ca213dab" >> $GITHUB_PATH
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.0-dev.832+1ca213dab
 
       - name: Run tests
         run: |
