@@ -121,6 +121,10 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Setup SSH Agent
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Install Rust non-interactively if not already installed
         if: ${{ matrix.container }}
         run: |
