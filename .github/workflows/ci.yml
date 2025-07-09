@@ -13,6 +13,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
       - name: Configure Git to use HTTPS instead of SSH
         run: |
           git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
