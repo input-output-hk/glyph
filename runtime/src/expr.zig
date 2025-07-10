@@ -218,6 +218,51 @@ pub const Bytes = extern struct {
     }
 };
 
+pub const String = extern struct {
+    length: u32,
+    bytes: [*]const u32,
+
+    pub fn createConstant(
+        self: String,
+        heap: *Heap,
+    ) *Constant {
+        const total_words: u32 = self.length + 3; // len of type | tag | sign | length | words…
+        var buf = heap.createArray(u32, total_words);
+
+        buf[0] = 1;
+        buf[1] = @intFromEnum(ConstantType.string);
+        buf[2] = self.length;
+
+        var i: u32 = 0;
+        while (i < self.length) : (i += 1) {
+            buf[i + 3] = self.bytes[i];
+        }
+
+        return @ptrCast(buf);
+    }
+};
+
+pub const Bool = extern struct {
+    val: bool,
+
+    pub fn createBool(val: bool) Bool {
+        return Bool{ .val = val };
+    }
+
+    pub fn createConstant(
+        self: Bool,
+        heap: *Heap,
+    ) *Constant {
+        var buf = heap.createArray(u32, 3);
+
+        buf[0] = 1;
+        buf[1] = @intFromEnum(ConstantType.boolean);
+        buf[2] = @intFromBool(self.val);
+
+        return @ptrCast(buf);
+    }
+};
+
 pub const Constant = extern struct {
     length: u32,
 
@@ -269,6 +314,19 @@ pub const Constant = extern struct {
         const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32) * 2);
 
         return Bytes{
+            .length = length.*,
+            .bytes = bytes,
+        };
+    }
+
+    pub fn string(self: *const Self) String {
+        const offset: *const u32 = @ptrFromInt(@intFromPtr(self) + self.length * @sizeOf(u32));
+
+        const length: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
+
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32) * 2);
+
+        return String{
             .length = length.*,
             .bytes = bytes,
         };

@@ -153,6 +153,26 @@ const Value = union(enum(u32)) {
             },
         }
     }
+
+    pub fn unwrapBool(v: *const Value) bool {
+        switch (v.*) {
+            .constant => |c| {
+                switch (c.constType().*) {
+                    .boolean => {
+                        return c.bln();
+                    },
+                    else => {
+                        utils.printString("Not an boolean constant\n");
+                        utils.exit(std.math.maxInt(u32));
+                    },
+                }
+            },
+            else => {
+                utils.printString("Not a constant\n");
+                utils.exit(std.math.maxInt(u32));
+            },
+        }
+    }
 };
 
 pub const Env = struct {
@@ -656,6 +676,7 @@ pub fn indexByteString(m: *Machine, args: *LinkedValues) *const Value {
 
 pub fn equalsByteString(m: *Machine, args: *LinkedValues) *const Value {
     const y = args.value.unwrapBytestring();
+
     const x = args.next.?.value.unwrapBytestring();
 
     const equality = x.compareBytes(&y);
@@ -671,12 +692,48 @@ pub fn equalsByteString(m: *Machine, args: *LinkedValues) *const Value {
     return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn lessThanByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn lessThanByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const y = args.value.unwrapBytestring();
+
+    const x = args.next.?.value.unwrapBytestring();
+
+    const xPtr = &x;
+
+    const equality = xPtr.compareBytes(&y);
+
+    var result = m.heap.createArray(u32, 3);
+
+    result[0] = 1;
+
+    result[1] = @intFromEnum(ConstantType.boolean);
+
+    result[2] = @intFromBool(
+        !equality[0] and (@intFromPtr(xPtr) != @intFromPtr(equality[1])),
+    );
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn lessThanEqualsByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn lessThanEqualsByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const y = args.value.unwrapBytestring();
+
+    const x = args.next.?.value.unwrapBytestring();
+
+    const xPtr = &x;
+
+    const equality = xPtr.compareBytes(&y);
+
+    var result = m.heap.createArray(u32, 3);
+
+    result[0] = 1;
+
+    result[1] = @intFromEnum(ConstantType.boolean);
+
+    result[2] = @intFromBool(
+        equality[0] or (@intFromPtr(xPtr) != @intFromPtr(equality[1])),
+    );
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 // Cryptography and hash functions
@@ -714,8 +771,16 @@ pub fn decodeUtf8(_: *Machine, _: *LinkedValues) *const Value {
 }
 
 // Bool function
-pub fn ifThenElse(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn ifThenElse(_: *Machine, args: *LinkedValues) *const Value {
+    const otherwise = args.value;
+    const then = args.next.?.value;
+    const cond = args.next.?.next.?.value.unwrapBool();
+
+    if (cond) {
+        return then;
+    } else {
+        return otherwise;
+    }
 }
 
 // Unit function
@@ -2277,7 +2342,8 @@ test "less than equals integer less" {
 
     const resultWords = subSignedIntegers(&machine, a, b);
 
-    const args = LinkedValues.create(&heap, expr.BigInt, c)
+    const args = LinkedValues
+        .create(&heap, expr.BigInt, c)
         .extend(&heap, expr.BigInt, resultWords.constant.bigInt());
 
     const newVal = lessThanEqualsInteger(&machine, args);
@@ -2318,7 +2384,8 @@ test "less than equals integer equal" {
 
     const resultWords = subSignedIntegers(&machine, a, b);
 
-    const args = LinkedValues.create(&heap, expr.BigInt, c)
+    const args = LinkedValues
+        .create(&heap, expr.BigInt, c)
         .extend(&heap, expr.BigInt, resultWords.constant.bigInt());
 
     const newVal = lessThanEqualsInteger(&machine, args);
@@ -2358,7 +2425,8 @@ test "append bytes" {
 
     const result = expr.Bytes{ .length = 5, .bytes = resultBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a)
+    const args = LinkedValues
+        .create(&heap, expr.Bytes, a)
         .extend(&heap, expr.Bytes, b);
 
     const newVal = appendByteString(&machine, args);
@@ -2403,7 +2471,8 @@ test "cons bytes" {
 
     const result = expr.Bytes{ .length = 4, .bytes = resultBytes };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, a)
+    const args = LinkedValues
+        .create(&heap, expr.BigInt, a)
         .extend(&heap, expr.Bytes, b);
 
     const newVal = consByteString(&machine, args);
@@ -2498,6 +2567,189 @@ test "index bytes" {
                     try testing.expectEqual(val.length, result.length);
                     try testing.expectEqual(val.sign, result.sign);
                     try testing.expectEqual(val.words[0], result.words[0]);
+                },
+                else => {
+                    @panic("TODO");
+                },
+            }
+        },
+        else => {
+            @panic("TODO");
+        },
+    }
+}
+
+test "equals bytes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const aBytes: [*]const u32 = &.{ 0, 255, 1, 72, 6 };
+
+    const a = expr.Bytes{ .length = 5, .bytes = aBytes };
+    const b = expr.Bytes{ .length = 5, .bytes = aBytes };
+
+    const args = LinkedValues.create(&heap, expr.Bytes, a).extend(&heap, expr.Bytes, b);
+
+    const newVal = equalsByteString(&machine, args);
+
+    switch (newVal.*) {
+        .constant => |con| {
+            switch (con.constType().*) {
+                .boolean => {
+                    const val = con.bln();
+                    try testing.expect(val);
+                },
+                else => {
+                    @panic("TODO");
+                },
+            }
+        },
+        else => {
+            @panic("TODO");
+        },
+    }
+}
+
+test "less than bytes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const aBytes: [*]const u32 = &.{ 0, 254, 1, 72, 6, 99 };
+    const bBytes: [*]const u32 = &.{ 0, 255, 1, 72, 6 };
+
+    const a = expr.Bytes{ .length = 6, .bytes = aBytes };
+    const b = expr.Bytes{ .length = 5, .bytes = bBytes };
+
+    const args = LinkedValues.create(&heap, expr.Bytes, a).extend(&heap, expr.Bytes, b);
+
+    const newVal = lessThanByteString(&machine, args);
+
+    switch (newVal.*) {
+        .constant => |con| {
+            switch (con.constType().*) {
+                .boolean => {
+                    const val = con.bln();
+                    try testing.expect(val);
+                },
+                else => {
+                    @panic("TODO");
+                },
+            }
+        },
+        else => {
+            @panic("TODO");
+        },
+    }
+}
+
+test "less than equal bytes less" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const aBytes: [*]const u32 = &.{ 0, 254, 1, 72, 6, 99 };
+    const bBytes: [*]const u32 = &.{ 0, 255, 1, 72, 6 };
+
+    const a = expr.Bytes{ .length = 6, .bytes = aBytes };
+    const b = expr.Bytes{ .length = 5, .bytes = bBytes };
+
+    const args = LinkedValues.create(&heap, expr.Bytes, a).extend(&heap, expr.Bytes, b);
+
+    const newVal = lessThanEqualsByteString(&machine, args);
+
+    switch (newVal.*) {
+        .constant => |con| {
+            switch (con.constType().*) {
+                .boolean => {
+                    const val = con.bln();
+                    try testing.expect(val);
+                },
+                else => {
+                    @panic("TODO");
+                },
+            }
+        },
+        else => {
+            @panic("TODO");
+        },
+    }
+}
+
+test "less than equal bytes equal" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const aBytes: [*]const u32 = &.{ 0, 254, 1, 72, 6, 99 };
+
+    const a = expr.Bytes{ .length = 6, .bytes = aBytes };
+    const b = expr.Bytes{ .length = 6, .bytes = aBytes };
+
+    const args = LinkedValues.create(&heap, expr.Bytes, a).extend(&heap, expr.Bytes, b);
+
+    const newVal = lessThanEqualsByteString(&machine, args);
+
+    switch (newVal.*) {
+        .constant => |con| {
+            switch (con.constType().*) {
+                .boolean => {
+                    const val = con.bln();
+                    try testing.expect(val);
+                },
+                else => {
+                    @panic("TODO");
+                },
+            }
+        },
+        else => {
+            @panic("TODO");
+        },
+    }
+}
+
+test "if then else" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const aBytes: [*]const u32 = &.{ 0, 254 };
+    const bBytes: [*]const u32 = &.{ 1, 253, 3 };
+
+    const a = expr.Bytes{ .length = 2, .bytes = aBytes };
+    const b = expr.Bytes{ .length = 3, .bytes = bBytes };
+
+    const args = LinkedValues
+        .create(&heap, expr.Bool, expr.Bool.createBool(true))
+        .extend(&heap, expr.Bytes, a)
+        .extend(&heap, expr.Bytes, b);
+
+    const newVal = ifThenElse(&machine, args);
+
+    switch (newVal.*) {
+        .constant => |con| {
+            switch (con.constType().*) {
+                .bytes => {
+                    const val = con.innerBytes();
+                    try testing.expectEqual(val.length, 2);
+                    try testing.expectEqual(val.bytes[0], 0);
+                    try testing.expectEqual(val.bytes[1], 254);
                 },
                 else => {
                     @panic("TODO");
