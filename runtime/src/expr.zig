@@ -1,3 +1,5 @@
+const Heap = @import("Heap.zig");
+
 pub const Term = enum(u32) {
     tvar,
     delay,
@@ -140,6 +142,31 @@ pub const BigInt = extern struct {
 
         return .{ true, x, y };
     }
+
+    /// Allocate a Constant.integer in the bump‑heap from an `expr.BigInt` that
+    /// already lives elsewhere in memory.  The layout exactly matches what
+    /// `Constant.bigInt()` expects.
+    ///
+    /// returns: pointer to the freshly‑allocated `Constant`
+    pub fn createConstant(
+        self: BigInt,
+        heap: *Heap,
+    ) *Constant {
+        const total_words: u32 = self.length + 4; // len of type | tag | sign | length | words…
+        var buf = heap.createArray(u32, total_words);
+
+        buf[0] = 1;
+        buf[1] = @intFromEnum(ConstantType.integer);
+        buf[2] = self.sign;
+        buf[3] = self.length;
+
+        var i: u32 = 0;
+        while (i < self.length) : (i += 1) {
+            buf[i + 4] = self.words[i];
+        }
+
+        return @ptrCast(buf);
+    }
 };
 
 pub const Bytes = extern struct {
@@ -169,6 +196,25 @@ pub const Bytes = extern struct {
         }
 
         return .{ true, x, y };
+    }
+
+    pub fn createConstant(
+        self: Bytes,
+        heap: *Heap,
+    ) *Constant {
+        const total_words: u32 = self.length + 3; // len of type | tag | sign | length | words…
+        var buf = heap.createArray(u32, total_words);
+
+        buf[0] = 1;
+        buf[1] = @intFromEnum(ConstantType.bytes);
+        buf[2] = self.length;
+
+        var i: u32 = 0;
+        while (i < self.length) : (i += 1) {
+            buf[i + 3] = self.bytes[i];
+        }
+
+        return @ptrCast(buf);
     }
 };
 
