@@ -142,7 +142,7 @@ const Value = union(enum(u32)) {
                         return c.innerBytes();
                     },
                     else => {
-                        utils.printString("Not an bytestring constant\n");
+                        utils.printString("Not a bytestring constant\n");
                         utils.exit(std.math.maxInt(u32));
                     },
                 }
@@ -162,7 +162,7 @@ const Value = union(enum(u32)) {
                         return c.bln();
                     },
                     else => {
-                        utils.printString("Not an boolean constant\n");
+                        utils.printString("Not a boolean constant\n");
                         utils.exit(std.math.maxInt(u32));
                     },
                 }
@@ -597,8 +597,7 @@ pub fn appendByteString(m: *Machine, args: *LinkedValues) *const Value {
 
     i = 0;
     while (i < y.length) : (i += 1) {
-        resultPtr[0] = y.bytes[i];
-        resultPtr += 1;
+        resultPtr[i] = y.bytes[i];
     }
 
     return createConst(m.heap, @ptrCast(result));
@@ -627,15 +626,68 @@ pub fn consByteString(m: *Machine, args: *LinkedValues) *const Value {
 
     var i: u32 = 0;
     while (i < y.length) : (i += 1) {
-        resultPtr[0] = y.bytes[i];
-        resultPtr += 1;
+        resultPtr[i] = y.bytes[i];
     }
 
     return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn sliceByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn sliceByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const bytes = args.value.unwrapBytestring();
+
+    // second arg take
+    const take = args.next.?.value.unwrapInteger();
+
+    const takeAmount: u32 = if (take.sign == 1) blk: {
+        break :blk 0;
+    } else if (take.length > 1) blk: {
+        break :blk std.math.maxInt(u32);
+    } else blk: {
+        break :blk take.words[0];
+    };
+
+    // first arg drop
+    const drop = args.next.?.next.?.value.unwrapInteger();
+
+    const dropAmount: u32 = if (drop.sign == 1) blk: {
+        break :blk 0;
+    } else if (drop.length > 1) blk: {
+        break :blk std.math.maxInt(u32);
+    } else blk: {
+        break :blk drop.words[0];
+    };
+
+    const bytestringLen = bytes.length;
+
+    const leftover = if (dropAmount > bytestringLen) blk: {
+        break :blk 0;
+    } else blk: {
+        break :blk bytestringLen - dropAmount;
+    };
+
+    const finalTake = if (takeAmount > leftover) blk: {
+        break :blk leftover;
+    } else blk: {
+        break :blk takeAmount;
+    };
+
+    // type_length 4 bytes, integer 4 bytes,  length 4 bytes, list of words 4 * (finalTake)
+    var result = m.heap.createArray(u32, finalTake + 3);
+
+    const offset = bytes.bytes + bytestringLen - leftover;
+
+    result[0] = 1;
+    result[1] = @intFromEnum(ConstantType.bytes);
+    result[2] = finalTake;
+
+    var resultPtr = result + 3;
+
+    var i: u32 = 0;
+    while (i < finalTake) : (i += 1) {
+        resultPtr[i] = offset[i];
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn lengthOfByteString(m: *Machine, args: *LinkedValues) *const Value {
@@ -2487,6 +2539,53 @@ test "cons bytes" {
                     try testing.expectEqual(val.bytes[1], 0);
                     try testing.expectEqual(val.bytes[2], 255);
                     try testing.expectEqual(val.bytes[3], 1);
+                },
+                else => {
+                    @panic("TODO");
+                },
+            }
+        },
+        else => {
+            @panic("TODO");
+        },
+    }
+}
+
+test "slice bytes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const aBytes: [*]const u32 = &.{ 37, 65, 77, 255, 88 };
+    const dropWord: [*]const u32 = &.{2};
+    const takeWord: [*]const u32 = &.{4};
+    const resultBytes: [*]const u32 = &.{ 77, 255, 88 };
+
+    const a = expr.Bytes{ .length = 5, .bytes = aBytes };
+    const drop = expr.BigInt{ .length = 1, .sign = 0, .words = dropWord };
+    const take = expr.BigInt{ .length = 1, .sign = 0, .words = takeWord };
+
+    const result = expr.Bytes{ .length = 3, .bytes = resultBytes };
+
+    const args = LinkedValues
+        .create(&heap, expr.BigInt, drop)
+        .extend(&heap, expr.BigInt, take)
+        .extend(&heap, expr.Bytes, a);
+
+    const newVal = sliceByteString(&machine, args);
+
+    switch (newVal.*) {
+        .constant => |con| {
+            switch (con.constType().*) {
+                .bytes => {
+                    const val = con.innerBytes();
+                    try testing.expectEqual(val.length, result.length);
+                    try testing.expectEqual(val.bytes[0], result.bytes[0]);
+                    try testing.expectEqual(val.bytes[1], result.bytes[1]);
+                    try testing.expectEqual(val.bytes[2], result.bytes[2]);
                 },
                 else => {
                     @panic("TODO");

@@ -27,7 +27,7 @@ pub fn printString(comptime str: []const u8) void {
     }
 }
 
-fn printChar(val: u8) void {
+pub fn printChar(val: u8) void {
     var charAddress: [*]u32 = @ptrFromInt(0xA000_1000);
 
     charAddress[0] = @as(u32, val) << 24;
