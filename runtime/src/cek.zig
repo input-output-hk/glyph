@@ -557,8 +557,227 @@ pub fn multiplyInteger(m: *Machine, args: *const LinkedValues) *const Value {
     return createConst(m.heap, @ptrCast(resultPtr));
 }
 
-pub fn divideInteger(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
+    // 1. Parse inputs and handle special cases
+    const n = args.value.unwrapInteger(); // Numerator BigInt
+    const d = args.next.?.value.unwrapInteger(); // Denominator BigInt
+
+    // Fast path: 0 ÷ anything = 0
+    if (n.length == 1 and n.words[0] == 0) {
+        // Allocate result for integer 0 (sign=0, length=1, word=0)
+        var z = m.heap.createArray(u32, 5);
+        z[0] = 1;
+        z[1] = @intFromEnum(ConstantType.integer);
+        z[2] = 0; // sign = 0 (non-negative)
+        z[3] = 1; // length = 1
+        z[4] = 0; // limb value = 0
+        return createConst(m.heap, @ptrCast(z));
+    }
+    // Denominator 0 -> panic (division by zero)
+    if (d.length == 1 and d.words[0] == 0) {
+        @panic("divideInteger: division by zero");
+    }
+
+    // Determine signs and absolute values
+    const numer_neg = n.sign == 1;
+    const denom_neg = d.sign == 1;
+    const numer_abs = BigInt{ .sign = 0, .length = n.length, .words = n.words };
+    const denom_abs = BigInt{ .sign = 0, .length = d.length, .words = d.words };
+
+    // Compare magnitudes to see if |n| < |d|
+    const cmp = numer_abs.compareMagnitude(&denom_abs);
+    const numerLess = cmp[2] == &numer_abs;
+    if (numerLess) {
+        const needMinusOne = (numer_neg != denom_neg);
+        if (!needMinusOne) {
+            // If signs are same, floor division yields 0
+            var z = m.heap.createArray(u32, 5);
+            z[0] = 1;
+            z[1] = @intFromEnum(ConstantType.integer);
+            z[2] = 0;
+            z[3] = 1;
+            z[4] = 0;
+            return createConst(m.heap, @ptrCast(z));
+        } else {
+            // Signs differ and |n|<|d|, result is -1
+            var negOne = m.heap.createArray(u32, 5);
+            negOne[0] = 1;
+            negOne[1] = @intFromEnum(ConstantType.integer);
+            negOne[2] = 1; // sign = 1 (negative)
+            negOne[3] = 1; // length = 1
+            negOne[4] = 1; // magnitude = 1
+            return createConst(m.heap, @ptrCast(negOne));
+        }
+    }
+
+    // 2. Unsigned magnitude division. Allocate quotient buffer.
+    const q_buf_len: u32 = numer_abs.length - denom_abs.length + 1;
+    var q_buf = m.heap.createArray(u32, q_buf_len);
+    var rem_zero: bool = true; // will set to false if remainder is non-zero
+
+    if (denom_abs.length == 1) {
+        // Single-limb divisor fast path
+        const dv: u32 = denom_abs.words[0];
+        var carry: u64 = 0;
+        // iterate from most significant limb to least
+        var ii: u32 = numer_abs.length;
+        while (ii > 0) : (ii -= 1) {
+            const i = ii - 1;
+            const cur: u64 = (carry << 32) | @as(u64, numer_abs.words[i]);
+            const q_digit: u64 = cur / dv;
+            carry = cur % dv;
+            q_buf[i] = @truncate(q_digit);
+        }
+        rem_zero = (carry == 0);
+    } else {
+        // Multi-limb divisor: Knuth's Algorithm D
+        const beta: u64 = 0x1_0000_0000; // β = 2^32
+        const n_u = numer_abs.length;
+        const m_d = denom_abs.length;
+
+        // D1: normalization (shift left so v_norm[m_d-1] >= β/2)
+        const vTop: u32 = denom_abs.words[m_d - 1];
+        // Compute shift count s as u5
+        const s_full = @clz(vTop);
+        const s: u5 = if (s_full == 32) 0 else @truncate(s_full);
+        const oneMinusS: u5 = if (s == 0) @as(u5, 0) else (@as(u5, 31) - (s - 1));
+        // oneMinusS is effectively (32 - s) but expressed in u5 without overflow
+
+        // Allocate and build u_norm (length = n_u + 1)
+        var u_norm = m.heap.createArray(u32, n_u + 1);
+        var carry_u: u32 = 0;
+        var ui: u32 = 0;
+        while (ui < n_u) : (ui += 1) {
+            const w = numer_abs.words[ui];
+            u_norm[ui] = @as(u32, (w << s) | carry_u);
+            carry_u = if (s == 0) 0 else w >> oneMinusS;
+        }
+        u_norm[n_u] = carry_u;
+
+        // Allocate and build v_norm (length = m_d)
+        var v_norm = m.heap.createArray(u32, m_d);
+        var carry_v: u32 = 0;
+        var vi: u32 = 0;
+        while (vi < m_d) : (vi += 1) {
+            const w = denom_abs.words[vi];
+            v_norm[vi] = @as(u32, (w << s) | carry_v);
+            carry_v = if (s == 0) 0 else w >> oneMinusS;
+        }
+
+        // D2: initialize quotient loop (j from n_u - m_d down to 0)
+        var jj: u32 = n_u - m_d + 1;
+        var j_usize: u32 = n_u - m_d;
+        while (jj > 0) : (jj -= 1) {
+
+            // D3: Compute trial qhat and rhat
+            const u_hi: u32 = u_norm[j_usize + m_d];
+            const u_lo: u32 = u_norm[j_usize + m_d - 1];
+            const num64: u64 = (@as(u64, u_hi) << 32) | @as(u64, u_lo);
+            var qhat: u64 = num64 / @as(u64, v_norm[m_d - 1]);
+            var rhat: u64 = num64 % @as(u64, v_norm[m_d - 1]);
+            if (qhat == beta) {
+                qhat -= 1;
+                rhat += @as(u64, v_norm[m_d - 1]);
+            }
+            // Adjust qhat downward if necessary
+            const v2: u32 = if (m_d > 1) v_norm[m_d - 2] else 0;
+            const uv2: u32 = u_norm[j_usize + m_d - 2];
+            while (qhat != 0) {
+                if (qhat * @as(u64, v2) <= (rhat << 32) + @as(u64, uv2)) {
+                    break;
+                }
+                qhat -= 1;
+                rhat += @as(u64, v_norm[m_d - 1]);
+                if (rhat >= beta) {
+                    break;
+                }
+            }
+
+            // D4: Multiply v_norm by qhat and subtract from u_norm segment
+            var borrow: u64 = 0;
+            var carry_mul: u64 = 0;
+            var k: usize = 0;
+            while (k < m_d) : (k += 1) {
+                const p = qhat * @as(u64, v_norm[k]) + carry_mul;
+                carry_mul = p >> 32;
+                const sub_val = u_norm[j_usize + k];
+                const diff = @as(u64, sub_val) - (p & 0xFFFF_FFFF) - borrow;
+                u_norm[j_usize + k] = @truncate(diff);
+                borrow = (diff >> 63) & 1;
+            }
+            const sub_hi = u_norm[j_usize + m_d];
+            const diff_hi = @as(u64, sub_hi) - carry_mul - borrow;
+            u_norm[j_usize + m_d] = @truncate(diff_hi);
+
+            // D5: Check if we subtracted "too much" (negative remainder)
+            var q_digit: u32 = @truncate(qhat);
+            if ((diff_hi >> 63) & 1 != 0) {
+                // If underflow, add v_norm back and decrement q_digit
+                q_digit -= 1;
+                var carry_back: u64 = 0;
+                var t: usize = 0;
+                while (t < m_d) : (t += 1) {
+                    const sum = @as(u64, u_norm[j_usize + t]) + @as(u64, v_norm[t]) + carry_back;
+                    u_norm[j_usize + t] = @truncate(sum);
+                    carry_back = sum >> 32;
+                }
+                u_norm[j_usize + m_d] = @truncate(@as(u64, u_norm[j_usize + m_d]) + carry_back);
+            }
+            // Store quotient digit
+            q_buf[j_usize] = q_digit;
+
+            if (jj > 1) {
+                j_usize -= 1;
+            }
+        }
+
+        // Determine if remainder is zero (all lower m_d limbs are 0)
+        rem_zero = true;
+        var r_index: u32 = 0;
+        while (r_index < m_d) : (r_index += 1) {
+            if (u_norm[r_index] != 0) {
+                rem_zero = false;
+                break;
+            }
+        }
+    }
+
+    // Trim leading zero limbs from quotient buffer
+    var q_len: u32 = q_buf_len;
+    while (q_len > 1 and q_buf[q_len - 1] == 0) {
+        q_len -= 1;
+    }
+
+    // 3. Post-processing for floor division semantics
+    const signsDiffer = (numer_neg != denom_neg);
+    const res_sign: u32 = if (signsDiffer) 1 else 0;
+    // Allocate result array (with space for header + quotient limbs, possibly +1 limb for carry)
+    var res = m.heap.createArray(u32, q_len + 5);
+    res[0] = 1;
+    res[1] = @intFromEnum(ConstantType.integer);
+    res[2] = res_sign;
+    // Copy quotient magnitude
+    var i_cpy: u32 = 0;
+    while (i_cpy < q_len) : (i_cpy += 1) {
+        res[4 + i_cpy] = q_buf[i_cpy];
+    }
+
+    if (signsDiffer and !rem_zero) {
+        // If signs differ and remainder != 0, add 1 to magnitude (floor toward -∞)
+        var carry_neg: u64 = 1;
+        var idx: u32 = 0;
+        while (carry_neg != 0 and idx < q_len) : (idx += 1) {
+            const tmp = @as(u64, res[4 + idx]) + carry_neg;
+            res[4 + idx] = @truncate(tmp);
+            carry_neg = tmp >> 32;
+        }
+        if (carry_neg != 0) {
+            res[4 + q_len] = @truncate(carry_neg);
+            q_len += 1;
+        }
+    }
+    res[3] = q_len; // set final length
+    return createConst(m.heap, @ptrCast(res));
 }
 
 pub fn quotientInteger(_: *Machine, _: *LinkedValues) *const Value {
@@ -2520,6 +2739,324 @@ test "multiply differing‑signed integers" {
         else => @panic("TODO"),
     }
 }
+
+test "divide: numerator == 0 → 0" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var mach = Machine{ .heap = &heap, .frames = &frames };
+
+    const n = expr.BigInt{ .sign = 0, .length = 1, .words = &.{0} }; // 0
+    const d = expr.BigInt{ .sign = 0, .length = 1, .words = &.{1234} }; // any ≠ 0
+
+    const args = LinkedValues.create(&heap, expr.BigInt, d)
+        .extend(&heap, expr.BigInt, n);
+
+    const res_val = divideInteger(&mach, args);
+
+    switch (res_val.*) {
+        .constant => |c| switch (c.constType().*) {
+            .integer => {
+                const r = c.bigInt();
+                try testing.expect(r.sign == 0);
+                try testing.expect(r.length == 1);
+                try testing.expect(r.words[0] == 0);
+            },
+            else => unreachable,
+        },
+        else => unreachable,
+    }
+}
+
+test "divide: 1 / 2 floors to 0" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var mach = Machine{ .heap = &heap, .frames = &frames };
+
+    const n = expr.BigInt{ .sign = 0, .length = 1, .words = &.{1} }; // 1
+    const d = expr.BigInt{ .sign = 0, .length = 1, .words = &.{2} }; // 2
+
+    const args = LinkedValues.create(&heap, expr.BigInt, d)
+        .extend(&heap, expr.BigInt, n);
+
+    const res_val = divideInteger(&mach, args);
+
+    switch (res_val.*) {
+        .constant => |c| switch (c.constType().*) {
+            .integer => {
+                const r = c.bigInt();
+                try testing.expect(r.sign == 0);
+                try testing.expect(r.length == 1);
+                try testing.expect(r.words[0] == 0);
+            },
+            else => unreachable,
+        },
+        else => unreachable,
+    }
+}
+
+test "divide: (-503) / (-1777777777) = 0" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var mach = Machine{ .heap = &heap, .frames = &frames };
+
+    //const a_words = &.{@as(u32, 503)}; // magnitude(503)
+    //const b_words = &.{@as(u32, 1_777_777_777)}; // magnitude(1 777 777 777)
+
+    const n = expr.BigInt{
+        .sign = 1,
+        .length = 1,
+        .words = &[_]u32{503}, // OK: *const [1]u32 → coerces to [*]const u32
+    };
+    const d = expr.BigInt{
+        .sign = 1,
+        .length = 1,
+        .words = &[_]u32{1_777_777_777},
+    };
+
+    const args = LinkedValues.create(&heap, expr.BigInt, d)
+        .extend(&heap, expr.BigInt, n);
+
+    //const n = expr.BigInt{ .sign = 1, .length = 1, .words = &a_words }; // −503
+    //const d = expr.BigInt{ .sign = 1, .length = 1, .words = &b_words }; // −1777777777
+
+    const res_val = divideInteger(&mach, args);
+
+    switch (res_val.*) {
+        .constant => |c| switch (c.constType().*) {
+            .integer => {
+                const r = c.bigInt();
+                try testing.expect(r.sign == 0);
+                try testing.expect(r.length == 1);
+                try testing.expect(r.words[0] == 0);
+            },
+            else => unreachable,
+        },
+        else => unreachable,
+    }
+}
+
+test "divide: (-503) / (+1777777777) floors to −1" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var mach = Machine{ .heap = &heap, .frames = &frames };
+
+    // const a_words = &.{@as(u32, 503)};
+    // const b_words = &.{@as(u32, 1_777_777_777)};
+    // const n = expr.BigInt{ .sign = 1, .length = 1, .words = &a_words }; // −503
+    // const d = expr.BigInt{ .sign = 0, .length = 1, .words = &b_words }; // +1777777777
+    const n = expr.BigInt{
+        .sign = 1,
+        .length = 1,
+        .words = &[_]u32{503}, // OK: *const [1]u32 → coerces to [*]const u32
+    };
+    const d = expr.BigInt{
+        .sign = 0,
+        .length = 1,
+        .words = &[_]u32{1_777_777_777},
+    };
+
+    const args = LinkedValues.create(&heap, expr.BigInt, d)
+        .extend(&heap, expr.BigInt, n);
+
+    const res_val = divideInteger(&mach, args);
+
+    switch (res_val.*) {
+        .constant => |c| switch (c.constType().*) {
+            .integer => {
+                const r = c.bigInt();
+                try testing.expect(r.sign == 1); // negative
+                try testing.expect(r.length == 1);
+                try testing.expect(r.words[0] == 1); // magnitude 1
+            },
+            else => unreachable,
+        },
+        else => unreachable,
+    }
+}
+
+test "divide: (+503) / (−1777777777) floors to −1" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var mach = Machine{ .heap = &heap, .frames = &frames };
+
+    // const a_words = &.{@as(u32, 503)};
+    // const b_words = &.{@as(u32, 1_777_777_777)};
+    // const n = expr.BigInt{ .sign = 0, .length = 1, .words = &a_words }; // +503
+    // const d = expr.BigInt{ .sign = 1, .length = 1, .words = &b_words }; // −1777777777
+    const n = expr.BigInt{
+        .sign = 0,
+        .length = 1,
+        .words = &[_]u32{503}, // OK: *const [1]u32 → coerces to [*]const u32
+    };
+    const d = expr.BigInt{
+        .sign = 1,
+        .length = 1,
+        .words = &[_]u32{1_777_777_777},
+    };
+
+    const args = LinkedValues.create(&heap, expr.BigInt, d)
+        .extend(&heap, expr.BigInt, n);
+
+    const res_val = divideInteger(&mach, args);
+
+    switch (res_val.*) {
+        .constant => |c| switch (c.constType().*) {
+            .integer => {
+                const r = c.bigInt();
+                try testing.expect(r.sign == 1); // negative
+                try testing.expect(r.length == 1);
+                try testing.expect(r.words[0] == 1); // magnitude 1
+            },
+            else => unreachable,
+        },
+        else => unreachable,
+    }
+}
+
+test "divide: (+503) / (+1777777777) = 0" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var mach = Machine{ .heap = &heap, .frames = &frames };
+
+    // const a_words = &.{@as(u32, 503)};
+    // const b_words = &.{@as(u32, 1_777_777_777)};
+    // const n = expr.BigInt{ .sign = 0, .length = 1, .words = &a_words }; // +503
+    // const d = expr.BigInt{ .sign = 0, .length = 1, .words = &b_words }; // +1777777777
+    const n = expr.BigInt{
+        .sign = 0,
+        .length = 1,
+        .words = &[_]u32{503}, // OK: *const [1]u32 → coerces to [*]const u32
+    };
+    const d = expr.BigInt{
+        .sign = 0,
+        .length = 1,
+        .words = &[_]u32{1_777_777_777},
+    };
+
+    const args = LinkedValues.create(&heap, expr.BigInt, d)
+        .extend(&heap, expr.BigInt, n);
+
+    const res_val = divideInteger(&mach, args);
+
+    switch (res_val.*) {
+        .constant => |c| switch (c.constType().*) {
+            .integer => {
+                const r = c.bigInt();
+                try testing.expect(r.sign == 0);
+                try testing.expect(r.length == 1);
+                try testing.expect(r.words[0] == 0);
+            },
+            else => unreachable,
+        },
+        else => unreachable,
+    }
+}
+
+test "divide: multi-limb exact (positive / positive)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var mach = Machine{ .heap = &heap, .frames = &frames };
+
+    const a_words: [*]const u32 = &.{ 4, 4, 1 }; // (2^32 + 2)^2 = 2^64 + 4*2^32 + 4
+    const b_words: [*]const u32 = &.{ 2, 1 }; // 2^32 + 2
+
+    const n = expr.BigInt{ .sign = 0, .length = 3, .words = a_words };
+    const d = expr.BigInt{ .sign = 0, .length = 2, .words = b_words };
+
+    const args = LinkedValues.create(&heap, expr.BigInt, d)
+        .extend(&heap, expr.BigInt, n);
+
+    const res_val = divideInteger(&mach, args);
+
+    switch (res_val.*) {
+        .constant => |c| switch (c.constType().*) {
+            .integer => {
+                const r = c.bigInt();
+                try testing.expect(r.sign == 0);
+                try testing.expect(r.length == 2);
+                try testing.expect(r.words[0] == 2);
+                try testing.expect(r.words[1] == 1); // 2^32 + 2
+            },
+            else => unreachable,
+        },
+        else => unreachable,
+    }
+}
+
+test "divide: multi-limb with remainder and signs differ (positive / negative)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var mach = Machine{ .heap = &heap, .frames = &frames };
+
+    const a_words: [*]const u32 = &.{ 5, 4, 1 }; // (2^32 + 2)^2 + 1 = 2^64 + 4*2^32 + 5
+    const b_words: [*]const u32 = &.{ 2, 1 }; // 2^32 + 2
+
+    const n = expr.BigInt{ .sign = 0, .length = 3, .words = a_words };
+    const d = expr.BigInt{ .sign = 1, .length = 2, .words = b_words };
+
+    const args = LinkedValues.create(&heap, expr.BigInt, d)
+        .extend(&heap, expr.BigInt, n);
+
+    const res_val = divideInteger(&mach, args);
+
+    switch (res_val.*) {
+        .constant => |c| switch (c.constType().*) {
+            .integer => {
+                const r = c.bigInt();
+                try testing.expect(r.sign == 1);
+                try testing.expect(r.length == 2);
+                try testing.expect(r.words[0] == 3);
+                try testing.expect(r.words[1] == 1); // -(2^32 + 3)
+            },
+            else => unreachable,
+        },
+        else => unreachable,
+    }
+}
+
+// test "divide: division‑by‑zero panics" {
+//     const expected_msg = "divideInteger: division by zero";
+
+//     try testing.expectPanic(expected_msg, struct {
+//         fn doPanic() void {
+//             var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//             defer arena.deinit();
+
+//             var heap = Heap.createTestHeap(&arena) catch unreachable;
+//             var frames = Frames.createTestFrames(&arena) catch unreachable;
+//             var mach = Machine{ .heap = &heap, .frames = &frames };
+
+//             const n = expr.BigInt{ .sign = 0, .length = 1, .words = &.{1} }; // 1
+//             const d = expr.BigInt{ .sign = 0, .length = 1, .words = &.{0} }; // 0  ← boom
+
+//             _ = divideInteger(&mach, createIntArgs(&mach, n, d));
+//         }
+//     }.doPanic);
+// }
 
 test "equals integer" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
