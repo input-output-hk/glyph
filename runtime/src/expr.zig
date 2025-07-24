@@ -553,6 +553,32 @@ pub const List = struct {
     inner_type: *const ConstantType,
     length: u32,
     items: ?*ListNode,
+
+    pub fn createConstant(
+        self: List,
+        heap: *Heap,
+    ) *Constant {
+        var buf = heap.createArray(u32, self.type_length + 4);
+
+        buf[0] = self.type_length + 1;
+        buf[1] = @intFromEnum(ConstantType.list);
+
+        var resultPtr = buf + 2;
+
+        const list_innner_types: [*]const ConstantType = @ptrCast(self.inner_type);
+
+        var i: u32 = 0;
+        while (i < self.type_length) : (i += 1) {
+            resultPtr[0] = @intFromEnum(list_innner_types[i]);
+            // This will run on the final iteration too
+            resultPtr += 1;
+        }
+
+        resultPtr[0] = self.length;
+        resultPtr[1] = self.items;
+
+        return @ptrCast(buf);
+    }
 };
 
 pub const Constant = extern struct {

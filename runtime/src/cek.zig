@@ -877,7 +877,8 @@ pub fn appendString(m: *Machine, args: *LinkedValues) *const Value {
 
     var i: u32 = 0;
     while (i < x.length) : (i += 1) {
-        resultPtr[i] = x.bytes[i];
+        resultPtr[0] = x.bytes[i];
+        resultPtr += 1;
     }
 
     i = 0;
@@ -994,7 +995,7 @@ pub fn mkCons(m: *Machine, args: *LinkedValues) *const Value {
         // (Type length + 1) * 4 bytes + 4 byte to hold type length + 4 byte for list length + 4 byte for pointer to first list item (or null)
         var result = m.heap.createArray(u32, list.type_length + 4);
 
-        result[0] = list.type_length;
+        result[0] = list.type_length + 1;
         result[1] = @intFromEnum(ConstantType.list);
         var resultPtr = result + 2;
 
@@ -2962,6 +2963,53 @@ test "less than equal bytes equal" {
                 .boolean => {
                     const val = con.bln();
                     try testing.expect(val);
+                },
+                else => {
+                    @panic("TODO");
+                },
+            }
+        },
+        else => {
+            @panic("TODO");
+        },
+    }
+}
+
+test "append string" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const aBytes: [*]const u32 = &.{ 255, 254 };
+    const bBytes: [*]const u32 = &.{ 0, 255, 1 };
+    const resultBytes: [*]const u32 = &.{ 255, 254, 0, 255, 1 };
+
+    const a = expr.String{ .length = 2, .bytes = aBytes };
+    const b = expr.String{ .length = 3, .bytes = bBytes };
+
+    const result = expr.String{ .length = 5, .bytes = resultBytes };
+
+    const args = LinkedValues
+        .create(&heap, expr.String, a)
+        .extend(&heap, expr.String, b);
+
+    const newVal = appendString(&machine, args);
+
+    switch (newVal.*) {
+        .constant => |con| {
+            switch (con.constType().*) {
+                .string => {
+                    const val = con.string();
+                    try testing.expectEqual(val.length, result.length);
+
+                    try testing.expectEqual(val.bytes[0], 255);
+                    try testing.expectEqual(val.bytes[1], 254);
+                    try testing.expectEqual(val.bytes[2], 0);
+                    try testing.expectEqual(val.bytes[3], 255);
+                    try testing.expectEqual(val.bytes[4], 1);
                 },
                 else => {
                     @panic("TODO");
