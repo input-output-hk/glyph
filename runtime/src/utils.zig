@@ -27,6 +27,16 @@ pub fn printString(comptime str: []const u8) void {
     }
 }
 
+pub fn printlnString(comptime str: []const u8) void {
+    const val = comptime padTo4(str);
+
+    for (val) |character| {
+        printChar(character);
+    }
+
+    printChar('\n');
+}
+
 pub fn printChar(val: u8) void {
     var charAddress: [*]u32 = @ptrFromInt(0xA000_1000);
 

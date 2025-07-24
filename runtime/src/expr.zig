@@ -495,6 +495,31 @@ pub const String = extern struct {
 
         return @ptrCast(buf);
     }
+
+    pub fn equals(x: *const String, y: *const String) bool {
+        const lenCompare: struct { greater: *const String, less: *const String } = if (x.length >= y.length) blk: {
+            break :blk .{ .greater = x, .less = y };
+        } else blk: {
+            break :blk .{ .greater = y, .less = x };
+        };
+
+        var i: u32 = 0;
+        while (i < lenCompare.greater.length) : (i += 1) {
+            if (i >= lenCompare.less.length) {
+                return false;
+            }
+
+            if (lenCompare.greater.bytes[i] > lenCompare.less.bytes[i]) {
+                return false;
+            }
+
+            if (lenCompare.less.bytes[i] > lenCompare.greater.bytes[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 };
 
 pub const Bool = extern struct {
@@ -518,6 +543,18 @@ pub const Bool = extern struct {
     }
 };
 
+pub const ListNode = extern struct {
+    value_pointer: u32,
+    next: ?*ListNode,
+};
+
+pub const List = struct {
+    type_length: u32,
+    inner_type: *const ConstantType,
+    length: u32,
+    items: ?*ListNode,
+};
+
 pub const Constant = extern struct {
     length: u32,
 
@@ -529,8 +566,14 @@ pub const Constant = extern struct {
         return cType;
     }
 
-    pub fn canListHoldType(self: *const Self, listInnerType: *const ConstantType, len: u32) bool {
-        const selfTypes: [*]const ConstantType = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+    pub fn innerListType(self: *const Self) *const ConstantType {
+        const cType: *const ConstantType = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+
+        return cType;
+    }
+
+    pub fn matchingTypes(self: *const Self, listInnerType: *const ConstantType, len: u32) bool {
+        const selfTypes: [*]const ConstantType = @ptrCast(self.constType());
         const otherTypes: [*]const ConstantType = @ptrCast(listInnerType);
 
         if (self.length != len) {
@@ -538,12 +581,18 @@ pub const Constant = extern struct {
         }
 
         var i: u32 = 0;
-        while (i < self.length) : (i += 1) {
+        while (i < len) : (i += 1) {
             if (selfTypes[i] != otherTypes[i]) {
                 return false;
             }
         }
         return true;
+    }
+
+    pub fn rawValue(self: *const Self) u32 {
+        const offset = @intFromPtr(self) + self.length * @sizeOf(u32);
+
+        return offset + @sizeOf(u32);
     }
 
     pub fn bigInt(self: *const Self) BigInt {
@@ -593,6 +642,25 @@ pub const Constant = extern struct {
         const b: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
 
         return b.* == 1;
+    }
+
+    pub fn list(self: *const Self) List {
+        const offset: *const u32 = @ptrFromInt(@intFromPtr(self) + self.length * @sizeOf(u32));
+
+        const length: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
+
+        const items: ?*ListNode = if (length.* > 0) blk: {
+            break :blk @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
+        } else blk: {
+            break :blk null;
+        };
+
+        return List{
+            .type_length = offset.* - 1,
+            .inner_type = self.innerListType(),
+            .length = length.*,
+            .items = items,
+        };
     }
 };
 

@@ -9,6 +9,9 @@ const Constant = expr.Constant;
 const DefaultFunction = expr.DefaultFunction;
 const BigInt = expr.BigInt;
 const Bytes = expr.Bytes;
+const String = expr.String;
+const List = expr.List;
+const ListNode = expr.ListNode;
 const utils = @import("utils.zig");
 
 const Frame = union(enum(u32)) {
@@ -113,6 +116,17 @@ const Value = union(enum(u32)) {
             else => return false,
         }
     }
+    pub fn unwrapConstant(v: *const Value) *const Constant {
+        switch (v.*) {
+            .constant => |c| {
+                return c;
+            },
+            else => {
+                utils.printString("Not a constant\n");
+                utils.exit(std.math.maxInt(u32));
+            },
+        }
+    }
 
     pub fn unwrapInteger(v: *const Value) BigInt {
         switch (v.*) {
@@ -154,6 +168,26 @@ const Value = union(enum(u32)) {
         }
     }
 
+    pub fn unwrapString(v: *const Value) String {
+        switch (v.*) {
+            .constant => |c| {
+                switch (c.constType().*) {
+                    .string => {
+                        return c.string();
+                    },
+                    else => {
+                        utils.printString("Not a string constant\n");
+                        utils.exit(std.math.maxInt(u32));
+                    },
+                }
+            },
+            else => {
+                utils.printString("Not a constant\n");
+                utils.exit(std.math.maxInt(u32));
+            },
+        }
+    }
+
     pub fn unwrapBool(v: *const Value) bool {
         switch (v.*) {
             .constant => |c| {
@@ -163,6 +197,26 @@ const Value = union(enum(u32)) {
                     },
                     else => {
                         utils.printString("Not a boolean constant\n");
+                        utils.exit(std.math.maxInt(u32));
+                    },
+                }
+            },
+            else => {
+                utils.printString("Not a constant\n");
+                utils.exit(std.math.maxInt(u32));
+            },
+        }
+    }
+
+    pub fn unwrapList(v: *const Value) List {
+        switch (v.*) {
+            .constant => |c| {
+                switch (c.constType().*) {
+                    .list => {
+                        return c.list();
+                    },
+                    else => {
+                        utils.printString("Not a list constant\n");
                         utils.exit(std.math.maxInt(u32));
                     },
                 }
@@ -806,12 +860,50 @@ pub fn verifyEd25519Signature(_: *Machine, _: *LinkedValues) *const Value {
 }
 
 // String functions
-pub fn appendString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn appendString(m: *Machine, args: *LinkedValues) *const Value {
+    const y = args.value.unwrapString();
+    const x = args.next.?.value.unwrapString();
+
+    const length = x.length + y.length;
+
+    // type_length 4 bytes, integer 4 bytes,  length 4 bytes, list of words 4 * (x length + y length)
+    var result = m.heap.createArray(u32, length + 3);
+
+    result[0] = 1;
+    result[1] = @intFromEnum(ConstantType.string);
+    result[2] = length;
+
+    var resultPtr = result + 3;
+
+    var i: u32 = 0;
+    while (i < x.length) : (i += 1) {
+        resultPtr[i] = x.bytes[i];
+    }
+
+    i = 0;
+    while (i < y.length) : (i += 1) {
+        resultPtr[i] = y.bytes[i];
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn equalsString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn equalsString(m: *Machine, args: *LinkedValues) *const Value {
+    const y = args.value.unwrapString();
+
+    const x = args.next.?.value.unwrapString();
+
+    const equality = x.equals(&y);
+
+    var result = m.heap.createArray(u32, 3);
+
+    result[0] = 1;
+
+    result[1] = @intFromEnum(ConstantType.boolean);
+
+    result[2] = @intFromBool(equality);
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn encodeUtf8(_: *Machine, _: *LinkedValues) *const Value {
@@ -836,13 +928,29 @@ pub fn ifThenElse(_: *Machine, args: *LinkedValues) *const Value {
 }
 
 // Unit function
-pub fn chooseUnit(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn chooseUnit(_: *Machine, args: *LinkedValues) *const Value {
+    const then = args.value;
+    const unit = args.next.?.value;
+
+    if (!unit.isUnit()) {
+        utils.printString("Passed in non-unit value");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    return then;
 }
 
 // Tracing function
-pub fn trace(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn trace(_: *Machine, args: *LinkedValues) *const Value {
+    const then = args.value;
+    const msg = args.next.?.value.unwrapString();
+
+    var i: u32 = 0;
+    while (i < msg.length) : (i += 1) {
+        utils.printChar(@truncate(msg.bytes[i]));
+    }
+
+    return then;
 }
 
 // Pairs functions
@@ -855,12 +963,58 @@ pub fn sndPair(_: *Machine, _: *LinkedValues) *const Value {
 }
 
 // List functions
-pub fn chooseList(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn chooseList(_: *Machine, args: *LinkedValues) *const Value {
+    const otherwise = args.value;
+
+    const then = args.next.?.value;
+
+    const list = args.next.?.next.?.value.unwrapList();
+
+    if (list.length > 0) {
+        return otherwise;
+    } else {
+        return then;
+    }
 }
 
-pub fn mkCons(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn mkCons(m: *Machine, args: *LinkedValues) *const Value {
+    const list = args.value.unwrapList();
+
+    const newItem = args.next.?.value.unwrapConstant();
+
+    if (newItem.matchingTypes(list.inner_type, list.type_length)) {
+        const prev = if (list.length > 0) blk: {
+            break :blk list.items.?;
+        } else blk: {
+            break :blk null;
+        };
+
+        const node = m.heap.create(ListNode, &ListNode{ .value_pointer = newItem.rawValue(), .next = prev });
+
+        // (Type length + 1) * 4 bytes + 4 byte to hold type length + 4 byte for list length + 4 byte for pointer to first list item (or null)
+        var result = m.heap.createArray(u32, list.type_length + 4);
+
+        result[0] = list.type_length;
+        result[1] = @intFromEnum(ConstantType.list);
+        var resultPtr = result + 2;
+
+        const list_innner_types: [*]const ConstantType = @ptrCast(list.inner_type);
+
+        var i: u32 = 0;
+        while (i < list.type_length) : (i += 1) {
+            resultPtr[0] = @intFromEnum(list_innner_types[i]);
+            // This will run on the final iteration too
+            resultPtr += 1;
+        }
+
+        resultPtr[0] = list.length;
+        resultPtr[1] = @intFromPtr(node);
+
+        return createConst(m.heap, @ptrCast(result));
+    } else {
+        utils.printlnString("item does not match list type");
+        utils.exit(std.math.maxInt(u32));
+    }
 }
 
 pub fn headList(_: *Machine, _: *LinkedValues) *const Value {
