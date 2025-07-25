@@ -12,7 +12,15 @@ const Bytes = expr.Bytes;
 const String = expr.String;
 const List = expr.List;
 const ListNode = expr.ListNode;
+const G1Element = expr.G1Element;
+const G2Element = expr.G2Element;
+const MlResult = expr.MlResult;
 const utils = @import("utils.zig");
+
+const blst = @cImport({
+    @cInclude("blst.h");
+    @cInclude("blst_aux.h");
+});
 
 const Frame = union(enum(u32)) {
     no_frame,
@@ -229,6 +237,66 @@ const Value = union(enum(u32)) {
             },
             else => {
                 utils.printString("Not a constant\n");
+                utils.exit(std.math.maxInt(u32));
+            },
+        }
+    }
+
+    pub fn unwrapG1(v: *const Value) G1Element {
+        switch (v.*) {
+            .constant => |c| {
+                switch (c.constType().*) {
+                    .bls12_381_g1_element => {
+                        return c.g1Element();
+                    },
+                    else => {
+                        utils.printString("Not a G1 element\\n");
+                        utils.exit(std.math.maxInt(u32));
+                    },
+                }
+            },
+            else => {
+                utils.printString("Not a constant\\n");
+                utils.exit(std.math.maxInt(u32));
+            },
+        }
+    }
+
+    pub fn unwrapG2(v: *const Value) G2Element {
+        switch (v.*) {
+            .constant => |c| {
+                switch (c.constType().*) {
+                    .bls12_381_g2_element => {
+                        return c.g2Element();
+                    },
+                    else => {
+                        utils.printString("Not a G2 element\\n");
+                        utils.exit(std.math.maxInt(u32));
+                    },
+                }
+            },
+            else => {
+                utils.printString("Not a constant\\n");
+                utils.exit(std.math.maxInt(u32));
+            },
+        }
+    }
+
+    pub fn unwrapMlResult(v: *const Value) MlResult {
+        switch (v.*) {
+            .constant => |c| {
+                switch (c.constType().*) {
+                    .bls12_381_mlresult => {
+                        return c.mlResult();
+                    },
+                    else => {
+                        utils.printString("Not a Miller Loop Result\\n");
+                        utils.exit(std.math.maxInt(u32));
+                    },
+                }
+            },
+            else => {
+                utils.printString("Not a constant\\n");
                 utils.exit(std.math.maxInt(u32));
             },
         }
@@ -1366,72 +1434,530 @@ pub fn verifySchnorrSecp256k1Signature(_: *Machine, _: *LinkedValues) *const Val
 }
 
 // BLS Builtins
-pub fn bls12_381_G1_Add(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+fn bytesToU8(heap: *Heap, b: Bytes) []u8 {
+    const word_array = heap.createArray(u32, b.length / 4);
+    const byte_array = @as([*]u8, @ptrCast(word_array))[0..b.length];
+    for (0..b.length) |i| {
+        byte_array[i] = @truncate(b.bytes[i]);
+    }
+    return byte_array;
 }
 
-pub fn bls12_381_G1_Neg(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+fn integerToScalarBytes(bi: BigInt) [32]u8 {
+    if (bi.sign != 0) {
+        utils.printString("Negative scalar in BLS mul\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    if (bi.length > 8) {
+        utils.printString("Scalar too large for BLS mul\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    var scalar_bytes: [32]u8 = [_]u8{0} ** 32;
+    var offset: usize = 32 - bi.length * 4;
+    var k: usize = 0;
+    while (k < bi.length) : (k += 1) {
+        const j = bi.length - 1 - k;
+        const word = bi.words[j];
+        scalar_bytes[offset] = @truncate(word >> 24);
+        scalar_bytes[offset + 1] = @truncate(word >> 16);
+        scalar_bytes[offset + 2] = @truncate(word >> 8);
+        scalar_bytes[offset + 3] = @truncate(word);
+        offset += 4;
+    }
+    return scalar_bytes;
 }
 
-pub fn bls12_381_G1_ScalarMul(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+fn createElementConstant(heap: *Heap, typ: ConstantType, len: u32, u8bytes: []const u8) *Constant {
+    if (u8bytes.len != len) unreachable;
+    var buf = heap.createArray(u32, len + 3);
+    buf[0] = 1;
+    buf[1] = @intFromEnum(typ);
+    buf[2] = len;
+    for (0..len) |i| {
+        buf[3 + i] = u8bytes[i];
+    }
+    return @ptrCast(buf);
 }
 
-pub fn bls12_381_G1_Equal(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G1_Add(m: *Machine, args: *LinkedValues) *const Value {
+    const q = args.value.unwrapG1();
+    const p = args.next.?.value.unwrapG1();
+
+    var p_bytes: [96]u8 = undefined;
+    for (0..96) |i| p_bytes[i] = @truncate(p.bytes[i]);
+    var q_bytes: [96]u8 = undefined;
+    for (0..96) |i| q_bytes[i] = @truncate(q.bytes[i]);
+
+    var aff_p: blst.blst_p1_affine = undefined;
+    if (blst.blst_p1_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G1 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_p: blst.blst_p1 = undefined;
+    blst.blst_p1_from_affine(&point_p, &aff_p);
+    var aff_q: blst.blst_p1_affine = undefined;
+    if (blst.blst_p1_deserialize(&aff_q, &q_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G1 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_q: blst.blst_p1 = undefined;
+    blst.blst_p1_from_affine(&point_q, &aff_q);
+
+    var point_r: blst.blst_p1 = undefined;
+    blst.blst_p1_add(&point_r, &point_p, &point_q);
+
+    var out_bytes: [96]u8 = undefined;
+    blst.blst_p1_serialize(&out_bytes, &point_r);
+
+    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g1_element, 96, out_bytes[0..96]));
 }
 
-pub fn bls12_381_G1_Compress(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G1_Neg(m: *Machine, args: *LinkedValues) *const Value {
+    const p = args.value.unwrapG1();
+
+    var p_bytes: [96]u8 = undefined;
+    for (0..96) |i| p_bytes[i] = @truncate(p.bytes[i]);
+
+    var aff_p: blst.blst_p1_affine = undefined;
+    if (blst.blst_p1_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G1 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_p: blst.blst_p1 = undefined;
+    blst.blst_p1_from_affine(&point_p, &aff_p);
+
+    blst.blst_p1_cneg(&point_p, true);
+
+    var out_bytes: [96]u8 = undefined;
+    blst.blst_p1_serialize(&out_bytes, &point_p);
+
+    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g1_element, 96, out_bytes[0..96]));
 }
 
-pub fn bls12_381_G1_Uncompress(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G1_ScalarMul(m: *Machine, args: *LinkedValues) *const Value {
+    const scalar = args.value.unwrapInteger();
+    const p = args.next.?.value.unwrapG1();
+
+    var p_bytes: [96]u8 = undefined;
+    for (0..96) |i| p_bytes[i] = @truncate(p.bytes[i]);
+
+    var aff_p: blst.blst_p1_affine = undefined;
+    if (blst.blst_p1_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G1 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_p: blst.blst_p1 = undefined;
+    blst.blst_p1_from_affine(&point_p, &aff_p);
+
+    var scalar_bytes = integerToScalarBytes(scalar);
+
+    var point_r: blst.blst_p1 = undefined;
+    blst.blst_p1_mult(&point_r, &point_p, &scalar_bytes, 256);
+
+    var out_bytes: [96]u8 = undefined;
+    blst.blst_p1_serialize(&out_bytes, &point_r);
+
+    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g1_element, 96, out_bytes[0..96]));
 }
 
-pub fn bls12_381_G1_HashToGroup(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G1_Equal(m: *Machine, args: *LinkedValues) *const Value {
+    const q = args.value.unwrapG1();
+    const p = args.next.?.value.unwrapG1();
+
+    var p_bytes: [96]u8 = undefined;
+    for (0..96) |i| p_bytes[i] = @truncate(p.bytes[i]);
+    var q_bytes: [96]u8 = undefined;
+    for (0..96) |i| q_bytes[i] = @truncate(q.bytes[i]);
+
+    var aff_p: blst.blst_p1_affine = undefined;
+    if (blst.blst_p1_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G1 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_p: blst.blst_p1 = undefined;
+    blst.blst_p1_from_affine(&point_p, &aff_p);
+
+    var aff_q: blst.blst_p1_affine = undefined;
+    if (blst.blst_p1_deserialize(&aff_q, &q_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G1 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_q: blst.blst_p1 = undefined;
+    blst.blst_p1_from_affine(&point_q, &aff_q);
+
+    const equal = blst.blst_p1_is_equal(&point_p, &point_q);
+
+    var result = m.heap.createArray(u32, 3);
+    result[0] = 1;
+    result[1] = @intFromEnum(ConstantType.boolean);
+    result[2] = @intFromBool(equal);
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn bls12_381_G2_Add(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G1_Compress(m: *Machine, args: *LinkedValues) *const Value {
+    const p = args.value.unwrapG1();
+
+    var p_bytes: [96]u8 = undefined;
+    for (0..96) |i| p_bytes[i] = @truncate(p.bytes[i]);
+
+    var aff_p: blst.blst_p1_affine = undefined;
+    if (blst.blst_p1_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G1 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_p: blst.blst_p1 = undefined;
+    blst.blst_p1_from_affine(&point_p, &aff_p);
+
+    var out_bytes: [48]u8 = undefined;
+    blst.blst_p1_compress(&out_bytes, &point_p);
+
+    var buf = m.heap.createArray(u32, 48 + 3);
+    buf[0] = 1;
+    buf[1] = @intFromEnum(ConstantType.bytes);
+    buf[2] = 48;
+    for (0..48) |i| {
+        buf[3 + i] = out_bytes[i];
+    }
+
+    return createConst(m.heap, @ptrCast(buf));
 }
 
-pub fn bls12_381_G2_Neg(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G1_Uncompress(m: *Machine, args: *LinkedValues) *const Value {
+    const bs = args.value.unwrapBytestring();
+    if (bs.length != 48) {
+        utils.printString("Invalid compressed G1 length\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    var in_bytes: [48]u8 = undefined;
+    for (0..48) |i| in_bytes[i] = @truncate(bs.bytes[i]);
+
+    var aff_p: blst.blst_p1_affine = undefined;
+    if (blst.blst_p1_uncompress(&aff_p, &in_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid compressed G1\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_p: blst.blst_p1 = undefined;
+    blst.blst_p1_from_affine(&point_p, &aff_p);
+
+    var out_bytes: [96]u8 = undefined;
+    blst.blst_p1_serialize(&out_bytes, &point_p);
+
+    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g1_element, 96, out_bytes[0..96]));
 }
 
-pub fn bls12_381_G2_ScalarMul(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G1_HashToGroup(m: *Machine, args: *LinkedValues) *const Value {
+    const dst = args.value.unwrapBytestring();
+    const msg = args.next.?.value.unwrapBytestring();
+
+    const msg_u8 = bytesToU8(m.heap, msg);
+    const dst_u8 = bytesToU8(m.heap, dst);
+
+    var point_r: blst.blst_p1 = undefined;
+    blst.blst_hash_to_g1(&point_r, msg_u8.ptr, msg.length, dst_u8.ptr, dst.length, null, 0);
+
+    var out_bytes: [96]u8 = undefined;
+    blst.blst_p1_serialize(&out_bytes, &point_r);
+
+    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g1_element, 96, out_bytes[0..96]));
 }
 
-pub fn bls12_381_G2_Equal(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G2_Add(m: *Machine, args: *LinkedValues) *const Value {
+    const q = args.value.unwrapG2();
+    const p = args.next.?.value.unwrapG2();
+
+    var p_bytes: [192]u8 = undefined;
+    for (0..192) |i| p_bytes[i] = @truncate(p.bytes[i]);
+    var q_bytes: [192]u8 = undefined;
+    for (0..192) |i| q_bytes[i] = @truncate(q.bytes[i]);
+
+    var aff_p: blst.blst_p2_affine = undefined;
+    if (blst.blst_p2_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G2 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_p: blst.blst_p2 = undefined;
+    blst.blst_p2_from_affine(&point_p, &aff_p);
+
+    var aff_q: blst.blst_p2_affine = undefined;
+    if (blst.blst_p2_deserialize(&aff_q, &q_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G2 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_q: blst.blst_p2 = undefined;
+    blst.blst_p2_from_affine(&point_q, &aff_q);
+
+    var point_r: blst.blst_p2 = undefined;
+    blst.blst_p2_add(&point_r, &point_p, &point_q);
+
+    var out_bytes: [192]u8 = undefined;
+    blst.blst_p2_serialize(&out_bytes, &point_r);
+
+    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g2_element, 192, out_bytes[0..192]));
 }
 
-pub fn bls12_381_G2_Compress(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G2_Neg(m: *Machine, args: *LinkedValues) *const Value {
+    const p = args.value.unwrapG2();
+
+    var p_bytes: [192]u8 = undefined;
+    for (0..192) |i| p_bytes[i] = @truncate(p.bytes[i]);
+
+    var aff_p: blst.blst_p2_affine = undefined;
+    if (blst.blst_p2_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G2 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_p: blst.blst_p2 = undefined;
+    blst.blst_p2_from_affine(&point_p, &aff_p);
+
+    blst.blst_p2_cneg(&point_p, true);
+
+    var out_bytes: [192]u8 = undefined;
+    blst.blst_p2_serialize(&out_bytes, &point_p);
+
+    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g2_element, 192, out_bytes[0..192]));
 }
 
-pub fn bls12_381_G2_Uncompress(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G2_ScalarMul(m: *Machine, args: *LinkedValues) *const Value {
+    const scalar = args.value.unwrapInteger();
+    const p = args.next.?.value.unwrapG2();
+
+    var p_bytes: [192]u8 = undefined;
+    for (0..192) |i| p_bytes[i] = @truncate(p.bytes[i]);
+
+    var aff_p: blst.blst_p2_affine = undefined;
+    if (blst.blst_p2_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G2 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_p: blst.blst_p2 = undefined;
+    blst.blst_p2_from_affine(&point_p, &aff_p);
+
+    var scalar_bytes = integerToScalarBytes(scalar);
+
+    var point_r: blst.blst_p2 = undefined;
+    blst.blst_p2_mult(&point_r, &point_p, &scalar_bytes, 256);
+
+    var out_bytes: [192]u8 = undefined;
+    blst.blst_p2_serialize(&out_bytes, &point_r);
+
+    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g2_element, 192, out_bytes[0..192]));
 }
 
-pub fn bls12_381_G2_HashToGroup(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G2_Equal(m: *Machine, args: *LinkedValues) *const Value {
+    const q = args.value.unwrapG2();
+    const p = args.next.?.value.unwrapG2();
+
+    var p_bytes: [192]u8 = undefined;
+    for (0..192) |i| p_bytes[i] = @truncate(p.bytes[i]);
+    var q_bytes: [192]u8 = undefined;
+    for (0..192) |i| q_bytes[i] = @truncate(q.bytes[i]);
+
+    var aff_p: blst.blst_p2_affine = undefined;
+    if (blst.blst_p2_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G2 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_p: blst.blst_p2 = undefined;
+    blst.blst_p2_from_affine(&point_p, &aff_p);
+
+    var aff_q: blst.blst_p2_affine = undefined;
+    if (blst.blst_p2_deserialize(&aff_q, &q_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G2 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_q: blst.blst_p2 = undefined;
+    blst.blst_p2_from_affine(&point_q, &aff_q);
+
+    const equal = blst.blst_p2_is_equal(&point_p, &point_q);
+
+    var result = m.heap.createArray(u32, 3);
+    result[0] = 1;
+    result[1] = @intFromEnum(ConstantType.boolean);
+    result[2] = @intFromBool(equal);
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn bls12_381_MillerLoop(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G2_Compress(m: *Machine, args: *LinkedValues) *const Value {
+    const p = args.value.unwrapG2();
+
+    var p_bytes: [192]u8 = undefined;
+    for (0..192) |i| p_bytes[i] = @truncate(p.bytes[i]);
+
+    var aff_p: blst.blst_p2_affine = undefined;
+    if (blst.blst_p2_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G2 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_p: blst.blst_p2 = undefined;
+    blst.blst_p2_from_affine(&point_p, &aff_p);
+
+    var out_bytes: [96]u8 = undefined;
+    blst.blst_p2_compress(&out_bytes, &point_p);
+
+    var buf = m.heap.createArray(u32, 96 + 3);
+    buf[0] = 1;
+    buf[1] = @intFromEnum(ConstantType.bytes);
+    buf[2] = 96;
+    for (0..96) |i| {
+        buf[3 + i] = out_bytes[i];
+    }
+
+    return createConst(m.heap, @ptrCast(buf));
 }
 
-pub fn bls12_381_MulMlResult(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G2_Uncompress(m: *Machine, args: *LinkedValues) *const Value {
+    const bs = args.value.unwrapBytestring();
+    if (bs.length != 96) {
+        utils.printString("Invalid compressed G2 length\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    var in_bytes: [96]u8 = undefined;
+    for (0..96) |i| in_bytes[i] = @truncate(bs.bytes[i]);
+
+    var aff_p: blst.blst_p2_affine = undefined;
+    if (blst.blst_p2_uncompress(&aff_p, &in_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid compressed G2\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var point_p: blst.blst_p2 = undefined;
+    blst.blst_p2_from_affine(&point_p, &aff_p);
+
+    var out_bytes: [192]u8 = undefined;
+    blst.blst_p2_serialize(&out_bytes, &point_p);
+
+    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g2_element, 192, out_bytes[0..192]));
 }
 
-pub fn bls12_381_FinalVerify(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bls12_381_G2_HashToGroup(m: *Machine, args: *LinkedValues) *const Value {
+    const dst = args.value.unwrapBytestring();
+    const msg = args.next.?.value.unwrapBytestring();
+
+    const msg_u8 = bytesToU8(m.heap, msg);
+    const dst_u8 = bytesToU8(m.heap, dst);
+
+    var point_r: blst.blst_p2 = undefined;
+    blst.blst_hash_to_g2(&point_r, msg_u8.ptr, msg.length, dst_u8.ptr, dst.length, null, 0);
+
+    var out_bytes: [192]u8 = undefined;
+    blst.blst_p2_serialize(&out_bytes, &point_r);
+
+    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g2_element, 192, out_bytes[0..192]));
+}
+
+pub fn bls12_381_MillerLoop(m: *Machine, args: *LinkedValues) *const Value {
+    const g2 = args.value.unwrapG2();
+    const g1 = args.next.?.value.unwrapG1();
+
+    var g1_bytes: [96]u8 = undefined;
+    for (0..96) |i| g1_bytes[i] = @truncate(g1.bytes[i]);
+    var g2_bytes: [192]u8 = undefined;
+    for (0..192) |i| g2_bytes[i] = @truncate(g2.bytes[i]);
+
+    var aff_g1: blst.blst_p1_affine = undefined;
+    if (blst.blst_p1_deserialize(&aff_g1, &g1_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G1 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    var aff_g2: blst.blst_p2_affine = undefined;
+    if (blst.blst_p2_uncompress(&aff_g2, &g2_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G2 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    var ml: blst.blst_fp12 = undefined;
+    blst.blst_miller_loop(&ml, &aff_g2, &aff_g1);
+
+    var out_bytes: [576]u8 = undefined;
+    blst.blst_bendian_from_fp12(&out_bytes, &ml);
+
+    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_mlresult, 576, out_bytes[0..576]));
+}
+
+fn blst_fp12_from_bendian(ret: *blst.blst_fp12, bytes: [*]const u8) c_int {
+    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[0].fp[0], bytes + 0 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[0].fp[1], bytes + 1 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[1].fp[0], bytes + 2 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[1].fp[1], bytes + 3 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[2].fp[0], bytes + 4 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[2].fp[1], bytes + 5 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[0].fp[0], bytes + 6 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[0].fp[1], bytes + 7 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[1].fp[0], bytes + 8 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[1].fp[1], bytes + 9 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[2].fp[0], bytes + 10 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[2].fp[1], bytes + 11 * 48);
+    if (blst.blst_fp12_in_group(ret)) {
+        return blst.BLST_SUCCESS;
+    } else {
+        return blst.BLST_BAD_ENCODING;
+    }
+}
+
+pub fn bls12_381_MulMlResult(m: *Machine, args: *LinkedValues) *const Value {
+    const b = args.value.unwrapMlResult();
+    const a = args.next.?.value.unwrapMlResult();
+
+    var a_bytes: [576]u8 = undefined;
+    for (0..576) |i| a_bytes[i] = @truncate(a.bytes[i]);
+    var b_bytes: [576]u8 = undefined;
+    for (0..576) |i| b_bytes[i] = @truncate(b.bytes[i]);
+
+    var fp_a: blst.blst_fp12 = undefined;
+    if (blst_fp12_from_bendian(&fp_a, &a_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid MlResult\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    var fp_b: blst.blst_fp12 = undefined;
+    if (blst_fp12_from_bendian(&fp_b, &b_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid MlResult\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    var fp_r: blst.blst_fp12 = undefined;
+    blst.blst_fp12_mul(&fp_r, &fp_a, &fp_b);
+
+    var out_bytes: [576]u8 = undefined;
+    blst.blst_bendian_from_fp12(&out_bytes, &fp_r);
+
+    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_mlresult, 576, out_bytes[0..576]));
+}
+
+pub fn bls12_381_FinalVerify(m: *Machine, args: *LinkedValues) *const Value {
+    const ml2 = args.value.unwrapMlResult();
+    const ml1 = args.next.?.value.unwrapMlResult();
+
+    var ml1_bytes: [576]u8 = undefined;
+    for (0..576) |i| ml1_bytes[i] = @truncate(ml1.bytes[i]);
+    var ml2_bytes: [576]u8 = undefined;
+    for (0..576) |i| ml2_bytes[i] = @truncate(ml2.bytes[i]);
+
+    var fp_ml1: blst.blst_fp12 = undefined;
+    if (blst_fp12_from_bendian(&fp_ml1, &ml1_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid MlResult\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    var fp_ml2: blst.blst_fp12 = undefined;
+    if (blst_fp12_from_bendian(&fp_ml2, &ml2_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid MlResult\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    const res = blst.blst_fp12_finalverify(&fp_ml1, &fp_ml2);
+
+    var result = m.heap.createArray(u32, 3);
+    result[0] = 1;
+    result[1] = @intFromEnum(ConstantType.boolean);
+    result[2] = @intFromBool(res);
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn keccak_256(_: *Machine, _: *LinkedValues) *const Value {
