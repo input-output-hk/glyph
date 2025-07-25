@@ -4399,3 +4399,63 @@ test "mkCons" {
         },
     }
 }
+
+test "bls12_381_G1_add" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+    // const p_bytes_hex = "abd61864f519748032551e42e0ac417fd828f079454e3e3c9891c5c29ed7f10bdecc046854e3931cb7002779bd76d71f";
+    // const q_bytes_hex = "950dfd33da2682260c76038dfb8bad6e84ae9d599a3c151815945ac1e6ef6b1027cd917f3907479d20d636ce437a41f5";
+    // const expected_hex = "a4870e983a149bb1e7cc70fde907a2aa52302833bce4d62f679819022924e9caab52e3631d376d36d9692664b4cfbc22";
+
+    const p_bytes: [*]const u32 = &[_]u32{
+        0xD60B170B, 0x197465F5, 0x421E5532, 0x7FA1CEE0,
+        0x79F028D8, 0x3C4E4545, 0xC5C19198, 0x0BF1D79E,
+        0x6804CCDE, 0x1C93E354, 0x277900B7, 0x1FD776BD,
+        0x53B17A14, 0x77A569E5, 0x04CB42C5, 0xFF4B5E04,
+        0x7ADEC097, 0x47B9A306, 0xC226948B, 0x4B5ED9EE,
+        0x275A8059, 0xB05D786F, 0xD3E03D4B, 0xF717BF02,
+    };
+
+    const q_bytes: [*]const u32 = &[_]u32{
+        0x33FD0D15, 0x268ADA82, 0x8D03760C, 0x6EAD8BFB,
+        0x599DAE84, 0x18153C9A, 0xC15A9415, 0x106BEFE6,
+        0x7F91CD27, 0x9D470739, 0xCE36D620, 0xF5417A43,
+        0x82B50705, 0xC2FC65D3, 0xD5C22D2A, 0x8EB80C6E,
+        0xD5342EC6, 0x66A5600B, 0xA5806C8E, 0xC38B9393,
+        0x432163C3, 0x020B2387, 0x6872269C, 0x660B1C85,
+    };
+
+    const expected_bytes: [*]const u32 = &[_]u32{
+        0x980E8704, 0xB19B143A, 0xFD70CCE7, 0xAAA207E9,
+        0x33283052, 0x2FD6E4BC, 0x02199867, 0xCAE92429,
+        0x63E352AB, 0x366D371D, 0x646826D9, 0x22BCCFB4,
+        0x134EC217, 0x29C72367, 0xE640F8C8, 0x5951F5E7,
+        0x1313A1AA, 0xDF4B94C1, 0x8BC5DE24, 0x2CEB9680,
+        0x5D5DC566, 0xBB14D586, 0x2D6F5EC4, 0x27802F5B,
+    };
+
+    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .length = 96, .bytes = q_bytes }, ConstantTypeList.bls12_381_g1_element())
+        .extend(&heap, expr.G1Element, expr.G1Element{ .length = 96, .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+
+    const result_val = bls12_381_G1_Add(&machine, args);
+
+    switch (result_val.*) {
+        .constant => |c| {
+            switch (c.type_list.constType().*) {
+                .bls12_381_g1_element => {
+                    const r = c.g1Element();
+                    try testing.expectEqual(48, r.length);
+                    for (0..48) |i| {
+                        try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+                    }
+                },
+                else => unreachable,
+            }
+        },
+        else => unreachable,
+    }
+}
