@@ -6258,25 +6258,33 @@ mod tests {
 
         let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-        let type_length = section_data[offset_index];
+        let type_pointer = section_data[offset_index].to_be();
+
+        let type_section = v.2.find_section(type_pointer).unwrap();
+
+        let type_section_data = &type_section.data;
+
+        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+
+        let type_length = type_section_data[type_offset_index];
 
         assert_eq!(1, type_length.to_be());
 
-        let integer_type = section_data[offset_index + 1];
+        let integer_type = type_section_data[type_offset_index + 1];
 
         assert_eq!(const_tag::INTEGER, integer_type.to_be());
 
-        let sign = section_data[offset_index + 2];
+        let sign = section_data[offset_index + 1];
 
         assert_eq!(1, sign.to_be());
 
-        let length = section_data[offset_index + 3];
+        let length = section_data[offset_index + 2];
 
         assert_eq!(2, length.to_be());
 
-        let mut word = section_data[offset_index + 4].to_be() as u64;
+        let mut word = section_data[offset_index + 3].to_be() as u64;
 
-        word += section_data[offset_index + 5].to_be() as u64 * 256_u64.pow(4);
+        word += section_data[offset_index + 4].to_be() as u64 * 256_u64.pow(4);
 
         assert_eq!(word, 5000000005);
     }
@@ -6374,25 +6382,33 @@ mod tests {
 
         let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-        let type_length = section_data[offset_index];
+        let type_pointer = section_data[offset_index].to_be();
+
+        let type_section = v.2.find_section(type_pointer).unwrap();
+
+        let type_section_data = &type_section.data;
+
+        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+
+        let type_length = type_section_data[type_offset_index];
 
         assert_eq!(1, type_length.to_be());
 
-        let integer_type = section_data[offset_index + 1];
+        let integer_type = type_section_data[type_offset_index + 1];
 
         assert_eq!(const_tag::INTEGER, integer_type.to_be());
 
-        let sign = section_data[offset_index + 2];
+        let sign = section_data[offset_index + 1];
 
         assert_eq!(1, sign.to_be());
 
-        let length = section_data[offset_index + 3];
+        let length = section_data[offset_index + 2];
 
         assert_eq!(2, length.to_be());
 
-        let mut word = section_data[offset_index + 4].to_be() as u64;
+        let mut word = section_data[offset_index + 3].to_be() as u64;
 
-        word += section_data[offset_index + 5].to_be() as u64 * 256_u64.pow(4);
+        word += section_data[offset_index + 4].to_be() as u64 * 256_u64.pow(4);
 
         assert_eq!(word, 4999999995);
     }
@@ -6490,25 +6506,33 @@ mod tests {
 
         let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-        let type_length = section_data[offset_index];
+        let type_pointer = section_data[offset_index].to_be();
+
+        let type_section = v.2.find_section(type_pointer).unwrap();
+
+        let type_section_data = &type_section.data;
+
+        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+
+        let type_length = type_section_data[type_offset_index];
 
         assert_eq!(1, type_length.to_be());
 
-        let integer_type = section_data[offset_index + 1];
+        let integer_type = type_section_data[type_offset_index + 1];
 
         assert_eq!(const_tag::INTEGER, integer_type.to_be());
 
-        let sign = section_data[offset_index + 2];
+        let sign = section_data[offset_index + 1];
 
         assert_eq!(0, sign.to_be());
 
-        let length = section_data[offset_index + 3];
+        let length = section_data[offset_index + 2];
 
         assert_eq!(2, length.to_be());
 
-        let mut word = section_data[offset_index + 4].to_be() as u64;
+        let mut word = section_data[offset_index + 3].to_be() as u64;
 
-        word += section_data[offset_index + 5].to_be() as u64 * 256_u64.pow(4);
+        word += section_data[offset_index + 4].to_be() as u64 * 256_u64.pow(4);
 
         assert_eq!(word, 4999999995);
     }
@@ -6610,15 +6634,23 @@ mod tests {
 
         let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-        let type_length = section_data[offset_index];
+        let type_pointer = section_data[offset_index].to_be();
+
+        let type_section = v.2.find_section(type_pointer).unwrap();
+
+        let type_section_data = &type_section.data;
+
+        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+
+        let type_length = type_section_data[type_offset_index];
 
         assert_eq!(1, type_length.to_be());
 
-        let bool_type = section_data[offset_index + 1];
+        let integer_type = type_section_data[type_offset_index + 1];
 
-        assert_eq!(const_tag::BOOL, bool_type.to_be());
+        assert_eq!(const_tag::BOOL, integer_type.to_be());
 
-        let value = section_data[offset_index + 2];
+        let value = section_data[offset_index + 1];
 
         assert_eq!(1, value.to_be());
     }
@@ -6720,15 +6752,23 @@ mod tests {
 
         let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-        let type_length = section_data[offset_index];
+        let type_pointer = section_data[offset_index].to_be();
+
+        let type_section = v.2.find_section(type_pointer).unwrap();
+
+        let type_section_data = &type_section.data;
+
+        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+
+        let type_length = type_section_data[type_offset_index];
 
         assert_eq!(1, type_length.to_be());
 
-        let bool_type = section_data[offset_index + 1];
+        let integer_type = type_section_data[type_offset_index + 1];
 
-        assert_eq!(const_tag::BOOL, bool_type.to_be());
+        assert_eq!(const_tag::BOOL, integer_type.to_be());
 
-        let value = section_data[offset_index + 2];
+        let value = section_data[offset_index + 1];
 
         assert_eq!(0, value.to_be());
     }
@@ -6830,15 +6870,23 @@ mod tests {
 
         let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-        let type_length = section_data[offset_index];
+        let type_pointer = section_data[offset_index].to_be();
+
+        let type_section = v.2.find_section(type_pointer).unwrap();
+
+        let type_section_data = &type_section.data;
+
+        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+
+        let type_length = type_section_data[type_offset_index];
 
         assert_eq!(1, type_length.to_be());
 
-        let bool_type = section_data[offset_index + 1];
+        let integer_type = type_section_data[type_offset_index + 1];
 
-        assert_eq!(const_tag::BOOL, bool_type.to_be());
+        assert_eq!(const_tag::BOOL, integer_type.to_be());
 
-        let value = section_data[offset_index + 2];
+        let value = section_data[offset_index + 1];
 
         assert_eq!(1, value.to_be());
     }
@@ -6935,19 +6983,27 @@ mod tests {
 
         let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-        let type_length = section_data[offset_index];
+        let type_pointer = section_data[offset_index].to_be();
 
-        assert_eq!(type_length.to_be(), 1);
+        let type_section = v.2.find_section(type_pointer).unwrap();
 
-        let constant_type = section_data[offset_index + 1];
+        let type_section_data = &type_section.data;
 
-        assert_eq!(constant_type.to_be(), const_tag::BYTESTRING);
+        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
 
-        let byte_length = section_data[offset_index + 2];
+        let type_length = type_section_data[type_offset_index];
+
+        assert_eq!(1, type_length.to_be());
+
+        let integer_type = type_section_data[type_offset_index + 1];
+
+        assert_eq!(const_tag::BYTESTRING, integer_type.to_be());
+
+        let byte_length = section_data[offset_index + 1];
 
         assert_eq!(byte_length.to_be(), 4);
 
-        let value = section_data[(offset_index + 3)..(offset_index + 7)]
+        let value = section_data[(offset_index + 2)..(offset_index + 6)]
             .iter()
             .map(|i| i.to_be())
             .collect::<Vec<u32>>();
@@ -7168,19 +7224,27 @@ mod tests {
 
         let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-        let type_length = section_data[offset_index];
+        let type_pointer = section_data[offset_index].to_be();
 
-        assert_eq!(type_length.to_be(), 1);
+        let type_section = v.2.find_section(type_pointer).unwrap();
 
-        let constant_type = section_data[offset_index + 1];
+        let type_section_data = &type_section.data;
 
-        assert_eq!(constant_type.to_be(), const_tag::BYTESTRING);
+        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
 
-        let byte_length = section_data[offset_index + 2];
+        let type_length = type_section_data[type_offset_index];
+
+        assert_eq!(1, type_length.to_be());
+
+        let bytestring_type = type_section_data[type_offset_index + 1];
+
+        assert_eq!(const_tag::BYTESTRING, bytestring_type.to_be());
+
+        let byte_length = section_data[offset_index + 1];
 
         assert_eq!(byte_length.to_be(), 2);
 
-        let value = section_data[(offset_index + 3)..(offset_index + 5)]
+        let value = section_data[(offset_index + 2)..(offset_index + 4)]
             .iter()
             .map(|i| i.to_be())
             .collect::<Vec<u32>>();
@@ -7279,23 +7343,31 @@ mod tests {
 
         let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-        let type_length = section_data[offset_index];
+        let type_pointer = section_data[offset_index].to_be();
 
-        assert_eq!(type_length.to_be(), 1);
+        let type_section = v.2.find_section(type_pointer).unwrap();
 
-        let constant_type = section_data[offset_index + 1];
+        let type_section_data = &type_section.data;
 
-        assert_eq!(constant_type.to_be(), const_tag::INTEGER);
+        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
 
-        let sign = section_data[offset_index + 2];
+        let type_length = type_section_data[type_offset_index];
+
+        assert_eq!(1, type_length.to_be());
+
+        let integer_type = type_section_data[type_offset_index + 1];
+
+        assert_eq!(const_tag::INTEGER, integer_type.to_be());
+
+        let sign = section_data[offset_index + 1];
 
         assert_eq!(sign.to_be(), 0);
 
-        let length = section_data[offset_index + 3];
+        let length = section_data[offset_index + 2];
 
         assert_eq!(length.to_be(), 1);
 
-        let value = section_data[offset_index + 4];
+        let value = section_data[offset_index + 3];
 
         assert_eq!(value.to_be(), 4);
     }
@@ -7392,23 +7464,31 @@ mod tests {
 
         let offset_index = ((constant_pointer - section.start) / 4) as usize;
 
-        let type_length = section_data[offset_index];
+        let type_pointer = section_data[offset_index].to_be();
 
-        assert_eq!(type_length.to_be(), 1);
+        let type_section = v.2.find_section(type_pointer).unwrap();
 
-        let constant_type = section_data[offset_index + 1];
+        let type_section_data = &type_section.data;
 
-        assert_eq!(constant_type.to_be(), const_tag::INTEGER);
+        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
 
-        let sign = section_data[offset_index + 2];
+        let type_length = type_section_data[type_offset_index];
+
+        assert_eq!(1, type_length.to_be());
+
+        let bytestring_type = type_section_data[type_offset_index + 1];
+
+        assert_eq!(const_tag::INTEGER, bytestring_type.to_be());
+
+        let sign = section_data[offset_index + 1];
 
         assert_eq!(sign.to_be(), 0);
 
-        let length = section_data[offset_index + 3];
+        let length = section_data[offset_index + 2];
 
         assert_eq!(length.to_be(), 1);
 
-        let value = section_data[offset_index + 4];
+        let value = section_data[offset_index + 3];
 
         assert_eq!(value.to_be(), 254);
     }
