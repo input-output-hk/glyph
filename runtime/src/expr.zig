@@ -741,3 +741,10 @@ pub const ConstantType = enum(u32) {
     pair,
     data,
 };
+
+pub const UplcInteger = ConstantTypeList.integer();
+pub const UplcBytes = ConstantTypeList.bytes();
+pub const UplcString = ConstantTypeList.string();
+pub const UplcUnit = ConstantTypeList.unit();
+pub const UplcBoolean = ConstantTypeList.boolean();
+pub const UplcListData = ConstantTypeList.listData();

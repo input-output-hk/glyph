@@ -464,17 +464,12 @@ pub const builtinFunctions = [_]*const fn (*Machine, *LinkedValues) *const Value
 pub fn addInteger(m: *Machine, args: *LinkedValues) *const Value {
     const y = args.value.unwrapInteger();
 
-    const x = args.next.?.value;
+    const x = args.next.?.value.unwrapInteger();
 
-    const xx = x.unwrapInteger();
-
-    // Checked for constant above
-    const xType = x.constant.type_list;
-
-    if (xx.sign == y.sign) {
-        return addSignedIntegers(m, xx, y, xType);
+    if (x.sign == y.sign) {
+        return addSignedIntegers(m, x, y);
     } else {
-        return subSignedIntegers(m, xx, y, xType);
+        return subSignedIntegers(m, x, y);
     }
 }
 
@@ -482,29 +477,19 @@ pub fn subInteger(m: *Machine, args: *LinkedValues) *const Value {
     var y = args.value.unwrapInteger();
     y.sign ^= 1;
 
-    const x = args.next.?.value;
+    const x = args.next.?.value.unwrapInteger();
 
-    const xx = x.unwrapInteger();
-
-    // Checked for constant above
-    const xType = x.constant.type_list;
-
-    if (xx.sign == y.sign) {
-        return addSignedIntegers(m, xx, y, xType);
+    if (x.sign == y.sign) {
+        return addSignedIntegers(m, x, y);
     } else {
-        return subSignedIntegers(m, xx, y, xType);
+        return subSignedIntegers(m, x, y);
     }
 }
 
 pub fn multiplyInteger(m: *Machine, args: *const LinkedValues) *const Value {
     const b = args.value.unwrapInteger();
 
-    const x = args.next.?.value;
-
-    const a = x.unwrapInteger();
-
-    // Checked for constant above
-    const xType = x.constant.type_list;
+    const a = args.next.?.value.unwrapInteger();
 
     const result_sign: u32 = a.sign ^ b.sign;
 
@@ -564,7 +549,7 @@ pub fn multiplyInteger(m: *Machine, args: *const LinkedValues) *const Value {
         final_len -= 1;
     }
     // length of types is 1 for integer
-    resultPtr[0] = @intFromPtr(xType);
+    resultPtr[0] = @intFromPtr(&expr.UplcInteger);
     resultPtr[1] = result_sign;
     resultPtr[2] = @intCast(final_len);
 
@@ -596,12 +581,7 @@ pub fn equalsInteger(m: *Machine, args: *LinkedValues) *const Value {
 
     var result = m.heap.createArray(u32, 2);
 
-    const types = m.heap.create(
-        ConstantTypeList,
-        &ConstantTypeList.boolean(),
-    );
-
-    result[0] = @intFromPtr(types);
+    result[0] = @intFromPtr(&expr.UplcBoolean);
     result[1] = @intFromBool(equality[0]);
 
     return createConst(m.heap, @ptrCast(result));
@@ -618,12 +598,7 @@ pub fn lessThanInteger(m: *Machine, args: *LinkedValues) *const Value {
 
     var result = m.heap.createArray(u32, 2);
 
-    const types = m.heap.create(
-        ConstantTypeList,
-        &ConstantTypeList.boolean(),
-    );
-
-    result[0] = @intFromPtr(types);
+    result[0] = @intFromPtr(&expr.UplcBoolean);
 
     result[1] = @intFromBool(
         !equality[0] and (@intFromPtr(xPtr) != @intFromPtr(equality[1])),
@@ -641,14 +616,9 @@ pub fn lessThanEqualsInteger(m: *Machine, args: *LinkedValues) *const Value {
 
     const equality = xPtr.compareMagnitude(&y);
 
-    var result = m.heap.createArray(u32, 3);
+    var result = m.heap.createArray(u32, 2);
 
-    const types = m.heap.create(
-        ConstantTypeList,
-        &ConstantTypeList.boolean(),
-    );
-
-    result[0] = @intFromPtr(types);
+    result[0] = @intFromPtr(&expr.UplcBoolean);
 
     result[1] = @intFromBool(
         equality[0] or (@intFromPtr(xPtr) != @intFromPtr(equality[1])),
@@ -661,25 +631,21 @@ pub fn lessThanEqualsInteger(m: *Machine, args: *LinkedValues) *const Value {
 pub fn appendByteString(m: *Machine, args: *LinkedValues) *const Value {
     const y = args.value.unwrapBytestring();
 
-    const x = args.next.?.value;
+    const x = args.next.?.value.unwrapBytestring();
 
-    const xx = x.unwrapBytestring();
-
-    const xType = x.constant.type_list;
-
-    const length = xx.length + y.length;
+    const length = x.length + y.length;
 
     // type_length 4 bytes,  length 4 bytes, list of words 4 * (x length + y length)
     var result = m.heap.createArray(u32, length + 2);
 
-    result[0] = @intFromPtr(xType);
+    result[0] = @intFromPtr(&expr.UplcBytes);
     result[1] = length;
 
     var resultPtr = result + 2;
 
     var i: u32 = 0;
-    while (i < xx.length) : (i += 1) {
-        resultPtr[0] = xx.bytes[i];
+    while (i < x.length) : (i += 1) {
+        resultPtr[0] = x.bytes[i];
         resultPtr += 1;
     }
 
@@ -692,11 +658,7 @@ pub fn appendByteString(m: *Machine, args: *LinkedValues) *const Value {
 }
 
 pub fn consByteString(m: *Machine, args: *LinkedValues) *const Value {
-    const y = args.value;
-
-    const yy = y.unwrapBytestring();
-
-    const yType = y.constant.type_list;
+    const y = args.value.unwrapBytestring();
 
     const x = args.next.?.value.unwrapInteger();
 
@@ -705,31 +667,27 @@ pub fn consByteString(m: *Machine, args: *LinkedValues) *const Value {
         utils.exit(std.math.maxInt(u32));
     }
 
-    const length = yy.length + 1;
+    const length = y.length + 1;
 
     // type 4 bytes, length 4 bytes, list of words 4 * (y length + 1)
     var result = m.heap.createArray(u32, length + 2);
 
-    result[0] = @intFromPtr(yType);
+    result[0] = @intFromPtr(&expr.UplcBytes);
     result[1] = length;
     result[2] = x.words[0];
 
     var resultPtr = result + 3;
 
     var i: u32 = 0;
-    while (i < yy.length) : (i += 1) {
-        resultPtr[i] = yy.bytes[i];
+    while (i < y.length) : (i += 1) {
+        resultPtr[i] = y.bytes[i];
     }
 
     return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn sliceByteString(m: *Machine, args: *LinkedValues) *const Value {
-    const z = args.value;
-
-    const bytes = z.unwrapBytestring();
-
-    const zType = z.constant.type_list;
+    const bytes = args.value.unwrapBytestring();
 
     // second arg take
     const take = args.next.?.value.unwrapInteger();
@@ -772,7 +730,7 @@ pub fn sliceByteString(m: *Machine, args: *LinkedValues) *const Value {
 
     const offset = bytes.bytes + bytestringLen - leftover;
 
-    result[0] = @intFromPtr(zType);
+    result[0] = @intFromPtr(&expr.UplcBytes);
     result[1] = finalTake;
 
     var resultPtr = result + 2;
@@ -788,14 +746,9 @@ pub fn sliceByteString(m: *Machine, args: *LinkedValues) *const Value {
 pub fn lengthOfByteString(m: *Machine, args: *LinkedValues) *const Value {
     const x = args.value.unwrapBytestring();
 
-    const types = m.heap.create(
-        ConstantTypeList,
-        &ConstantTypeList.integer(),
-    );
-
     var result = m.heap.createArray(u32, 4);
 
-    result[0] = @intFromPtr(types);
+    result[0] = @intFromPtr(&expr.UplcInteger);
     result[1] = 0;
     result[2] = 1;
     result[3] = x.length;
@@ -804,27 +757,23 @@ pub fn lengthOfByteString(m: *Machine, args: *LinkedValues) *const Value {
 }
 
 pub fn indexByteString(m: *Machine, args: *LinkedValues) *const Value {
-    const y = args.value;
-
-    const yy = y.unwrapInteger();
-
-    const yType = y.constant.type_list;
+    const y = args.value.unwrapInteger();
 
     const x = args.next.?.value.unwrapBytestring();
 
     var result = m.heap.createArray(u32, 4);
 
     // Must be at least 1 byte, y < max(u32), y >= 0, y < x.length
-    if (x.length == 0 or yy.length > 1 or yy.sign == 1 or yy.words[0] > x.length - 1) {
+    if (x.length == 0 or y.length > 1 or y.sign == 1 or y.words[0] > x.length - 1) {
         utils.printString("Integer larger than bytestring length or negative");
         utils.exit(std.math.maxInt(u32));
     }
 
-    result[0] = @intFromPtr(yType);
+    result[0] = @intFromPtr(&expr.UplcInteger);
     result[1] = 0;
     result[2] = 1;
     // This will work due to above check
-    result[3] = x.bytes[yy.words[0]];
+    result[3] = x.bytes[y.words[0]];
 
     return createConst(m.heap, @ptrCast(result));
 }
@@ -834,16 +783,11 @@ pub fn equalsByteString(m: *Machine, args: *LinkedValues) *const Value {
 
     const x = args.next.?.value.unwrapBytestring();
 
-    const types = m.heap.create(
-        ConstantTypeList,
-        &ConstantTypeList.boolean(),
-    );
-
     const equality = x.compareBytes(&y);
 
     var result = m.heap.createArray(u32, 2);
 
-    result[0] = @intFromPtr(types);
+    result[0] = @intFromPtr(&expr.UplcBoolean);
     result[1] = @intFromBool(equality[0]);
 
     return createConst(m.heap, @ptrCast(result));
@@ -854,18 +798,13 @@ pub fn lessThanByteString(m: *Machine, args: *LinkedValues) *const Value {
 
     const x = args.next.?.value.unwrapBytestring();
 
-    const types = m.heap.create(
-        ConstantTypeList,
-        &ConstantTypeList.boolean(),
-    );
-
     const xPtr = &x;
 
     const equality = xPtr.compareBytes(&y);
 
     var result = m.heap.createArray(u32, 2);
 
-    result[0] = @intFromPtr(types);
+    result[0] = @intFromPtr(&expr.UplcBoolean);
 
     result[1] = @intFromBool(
         !equality[0] and (@intFromPtr(xPtr) != @intFromPtr(equality[1])),
@@ -885,12 +824,7 @@ pub fn lessThanEqualsByteString(m: *Machine, args: *LinkedValues) *const Value {
 
     var result = m.heap.createArray(u32, 2);
 
-    const types = m.heap.create(
-        ConstantTypeList,
-        &ConstantTypeList.boolean(),
-    );
-
-    result[0] = @intFromPtr(types);
+    result[0] = @intFromPtr(&expr.UplcBoolean);
 
     result[1] = @intFromBool(
         equality[0] or (@intFromPtr(xPtr) != @intFromPtr(equality[1])),
@@ -919,25 +853,21 @@ pub fn verifyEd25519Signature(_: *Machine, _: *LinkedValues) *const Value {
 // String functions
 pub fn appendString(m: *Machine, args: *LinkedValues) *const Value {
     const y = args.value.unwrapString();
-    const x = args.next.?.value;
+    const x = args.next.?.value.unwrapString();
 
-    const xx = x.unwrapString();
-
-    const xType = x.constant.type_list;
-
-    const length = xx.length + y.length;
+    const length = x.length + y.length;
 
     // type_length 4 bytes, integer 4 bytes,  length 4 bytes, list of words 4 * (x length + y length)
     var result = m.heap.createArray(u32, length + 2);
 
-    result[0] = @intFromPtr(xType);
+    result[0] = @intFromPtr(&expr.UplcString);
     result[1] = length;
 
     var resultPtr = result + 2;
 
     var i: u32 = 0;
-    while (i < xx.length) : (i += 1) {
-        resultPtr[0] = xx.bytes[i];
+    while (i < x.length) : (i += 1) {
+        resultPtr[0] = x.bytes[i];
         resultPtr += 1;
     }
 
@@ -958,12 +888,7 @@ pub fn equalsString(m: *Machine, args: *LinkedValues) *const Value {
 
     var result = m.heap.createArray(u32, 2);
 
-    const types = m.heap.create(
-        ConstantTypeList,
-        &ConstantTypeList.boolean(),
-    );
-
-    result[0] = @intFromPtr(types);
+    result[0] = @intFromPtr(&expr.UplcBoolean);
     result[1] = @intFromBool(equality);
 
     return createConst(m.heap, @ptrCast(result));
@@ -1299,7 +1224,6 @@ pub fn addSignedIntegers(
     m: *Machine,
     x: BigInt,
     y: BigInt,
-    types: *const ConstantTypeList,
 ) *const Value {
     // We overallocate and then claim later if necessary
     // type_length 4 bytes, integer 4 bytes, sign 4 bytes, length 4 bytes, list of words 4 * (max length + 1)
@@ -1307,7 +1231,7 @@ pub fn addSignedIntegers(
     const resultLength = maxLength + 3 + 1;
 
     var result = m.heap.createArray(u32, resultLength);
-    result[0] = @intFromPtr(types);
+    result[0] = @intFromPtr(&expr.UplcInteger);
     result[1] = x.sign;
 
     var i: u32 = 0;
@@ -1350,7 +1274,6 @@ pub fn subSignedIntegers(
     m: *Machine,
     x: BigInt,
     y: BigInt,
-    types: *const ConstantTypeList,
 ) *const Value {
     const compare = x.compareMagnitude(&y);
 
@@ -1358,7 +1281,7 @@ pub fn subSignedIntegers(
     if (compare[0]) {
         var result = m.heap.createArray(u32, 4);
         //type length
-        result[0] = @intFromPtr(types);
+        result[0] = @intFromPtr(&expr.UplcInteger);
         // sign
         result[1] = 0;
         // length
@@ -1377,7 +1300,7 @@ pub fn subSignedIntegers(
 
     var result = m.heap.createArray(u32, resultLength);
 
-    result[0] = @intFromPtr(types);
+    result[0] = @intFromPtr(&expr.UplcInteger);
     result[1] = greater.sign;
 
     var i: u32 = 0;
@@ -2217,8 +2140,6 @@ test "add same signed integers" {
         .frames = &frames,
     };
 
-    const intType = &ConstantTypeList.integer();
-
     const xWords: [*]const u32 = &.{ 5, 6, 7 };
 
     const yWords: [*]const u32 = &.{ 5, 99 };
@@ -2237,7 +2158,7 @@ test "add same signed integers" {
         .words = yWords,
     };
 
-    const newVal = addSignedIntegers(&machine, x, y, intType);
+    const newVal = addSignedIntegers(&machine, x, y);
 
     switch (newVal.*) {
         .constant => |c| {
@@ -2268,8 +2189,6 @@ test "add same signed integers overflow" {
         .frames = &frames,
     };
 
-    const intType = &ConstantTypeList.integer();
-
     const xWords: [*]const u32 = &.{ 5, 6 };
 
     const yWords: [*]const u32 = &.{
@@ -2291,7 +2210,7 @@ test "add same signed integers overflow" {
         .words = yWords,
     };
 
-    const newVal = addSignedIntegers(&machine, x, y, intType);
+    const newVal = addSignedIntegers(&machine, x, y);
 
     switch (newVal.*) {
         .constant => |c| {
@@ -2322,8 +2241,6 @@ test "sub signed integers overflow" {
         .frames = &frames,
     };
 
-    const intType = &ConstantTypeList.integer();
-
     const xWords: [*]const u32 = &.{ 5, 6, 7 };
 
     const yWords: [*]const u32 = &.{ 5, 99 };
@@ -2342,7 +2259,7 @@ test "sub signed integers overflow" {
         .words = yWords,
     };
 
-    const newVal = subSignedIntegers(&machine, x, y, intType);
+    const newVal = subSignedIntegers(&machine, x, y);
 
     switch (newVal.*) {
         .constant => |c| {
@@ -2373,8 +2290,6 @@ test "sub signed integers reclaim" {
         .frames = &frames,
     };
 
-    const intType = &ConstantTypeList.integer();
-
     const xWords: [*]const u32 = &.{ 8, 6, 1 };
 
     const yWords: [*]const u32 = &.{ 10, 5, 1 };
@@ -2395,7 +2310,7 @@ test "sub signed integers reclaim" {
         .words = yWords,
     };
 
-    const newVal = subSignedIntegers(&machine, x, y, intType);
+    const newVal = subSignedIntegers(&machine, x, y);
 
     switch (newVal.*) {
         .constant => |c| {
@@ -2421,16 +2336,14 @@ test "multiply same‑signed single‑word integers" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const intType = &ConstantTypeList.integer();
-
     const a_words: [*]const u32 = &.{3};
     const b_words: [*]const u32 = &.{4};
 
     const a = expr.BigInt{ .sign = 0, .length = 1, .words = a_words };
     const b = expr.BigInt{ .sign = 0, .length = 1, .words = b_words };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, a, intType)
-        .extend(&heap, expr.BigInt, b, intType);
+    const args = LinkedValues.create(&heap, expr.BigInt, a, &expr.UplcInteger)
+        .extend(&heap, expr.BigInt, b, &expr.UplcInteger);
 
     const newVal = multiplyInteger(&machine, args);
 
@@ -2458,16 +2371,14 @@ test "multiply same‑signed integers with 32‑bit carry" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const intType = &ConstantTypeList.integer();
-
     const a_words: [*]const u32 = &.{std.math.maxInt(u32)}; // 0xFFFFFFFF
     const b_words: [*]const u32 = &.{2};
 
     const a = expr.BigInt{ .sign = 0, .length = 1, .words = a_words };
     const b = expr.BigInt{ .sign = 0, .length = 1, .words = b_words };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, a, intType)
-        .extend(&heap, expr.BigInt, b, intType);
+    const args = LinkedValues.create(&heap, expr.BigInt, a, &expr.UplcInteger)
+        .extend(&heap, expr.BigInt, b, &expr.UplcInteger);
 
     const newVal = multiplyInteger(&machine, args);
 
@@ -2496,16 +2407,14 @@ test "multiply differing‑signed integers" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const intType = &ConstantTypeList.integer();
-
     const a_words: [*]const u32 = &.{3};
     const b_words: [*]const u32 = &.{4};
 
     const a = expr.BigInt{ .sign = 1, .length = 1, .words = a_words }; // negative
     const b = expr.BigInt{ .sign = 0, .length = 1, .words = b_words }; // positive
 
-    const args = LinkedValues.create(&heap, expr.BigInt, a, intType)
-        .extend(&heap, expr.BigInt, b, intType);
+    const args = LinkedValues.create(&heap, expr.BigInt, a, &expr.UplcInteger)
+        .extend(&heap, expr.BigInt, b, &expr.UplcInteger);
 
     const newVal = multiplyInteger(&machine, args);
 
@@ -2533,8 +2442,6 @@ test "equals integer" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const intType = &ConstantTypeList.integer();
-
     const aWords: [*]const u32 = &.{ 705032704, 1 };
     const bWords: [*]const u32 = &.{5};
     const cWords: [*]const u32 = &.{ 705032699, 1 };
@@ -2543,10 +2450,10 @@ test "equals integer" {
     const b = expr.BigInt{ .sign = 0, .length = 1, .words = bWords }; // positive
     const c = expr.BigInt{ .sign = 1, .length = 2, .words = cWords };
 
-    const resultWords = subSignedIntegers(&machine, a, b, intType);
+    const resultWords = subSignedIntegers(&machine, a, b);
 
-    const args = LinkedValues.create(&heap, expr.BigInt, c, intType)
-        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), intType);
+    const args = LinkedValues.create(&heap, expr.BigInt, c, &expr.UplcInteger)
+        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), &expr.UplcInteger);
 
     const newVal = equalsInteger(&machine, args);
 
@@ -2576,8 +2483,6 @@ test "less than integer" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const intType = &ConstantTypeList.integer();
-
     const aWords: [*]const u32 = &.{ 705032704, 1 };
     const bWords: [*]const u32 = &.{5};
     const cWords: [*]const u32 = &.{ 705032698, 1 };
@@ -2586,10 +2491,10 @@ test "less than integer" {
     const b = expr.BigInt{ .sign = 0, .length = 1, .words = bWords }; // positive
     const c = expr.BigInt{ .sign = 1, .length = 2, .words = cWords };
 
-    const resultWords = subSignedIntegers(&machine, a, b, intType);
+    const resultWords = subSignedIntegers(&machine, a, b);
 
-    const args = LinkedValues.create(&heap, expr.BigInt, c, intType)
-        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), intType);
+    const args = LinkedValues.create(&heap, expr.BigInt, c, &expr.UplcInteger)
+        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), &expr.UplcInteger);
 
     const newVal = lessThanInteger(&machine, args);
 
@@ -2619,8 +2524,6 @@ test "less than equals integer less" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const intType = &ConstantTypeList.integer();
-
     const aWords: [*]const u32 = &.{ 705032704, 1 };
     const bWords: [*]const u32 = &.{5};
     const cWords: [*]const u32 = &.{ 705032698, 1 };
@@ -2629,11 +2532,11 @@ test "less than equals integer less" {
     const b = expr.BigInt{ .sign = 0, .length = 1, .words = bWords }; // positive
     const c = expr.BigInt{ .sign = 1, .length = 2, .words = cWords };
 
-    const resultWords = subSignedIntegers(&machine, a, b, intType);
+    const resultWords = subSignedIntegers(&machine, a, b);
 
     const args = LinkedValues
-        .create(&heap, expr.BigInt, c, intType)
-        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), intType);
+        .create(&heap, expr.BigInt, c, &expr.UplcInteger)
+        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), &expr.UplcInteger);
 
     const newVal = lessThanEqualsInteger(&machine, args);
 
@@ -2663,8 +2566,6 @@ test "less than equals integer equal" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const intType = &ConstantTypeList.integer();
-
     const aWords: [*]const u32 = &.{ 705032704, 1 };
     const bWords: [*]const u32 = &.{5};
     const cWords: [*]const u32 = &.{ 705032699, 1 };
@@ -2673,11 +2574,11 @@ test "less than equals integer equal" {
     const b = expr.BigInt{ .sign = 0, .length = 1, .words = bWords }; // positive
     const c = expr.BigInt{ .sign = 1, .length = 2, .words = cWords };
 
-    const resultWords = subSignedIntegers(&machine, a, b, intType);
+    const resultWords = subSignedIntegers(&machine, a, b);
 
     const args = LinkedValues
-        .create(&heap, expr.BigInt, c, intType)
-        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), intType);
+        .create(&heap, expr.BigInt, c, &expr.UplcInteger)
+        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), &expr.UplcInteger);
 
     const newVal = lessThanEqualsInteger(&machine, args);
 
@@ -2707,8 +2608,6 @@ test "append bytes" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const byteType = &ConstantTypeList.bytes();
-
     const aBytes: [*]const u32 = &.{ 255, 254 };
     const bBytes: [*]const u32 = &.{ 0, 255, 1 };
     const resultBytes: [*]const u32 = &.{ 255, 254, 0, 255, 1 };
@@ -2719,8 +2618,8 @@ test "append bytes" {
     const result = expr.Bytes{ .length = 5, .bytes = resultBytes };
 
     const args = LinkedValues
-        .create(&heap, expr.Bytes, a, byteType)
-        .extend(&heap, expr.Bytes, b, byteType);
+        .create(&heap, expr.Bytes, a, &expr.UplcBytes)
+        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
 
     const newVal = appendByteString(&machine, args);
 
@@ -2755,9 +2654,6 @@ test "cons bytes" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const byteType = &ConstantTypeList.bytes();
-    const intType = &ConstantTypeList.integer();
-
     const aByte: [*]const u32 = &.{37};
     const bBytes: [*]const u32 = &.{ 0, 255, 1 };
     const resultBytes: [*]const u32 = &.{ 37, 0, 255, 1 };
@@ -2768,8 +2664,8 @@ test "cons bytes" {
     const result = expr.Bytes{ .length = 4, .bytes = resultBytes };
 
     const args = LinkedValues
-        .create(&heap, expr.BigInt, a, intType)
-        .extend(&heap, expr.Bytes, b, byteType);
+        .create(&heap, expr.BigInt, a, &expr.UplcInteger)
+        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
 
     const newVal = consByteString(&machine, args);
 
@@ -2803,9 +2699,6 @@ test "slice bytes" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const intType = &ConstantTypeList.integer();
-    const bytesType = &ConstantTypeList.bytes();
-
     const aBytes: [*]const u32 = &.{ 37, 65, 77, 255, 88 };
     const dropWord: [*]const u32 = &.{2};
     const takeWord: [*]const u32 = &.{4};
@@ -2818,9 +2711,9 @@ test "slice bytes" {
     const result = expr.Bytes{ .length = 3, .bytes = resultBytes };
 
     const args = LinkedValues
-        .create(&heap, expr.BigInt, drop, intType)
-        .extend(&heap, expr.BigInt, take, intType)
-        .extend(&heap, expr.Bytes, a, bytesType);
+        .create(&heap, expr.BigInt, drop, &expr.UplcInteger)
+        .extend(&heap, expr.BigInt, take, &expr.UplcInteger)
+        .extend(&heap, expr.Bytes, a, &expr.UplcBytes);
 
     const newVal = sliceByteString(&machine, args);
 
@@ -2853,8 +2746,6 @@ test "length bytes" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const bytesType = &ConstantTypeList.bytes();
-
     const aBytes: [*]const u32 = &.{ 0, 255, 1, 4 };
     const resultBytes: [*]const u32 = &.{4};
 
@@ -2862,7 +2753,7 @@ test "length bytes" {
 
     const result = expr.BigInt{ .length = 1, .sign = 0, .words = resultBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a, bytesType);
+    const args = LinkedValues.create(&heap, expr.Bytes, a, &expr.UplcBytes);
 
     const newVal = lengthOfByteString(&machine, args);
 
@@ -2894,9 +2785,6 @@ test "index bytes" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const bytesType = &ConstantTypeList.bytes();
-    const intType = &ConstantTypeList.integer();
-
     const aBytes: [*]const u32 = &.{ 0, 255, 1, 72, 6 };
     const index: [*]const u32 = &.{3};
     const resultBytes: [*]const u32 = &.{72};
@@ -2906,8 +2794,8 @@ test "index bytes" {
 
     const result = expr.BigInt{ .length = 1, .sign = 0, .words = resultBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a, bytesType)
-        .extend(&heap, expr.BigInt, b, intType);
+    const args = LinkedValues.create(&heap, expr.Bytes, a, &expr.UplcBytes)
+        .extend(&heap, expr.BigInt, b, &expr.UplcInteger);
 
     const newVal = indexByteString(&machine, args);
 
@@ -2939,15 +2827,13 @@ test "equals bytes" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const bytesType = &ConstantTypeList.bytes();
-
     const aBytes: [*]const u32 = &.{ 0, 255, 1, 72, 6 };
 
     const a = expr.Bytes{ .length = 5, .bytes = aBytes };
     const b = expr.Bytes{ .length = 5, .bytes = aBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a, bytesType)
-        .extend(&heap, expr.Bytes, b, bytesType);
+    const args = LinkedValues.create(&heap, expr.Bytes, a, &expr.UplcBytes)
+        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
 
     const newVal = equalsByteString(&machine, args);
 
@@ -2977,16 +2863,14 @@ test "less than bytes" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const bytesType = &ConstantTypeList.bytes();
-
     const aBytes: [*]const u32 = &.{ 0, 254, 1, 72, 6, 99 };
     const bBytes: [*]const u32 = &.{ 0, 255, 1, 72, 6 };
 
     const a = expr.Bytes{ .length = 6, .bytes = aBytes };
     const b = expr.Bytes{ .length = 5, .bytes = bBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a, bytesType)
-        .extend(&heap, expr.Bytes, b, bytesType);
+    const args = LinkedValues.create(&heap, expr.Bytes, a, &expr.UplcBytes)
+        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
 
     const newVal = lessThanByteString(&machine, args);
 
@@ -3016,16 +2900,14 @@ test "less than equal bytes less" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const bytesType = &ConstantTypeList.bytes();
-
     const aBytes: [*]const u32 = &.{ 0, 254, 1, 72, 6, 99 };
     const bBytes: [*]const u32 = &.{ 0, 255, 1, 72, 6 };
 
     const a = expr.Bytes{ .length = 6, .bytes = aBytes };
     const b = expr.Bytes{ .length = 5, .bytes = bBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a, bytesType)
-        .extend(&heap, expr.Bytes, b, bytesType);
+    const args = LinkedValues.create(&heap, expr.Bytes, a, &expr.UplcBytes)
+        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
 
     const newVal = lessThanEqualsByteString(&machine, args);
 
@@ -3055,15 +2937,13 @@ test "less than equal bytes equal" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const bytesType = &ConstantTypeList.bytes();
-
     const aBytes: [*]const u32 = &.{ 0, 254, 1, 72, 6, 99 };
 
     const a = expr.Bytes{ .length = 6, .bytes = aBytes };
     const b = expr.Bytes{ .length = 6, .bytes = aBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a, bytesType)
-        .extend(&heap, expr.Bytes, b, bytesType);
+    const args = LinkedValues.create(&heap, expr.Bytes, a, &expr.UplcBytes)
+        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
 
     const newVal = lessThanEqualsByteString(&machine, args);
 
@@ -3093,8 +2973,6 @@ test "append string" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const stringType = &ConstantTypeList.string();
-
     const aBytes: [*]const u32 = &.{ 255, 254 };
     const bBytes: [*]const u32 = &.{ 0, 255, 1 };
     const resultBytes: [*]const u32 = &.{ 255, 254, 0, 255, 1 };
@@ -3105,8 +2983,8 @@ test "append string" {
     const result = expr.String{ .length = 5, .bytes = resultBytes };
 
     const args = LinkedValues
-        .create(&heap, expr.String, a, stringType)
-        .extend(&heap, expr.String, b, stringType);
+        .create(&heap, expr.String, a, &expr.UplcString)
+        .extend(&heap, expr.String, b, &expr.UplcString);
 
     const newVal = appendString(&machine, args);
 
@@ -3142,9 +3020,6 @@ test "if then else" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const boolType = &ConstantTypeList.boolean();
-    const bytesType = &ConstantTypeList.bytes();
-
     const aBytes: [*]const u32 = &.{ 0, 254 };
     const bBytes: [*]const u32 = &.{ 1, 253, 3 };
 
@@ -3152,9 +3027,9 @@ test "if then else" {
     const b = expr.Bytes{ .length = 3, .bytes = bBytes };
 
     const args = LinkedValues
-        .create(&heap, expr.Bool, expr.Bool{ .val = true }, boolType)
-        .extend(&heap, expr.Bytes, a, bytesType)
-        .extend(&heap, expr.Bytes, b, bytesType);
+        .create(&heap, expr.Bool, expr.Bool{ .val = true }, &expr.UplcBoolean)
+        .extend(&heap, expr.Bytes, a, &expr.UplcBytes)
+        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
 
     const newVal = ifThenElse(&machine, args);
 
