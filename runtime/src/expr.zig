@@ -578,9 +578,77 @@ pub const List = struct {
     }
 };
 
-pub const G1Element = extern struct { length: u32, bytes: [*]const u32 };
-pub const G2Element = extern struct { length: u32, bytes: [*]const u32 };
-pub const MlResult = extern struct { length: u32, bytes: [*]const u32 };
+pub const G1Element = extern struct {
+    length: u32,
+    bytes: [*]const u32,
+
+    pub fn createConstant(
+        self: G1Element,
+        types: *const ConstantTypeList,
+        heap: *Heap,
+    ) *Constant {
+        const total_words: u32 = self.length + 2;
+        var buf = heap.createArray(u32, total_words);
+
+        buf[0] = @intFromPtr(types);
+        buf[1] = self.length;
+
+        var i: u32 = 0;
+        while (i < self.length) : (i += 1) {
+            buf[i + 2] = self.bytes[i];
+        }
+
+        return @ptrCast(buf);
+    }
+};
+
+pub const G2Element = extern struct {
+    length: u32,
+    bytes: [*]const u32,
+
+    pub fn createConstant(
+        self: G2Element,
+        types: *const ConstantTypeList,
+        heap: *Heap,
+    ) *Constant {
+        const total_words: u32 = self.length + 2;
+        var buf = heap.createArray(u32, total_words);
+
+        buf[0] = @intFromPtr(types);
+        buf[1] = self.length;
+
+        var i: u32 = 0;
+        while (i < self.length) : (i += 1) {
+            buf[i + 2] = self.bytes[i];
+        }
+
+        return @ptrCast(buf);
+    }
+};
+
+pub const MlResult = extern struct {
+    length: u32,
+    bytes: [*]const u32,
+
+    pub fn createConstant(
+        self: MlResult,
+        types: *const ConstantTypeList,
+        heap: *Heap,
+    ) *Constant {
+        const total_words: u32 = self.length + 2;
+        var buf = heap.createArray(u32, total_words);
+
+        buf[0] = @intFromPtr(types);
+        buf[1] = self.length;
+
+        var i: u32 = 0;
+        while (i < self.length) : (i += 1) {
+            buf[i + 2] = self.bytes[i];
+        }
+
+        return @ptrCast(buf);
+    }
+};
 
 pub const Constant = extern struct {
     type_list: *ConstantTypeList,
