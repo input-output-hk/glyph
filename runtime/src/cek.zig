@@ -245,7 +245,7 @@ const Value = union(enum(u32)) {
     pub fn unwrapG1(v: *const Value) G1Element {
         switch (v.*) {
             .constant => |c| {
-                switch (c.constType().*) {
+                switch (c.type_list.constType().*) {
                     .bls12_381_g1_element => {
                         return c.g1Element();
                     },
@@ -265,7 +265,7 @@ const Value = union(enum(u32)) {
     pub fn unwrapG2(v: *const Value) G2Element {
         switch (v.*) {
             .constant => |c| {
-                switch (c.constType().*) {
+                switch (c.type_list.constType().*) {
                     .bls12_381_g2_element => {
                         return c.g2Element();
                     },
@@ -285,7 +285,7 @@ const Value = union(enum(u32)) {
     pub fn unwrapMlResult(v: *const Value) MlResult {
         switch (v.*) {
             .constant => |c| {
-                switch (c.constType().*) {
+                switch (c.type_list.constType().*) {
                     .bls12_381_mlresult => {
                         return c.mlResult();
                     },
@@ -634,11 +634,10 @@ pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
     if (n.length == 1 and n.words[0] == 0) {
         // Allocate result for integer 0 (sign=0, length=1, word=0)
         var z = m.heap.createArray(u32, 5);
-        z[0] = 1;
-        z[1] = @intFromEnum(ConstantType.integer);
-        z[2] = 0; // sign = 0 (non-negative)
-        z[3] = 1; // length = 1
-        z[4] = 0; // limb value = 0
+        z[0] = @intFromPtr(ConstantTypeList.integer());
+        z[1] = 0; // sign = 0 (non-negative)
+        z[2] = 1; // length = 1
+        z[3] = 0; // limb value = 0
         return createConst(m.heap, @ptrCast(z));
     }
     // Denominator 0 -> panic (division by zero)
@@ -660,20 +659,18 @@ pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
         if (!needMinusOne) {
             // If signs are same, floor division yields 0
             var z = m.heap.createArray(u32, 5);
-            z[0] = 1;
-            z[1] = @intFromEnum(ConstantType.integer);
-            z[2] = 0;
-            z[3] = 1;
-            z[4] = 0;
+            z[0] = @intFromPtr(ConstantTypeList.integer());
+            z[1] = 0;
+            z[2] = 1;
+            z[3] = 0;
             return createConst(m.heap, @ptrCast(z));
         } else {
             // Signs differ and |n|<|d|, result is -1
             var negOne = m.heap.createArray(u32, 5);
-            negOne[0] = 1;
-            negOne[1] = @intFromEnum(ConstantType.integer);
-            negOne[2] = 1; // sign = 1 (negative)
-            negOne[3] = 1; // length = 1
-            negOne[4] = 1; // magnitude = 1
+            negOne[0] = @intFromPtr(ConstantTypeList.integer());
+            negOne[1] = 1; // sign = 1 (negative)
+            negOne[2] = 1; // length = 1
+            negOne[3] = 1; // magnitude = 1
             return createConst(m.heap, @ptrCast(negOne));
         }
     }
@@ -820,14 +817,13 @@ pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
     const signsDiffer = (numer_neg != denom_neg);
     const res_sign: u32 = if (signsDiffer) 1 else 0;
     // Allocate result array (with space for header + quotient limbs, possibly +1 limb for carry)
-    var res = m.heap.createArray(u32, q_len + 5);
-    res[0] = 1;
-    res[1] = @intFromEnum(ConstantType.integer);
-    res[2] = res_sign;
+    var res = m.heap.createArray(u32, q_len + 4);
+    res[0] = @intFromPtr(ConstantTypeList.integer());
+    res[1] = res_sign;
     // Copy quotient magnitude
     var i_cpy: u32 = 0;
     while (i_cpy < q_len) : (i_cpy += 1) {
-        res[4 + i_cpy] = q_buf[i_cpy];
+        res[3 + i_cpy] = q_buf[i_cpy];
     }
 
     if (signsDiffer and !rem_zero) {
@@ -835,8 +831,8 @@ pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
         var carry_neg: u64 = 1;
         var idx: u32 = 0;
         while (carry_neg != 0 and idx < q_len) : (idx += 1) {
-            const tmp = @as(u64, res[4 + idx]) + carry_neg;
-            res[4 + idx] = @truncate(tmp);
+            const tmp = @as(u64, res[3 + idx]) + carry_neg;
+            res[3 + idx] = @truncate(tmp);
             carry_neg = tmp >> 32;
         }
         if (carry_neg != 0) {
@@ -844,7 +840,7 @@ pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
             q_len += 1;
         }
     }
-    res[3] = q_len; // set final length
+    res[2] = q_len; // set final length
     return createConst(m.heap, @ptrCast(res));
 }
 
@@ -3277,13 +3273,13 @@ test "divide: numerator == 0 → 0" {
     const n = expr.BigInt{ .sign = 0, .length = 1, .words = &.{0} }; // 0
     const d = expr.BigInt{ .sign = 0, .length = 1, .words = &.{1234} }; // any ≠ 0
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d)
-        .extend(&heap, expr.BigInt, n);
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
 
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.constType().*) {
+        .constant => |c| switch (c.type_list.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 0);
@@ -3307,13 +3303,13 @@ test "divide: 1 / 2 floors to 0" {
     const n = expr.BigInt{ .sign = 0, .length = 1, .words = &.{1} }; // 1
     const d = expr.BigInt{ .sign = 0, .length = 1, .words = &.{2} }; // 2
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d)
-        .extend(&heap, expr.BigInt, n);
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
 
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.constType().*) {
+        .constant => |c| switch (c.type_list.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 0);
@@ -3348,8 +3344,8 @@ test "divide: (-503) / (-1777777777) = 0" {
         .words = &[_]u32{1_777_777_777},
     };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d)
-        .extend(&heap, expr.BigInt, n);
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
 
     //const n = expr.BigInt{ .sign = 1, .length = 1, .words = &a_words }; // −503
     //const d = expr.BigInt{ .sign = 1, .length = 1, .words = &b_words }; // −1777777777
@@ -3357,7 +3353,7 @@ test "divide: (-503) / (-1777777777) = 0" {
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.constType().*) {
+        .constant => |c| switch (c.type_list.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 0);
@@ -3393,13 +3389,13 @@ test "divide: (-503) / (+1777777777) floors to −1" {
         .words = &[_]u32{1_777_777_777},
     };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d)
-        .extend(&heap, expr.BigInt, n);
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
 
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.constType().*) {
+        .constant => |c| switch (c.type_list.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 1); // negative
@@ -3435,13 +3431,13 @@ test "divide: (+503) / (−1777777777) floors to −1" {
         .words = &[_]u32{1_777_777_777},
     };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d)
-        .extend(&heap, expr.BigInt, n);
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
 
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.constType().*) {
+        .constant => |c| switch (c.type_list.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 1); // negative
@@ -3477,13 +3473,13 @@ test "divide: (+503) / (+1777777777) = 0" {
         .words = &[_]u32{1_777_777_777},
     };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d)
-        .extend(&heap, expr.BigInt, n);
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
 
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.constType().*) {
+        .constant => |c| switch (c.type_list.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 0);
@@ -3510,13 +3506,13 @@ test "divide: multi-limb exact (positive / positive)" {
     const n = expr.BigInt{ .sign = 0, .length = 3, .words = a_words };
     const d = expr.BigInt{ .sign = 0, .length = 2, .words = b_words };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d)
-        .extend(&heap, expr.BigInt, n);
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
 
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.constType().*) {
+        .constant => |c| switch (c.type_list.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 0);
@@ -3544,13 +3540,13 @@ test "divide: multi-limb with remainder and signs differ (positive / negative)" 
     const n = expr.BigInt{ .sign = 0, .length = 3, .words = a_words };
     const d = expr.BigInt{ .sign = 1, .length = 2, .words = b_words };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d)
-        .extend(&heap, expr.BigInt, n);
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
 
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.constType().*) {
+        .constant => |c| switch (c.type_list.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 1);

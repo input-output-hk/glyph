@@ -635,11 +635,9 @@ pub const Constant = extern struct {
     }
 
     pub fn g1Element(self: *const Self) G1Element {
-        const offset: *const u32 = @ptrFromInt(@intFromPtr(self) + self.length * @sizeOf(u32));
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
 
-        const length: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
-
-        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32) * 2);
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
 
         return G1Element{
             .length = length.*,
@@ -648,11 +646,9 @@ pub const Constant = extern struct {
     }
 
     pub fn g2Element(self: *const Self) G2Element {
-        const offset: *const u32 = @ptrFromInt(@intFromPtr(self) + self.length * @sizeOf(u32));
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
 
-        const length: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
-
-        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32) * 2);
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
 
         return G2Element{
             .length = length.*,
@@ -661,11 +657,9 @@ pub const Constant = extern struct {
     }
 
     pub fn mlResult(self: *const Self) MlResult {
-        const offset: *const u32 = @ptrFromInt(@intFromPtr(self) + self.length * @sizeOf(u32));
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
 
-        const length: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
-
-        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32) * 2);
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
 
         return MlResult{
             .length = length.*,
@@ -785,6 +779,21 @@ pub const ConstantTypeList = extern struct {
             .items = items.*,
         };
     }
+
+    pub fn bls12_381_g1_element() *const ConstantTypeList {
+        const types: *const ConstantTypeList = @ptrCast(&UplcG1Element);
+        return types;
+    }
+
+    pub fn bls12_381_g2_element() *const ConstantTypeList {
+        const types: *const ConstantTypeList = @ptrCast(&UplcG2Element);
+        return types;
+    }
+
+    pub fn bls12_321_mlresult() *const ConstantTypeList {
+        const types: *const ConstantTypeList = @ptrCast(&UplcMlResult);
+        return types;
+    }
 };
 
 pub const ConstantType = enum(u32) {
@@ -851,4 +860,16 @@ const UplcBoolean =
 const UplcListData = [2]u32{
     @intFromEnum(ConstantType.list),
     @intFromEnum(ConstantType.data),
+};
+const UplcG1Element = [2]u32{
+    1,
+    @intFromEnum(ConstantType.bls12_381_g1_element),
+};
+const UplcG2Element = [2]u32{
+    1,
+    @intFromEnum(ConstantType.bls12_381_g2_element),
+};
+const UplcMlResult = [2]u32{
+    1,
+    @intFromEnum(ConstantType.bls12_381_mlresult),
 };
