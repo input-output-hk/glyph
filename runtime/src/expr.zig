@@ -578,7 +578,120 @@ pub const List = struct {
     }
 };
 
+pub const G1Element = extern struct { length: u32, bytes: [*]const u32 };
+pub const G2Element = extern struct { length: u32, bytes: [*]const u32 };
+pub const MlResult = extern struct { length: u32, bytes: [*]const u32 };
+
 pub const Constant = extern struct {
+    type_list: *ConstantTypeList,
+
+    const Self = @This();
+
+    pub fn rawValue(self: *const Self) u32 {
+        const value = @intFromPtr(self) + @sizeOf(u32);
+
+        return value;
+    }
+
+    pub fn bigInt(self: *const Self) BigInt {
+        const sign: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+
+        const words: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 3);
+
+        return BigInt{
+            .sign = sign.*,
+            .length = length.*,
+            .words = words,
+        };
+    }
+
+    pub fn innerBytes(self: *const Self) Bytes {
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+
+        return Bytes{
+            .length = length.*,
+            .bytes = bytes,
+        };
+    }
+
+    pub fn string(self: *const Self) String {
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+
+        return String{
+            .length = length.*,
+            .bytes = bytes,
+        };
+    }
+
+    pub fn bln(self: *const Self) bool {
+        const b: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+
+        return b.* == 1;
+    }
+
+    pub fn g1Element(self: *const Self) G1Element {
+        const offset: *const u32 = @ptrFromInt(@intFromPtr(self) + self.length * @sizeOf(u32));
+
+        const length: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
+
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32) * 2);
+
+        return G1Element{
+            .length = length.*,
+            .bytes = bytes,
+        };
+    }
+
+    pub fn g2Element(self: *const Self) G2Element {
+        const offset: *const u32 = @ptrFromInt(@intFromPtr(self) + self.length * @sizeOf(u32));
+
+        const length: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
+
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32) * 2);
+
+        return G2Element{
+            .length = length.*,
+            .bytes = bytes,
+        };
+    }
+
+    pub fn mlResult(self: *const Self) MlResult {
+        const offset: *const u32 = @ptrFromInt(@intFromPtr(self) + self.length * @sizeOf(u32));
+
+        const length: *const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32));
+
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(offset) + @sizeOf(u32) * 2);
+
+        return MlResult{
+            .length = length.*,
+            .bytes = bytes,
+        };
+    }
+
+    pub fn list(self: *const Self) List {
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+
+        const items: ?*ListNode = if (length.* > 0) blk: {
+            break :blk @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+        } else blk: {
+            break :blk null;
+        };
+
+        return List{
+            .type_length = self.type_list.length - 1,
+            .inner_type = self.type_list.innerListType(),
+            .length = length.*,
+            .items = items,
+        };
+    }
+};
+
+pub const ConstantTypeList = extern struct {
     length: u32,
     type_list: [*]const ConstantType,
     value: u32,
@@ -683,6 +796,9 @@ pub const ConstantType = enum(u32) {
     list,
     pair,
     data,
+    bls12_381_g1_element,
+    bls12_381_g2_element,
+    bls12_381_mlresult,
 
     pub fn listDataType() *const ConstantType {
         const types: *const ConstantType = @ptrCast(&UplcListData);
