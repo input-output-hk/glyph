@@ -115,7 +115,7 @@ const Value = union(enum(u32)) {
     pub fn isUnit(ptr: *const Value) bool {
         switch (ptr.*) {
             .constant => |c| {
-                switch (c.constType().*) {
+                switch (c.type_list.constType().*) {
                     .unit => return true,
                     else => return false,
                 }
@@ -138,7 +138,7 @@ const Value = union(enum(u32)) {
     pub fn unwrapInteger(v: *const Value) BigInt {
         switch (v.*) {
             .constant => |c| {
-                switch (c.constType().*) {
+                switch (c.type_list.constType().*) {
                     .integer => {
                         return c.bigInt();
                     },
@@ -158,7 +158,7 @@ const Value = union(enum(u32)) {
     pub fn unwrapBytestring(v: *const Value) Bytes {
         switch (v.*) {
             .constant => |c| {
-                switch (c.constType().*) {
+                switch (c.type_list.constType().*) {
                     .bytes => {
                         return c.innerBytes();
                     },
@@ -178,7 +178,7 @@ const Value = union(enum(u32)) {
     pub fn unwrapString(v: *const Value) String {
         switch (v.*) {
             .constant => |c| {
-                switch (c.constType().*) {
+                switch (c.type_list.constType().*) {
                     .string => {
                         return c.string();
                     },
@@ -198,7 +198,7 @@ const Value = union(enum(u32)) {
     pub fn unwrapBool(v: *const Value) bool {
         switch (v.*) {
             .constant => |c| {
-                switch (c.constType().*) {
+                switch (c.type_list.constType().*) {
                     .boolean => {
                         return c.bln();
                     },
@@ -218,7 +218,7 @@ const Value = union(enum(u32)) {
     pub fn unwrapList(v: *const Value) List {
         switch (v.*) {
             .constant => |c| {
-                switch (c.constType().*) {
+                switch (c.type_list.constType().*) {
                     .list => {
                         return c.list();
                     },
@@ -549,7 +549,7 @@ pub fn multiplyInteger(m: *Machine, args: *const LinkedValues) *const Value {
         final_len -= 1;
     }
     // length of types is 1 for integer
-    resultPtr[0] = @intFromPtr(&expr.UplcInteger);
+    resultPtr[0] = @intFromPtr(ConstantTypeList.integer());
     resultPtr[1] = result_sign;
     resultPtr[2] = @intCast(final_len);
 
@@ -581,7 +581,7 @@ pub fn equalsInteger(m: *Machine, args: *LinkedValues) *const Value {
 
     var result = m.heap.createArray(u32, 2);
 
-    result[0] = @intFromPtr(&expr.UplcBoolean);
+    result[0] = @intFromPtr(ConstantTypeList.boolean());
     result[1] = @intFromBool(equality[0]);
 
     return createConst(m.heap, @ptrCast(result));
@@ -598,7 +598,7 @@ pub fn lessThanInteger(m: *Machine, args: *LinkedValues) *const Value {
 
     var result = m.heap.createArray(u32, 2);
 
-    result[0] = @intFromPtr(&expr.UplcBoolean);
+    result[0] = @intFromPtr(ConstantTypeList.boolean());
 
     result[1] = @intFromBool(
         !equality[0] and (@intFromPtr(xPtr) != @intFromPtr(equality[1])),
@@ -618,7 +618,7 @@ pub fn lessThanEqualsInteger(m: *Machine, args: *LinkedValues) *const Value {
 
     var result = m.heap.createArray(u32, 2);
 
-    result[0] = @intFromPtr(&expr.UplcBoolean);
+    result[0] = @intFromPtr(ConstantTypeList.boolean());
 
     result[1] = @intFromBool(
         equality[0] or (@intFromPtr(xPtr) != @intFromPtr(equality[1])),
@@ -638,7 +638,7 @@ pub fn appendByteString(m: *Machine, args: *LinkedValues) *const Value {
     // type_length 4 bytes,  length 4 bytes, list of words 4 * (x length + y length)
     var result = m.heap.createArray(u32, length + 2);
 
-    result[0] = @intFromPtr(&expr.UplcBytes);
+    result[0] = @intFromPtr(ConstantTypeList.bytes());
     result[1] = length;
 
     var resultPtr = result + 2;
@@ -672,7 +672,7 @@ pub fn consByteString(m: *Machine, args: *LinkedValues) *const Value {
     // type 4 bytes, length 4 bytes, list of words 4 * (y length + 1)
     var result = m.heap.createArray(u32, length + 2);
 
-    result[0] = @intFromPtr(&expr.UplcBytes);
+    result[0] = @intFromPtr(ConstantTypeList.bytes());
     result[1] = length;
     result[2] = x.words[0];
 
@@ -730,7 +730,7 @@ pub fn sliceByteString(m: *Machine, args: *LinkedValues) *const Value {
 
     const offset = bytes.bytes + bytestringLen - leftover;
 
-    result[0] = @intFromPtr(&expr.UplcBytes);
+    result[0] = @intFromPtr(ConstantTypeList.bytes());
     result[1] = finalTake;
 
     var resultPtr = result + 2;
@@ -748,7 +748,7 @@ pub fn lengthOfByteString(m: *Machine, args: *LinkedValues) *const Value {
 
     var result = m.heap.createArray(u32, 4);
 
-    result[0] = @intFromPtr(&expr.UplcInteger);
+    result[0] = @intFromPtr(ConstantTypeList.integer());
     result[1] = 0;
     result[2] = 1;
     result[3] = x.length;
@@ -769,7 +769,7 @@ pub fn indexByteString(m: *Machine, args: *LinkedValues) *const Value {
         utils.exit(std.math.maxInt(u32));
     }
 
-    result[0] = @intFromPtr(&expr.UplcInteger);
+    result[0] = @intFromPtr(ConstantTypeList.integer());
     result[1] = 0;
     result[2] = 1;
     // This will work due to above check
@@ -787,7 +787,7 @@ pub fn equalsByteString(m: *Machine, args: *LinkedValues) *const Value {
 
     var result = m.heap.createArray(u32, 2);
 
-    result[0] = @intFromPtr(&expr.UplcBoolean);
+    result[0] = @intFromPtr(ConstantTypeList.boolean());
     result[1] = @intFromBool(equality[0]);
 
     return createConst(m.heap, @ptrCast(result));
@@ -804,7 +804,7 @@ pub fn lessThanByteString(m: *Machine, args: *LinkedValues) *const Value {
 
     var result = m.heap.createArray(u32, 2);
 
-    result[0] = @intFromPtr(&expr.UplcBoolean);
+    result[0] = @intFromPtr(ConstantTypeList.boolean());
 
     result[1] = @intFromBool(
         !equality[0] and (@intFromPtr(xPtr) != @intFromPtr(equality[1])),
@@ -824,7 +824,7 @@ pub fn lessThanEqualsByteString(m: *Machine, args: *LinkedValues) *const Value {
 
     var result = m.heap.createArray(u32, 2);
 
-    result[0] = @intFromPtr(&expr.UplcBoolean);
+    result[0] = @intFromPtr(ConstantTypeList.boolean());
 
     result[1] = @intFromBool(
         equality[0] or (@intFromPtr(xPtr) != @intFromPtr(equality[1])),
@@ -860,7 +860,7 @@ pub fn appendString(m: *Machine, args: *LinkedValues) *const Value {
     // type_length 4 bytes, integer 4 bytes,  length 4 bytes, list of words 4 * (x length + y length)
     var result = m.heap.createArray(u32, length + 2);
 
-    result[0] = @intFromPtr(&expr.UplcString);
+    result[0] = @intFromPtr(ConstantTypeList.string());
     result[1] = length;
 
     var resultPtr = result + 2;
@@ -888,7 +888,7 @@ pub fn equalsString(m: *Machine, args: *LinkedValues) *const Value {
 
     var result = m.heap.createArray(u32, 2);
 
-    result[0] = @intFromPtr(&expr.UplcBoolean);
+    result[0] = @intFromPtr(ConstantTypeList.boolean());
     result[1] = @intFromBool(equality);
 
     return createConst(m.heap, @ptrCast(result));
@@ -974,7 +974,7 @@ pub fn mkCons(m: *Machine, args: *LinkedValues) *const Value {
 
     const newItem = args.next.?.value.unwrapConstant();
 
-    if (newItem.matchingTypes(list.inner_type, list.type_length)) {
+    if (newItem.type_list.matchingTypes(list.inner_type, list.type_length)) {
         const prev = if (list.length > 0) blk: {
             break :blk list.items.?;
         } else blk: {
@@ -1231,7 +1231,7 @@ pub fn addSignedIntegers(
     const resultLength = maxLength + 3 + 1;
 
     var result = m.heap.createArray(u32, resultLength);
-    result[0] = @intFromPtr(&expr.UplcInteger);
+    result[0] = @intFromPtr(ConstantTypeList.integer());
     result[1] = x.sign;
 
     var i: u32 = 0;
@@ -1281,7 +1281,7 @@ pub fn subSignedIntegers(
     if (compare[0]) {
         var result = m.heap.createArray(u32, 4);
         //type length
-        result[0] = @intFromPtr(&expr.UplcInteger);
+        result[0] = @intFromPtr(ConstantTypeList.integer());
         // sign
         result[1] = 0;
         // length
@@ -1300,7 +1300,7 @@ pub fn subSignedIntegers(
 
     var result = m.heap.createArray(u32, resultLength);
 
-    result[0] = @intFromPtr(&expr.UplcInteger);
+    result[0] = @intFromPtr(ConstantTypeList.integer());
     result[1] = greater.sign;
 
     var i: u32 = 0;
@@ -2076,8 +2076,7 @@ test "constant compute" {
         .frames = &frames,
     };
 
-    const unitType = &ConstantTypeList.unit();
-
+    const unitType = ConstantTypeList.unit();
     const term: []const u32 = &.{
         4,
         @intFromPtr(unitType),
@@ -2101,7 +2100,7 @@ test "constant compute big int" {
         .frames = &frames,
     };
 
-    const intType = &ConstantTypeList.integer();
+    const intType = ConstantTypeList.integer();
 
     const term: []const u32 = &.{ 4, @intFromPtr(intType), 1, 1, 11 };
 
@@ -2113,10 +2112,10 @@ test "constant compute big int" {
 
     switch (state) {
         .ret => |r| {
-            switch (r.value.constant.constType().*) {
+            switch (r.value.constant.type_list.constType().*) {
                 .integer => {
                     try testing.expect(r.value.constant.type_list.length == 1);
-                    try testing.expect(r.value.constant.type_list.types[0] == .integer);
+                    try testing.expect(r.value.constant.type_list.constType().* == .integer);
                     const bigInt = r.value.constant.bigInt();
                     try testing.expect(bigInt.length == 1);
                     try testing.expect(bigInt.sign == 1);
@@ -2162,7 +2161,7 @@ test "add same signed integers" {
 
     switch (newVal.*) {
         .constant => |c| {
-            switch (c.constType().*) {
+            switch (c.type_list.constType().*) {
                 .integer => {
                     const result = c.bigInt();
                     try testing.expect(result.length == 3);
@@ -2214,7 +2213,7 @@ test "add same signed integers overflow" {
 
     switch (newVal.*) {
         .constant => |c| {
-            switch (c.constType().*) {
+            switch (c.type_list.constType().*) {
                 .integer => {
                     const result = c.bigInt();
                     try testing.expect(result.length == 3);
@@ -2263,7 +2262,7 @@ test "sub signed integers overflow" {
 
     switch (newVal.*) {
         .constant => |c| {
-            switch (c.constType().*) {
+            switch (c.type_list.constType().*) {
                 .integer => {
                     const result = c.bigInt();
                     try testing.expect(result.length == 3);
@@ -2314,7 +2313,7 @@ test "sub signed integers reclaim" {
 
     switch (newVal.*) {
         .constant => |c| {
-            switch (c.constType().*) {
+            switch (c.type_list.constType().*) {
                 .integer => {
                     const result = c.bigInt();
                     try testing.expectEqual(result.length, 1);
@@ -2342,15 +2341,15 @@ test "multiply same‑signed single‑word integers" {
     const a = expr.BigInt{ .sign = 0, .length = 1, .words = a_words };
     const b = expr.BigInt{ .sign = 0, .length = 1, .words = b_words };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, a, &expr.UplcInteger)
-        .extend(&heap, expr.BigInt, b, &expr.UplcInteger);
+    const args = LinkedValues.create(&heap, expr.BigInt, a, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, b, ConstantTypeList.integer());
 
     const newVal = multiplyInteger(&machine, args);
 
     const result_words: [*]const u32 = &.{12};
 
     switch (newVal.*) {
-        .constant => |c| switch (c.constType().*) {
+        .constant => |c| switch (c.type_list.constType().*) {
             .integer => {
                 const result = c.bigInt();
                 try testing.expect(result.length == 1);
@@ -2377,15 +2376,15 @@ test "multiply same‑signed integers with 32‑bit carry" {
     const a = expr.BigInt{ .sign = 0, .length = 1, .words = a_words };
     const b = expr.BigInt{ .sign = 0, .length = 1, .words = b_words };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, a, &expr.UplcInteger)
-        .extend(&heap, expr.BigInt, b, &expr.UplcInteger);
+    const args = LinkedValues.create(&heap, expr.BigInt, a, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, b, ConstantTypeList.integer());
 
     const newVal = multiplyInteger(&machine, args);
 
     const result_words: [*]const u32 = &.{ 0xFFFFFFFE, 1 }; // low word, high carry
 
     switch (newVal.*) {
-        .constant => |c| switch (c.constType().*) {
+        .constant => |c| switch (c.type_list.constType().*) {
             .integer => {
                 const result = c.bigInt();
                 try testing.expect(result.length == 2);
@@ -2413,15 +2412,15 @@ test "multiply differing‑signed integers" {
     const a = expr.BigInt{ .sign = 1, .length = 1, .words = a_words }; // negative
     const b = expr.BigInt{ .sign = 0, .length = 1, .words = b_words }; // positive
 
-    const args = LinkedValues.create(&heap, expr.BigInt, a, &expr.UplcInteger)
-        .extend(&heap, expr.BigInt, b, &expr.UplcInteger);
+    const args = LinkedValues.create(&heap, expr.BigInt, a, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, b, ConstantTypeList.integer());
 
     const newVal = multiplyInteger(&machine, args);
 
     const result_words: [*]const u32 = &.{12};
 
     switch (newVal.*) {
-        .constant => |c| switch (c.constType().*) {
+        .constant => |c| switch (c.type_list.constType().*) {
             .integer => {
                 const result = c.bigInt();
                 try testing.expect(result.length == 1);
@@ -2452,14 +2451,14 @@ test "equals integer" {
 
     const resultWords = subSignedIntegers(&machine, a, b);
 
-    const args = LinkedValues.create(&heap, expr.BigInt, c, &expr.UplcInteger)
-        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), &expr.UplcInteger);
+    const args = LinkedValues.create(&heap, expr.BigInt, c, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), ConstantTypeList.integer());
 
     const newVal = equalsInteger(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .boolean => {
                     const val = con.bln();
                     try testing.expect(val);
@@ -2493,14 +2492,14 @@ test "less than integer" {
 
     const resultWords = subSignedIntegers(&machine, a, b);
 
-    const args = LinkedValues.create(&heap, expr.BigInt, c, &expr.UplcInteger)
-        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), &expr.UplcInteger);
+    const args = LinkedValues.create(&heap, expr.BigInt, c, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), ConstantTypeList.integer());
 
     const newVal = lessThanInteger(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .boolean => {
                     const val = con.bln();
                     try testing.expect(val);
@@ -2535,14 +2534,14 @@ test "less than equals integer less" {
     const resultWords = subSignedIntegers(&machine, a, b);
 
     const args = LinkedValues
-        .create(&heap, expr.BigInt, c, &expr.UplcInteger)
-        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), &expr.UplcInteger);
+        .create(&heap, expr.BigInt, c, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), ConstantTypeList.integer());
 
     const newVal = lessThanEqualsInteger(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .boolean => {
                     const val = con.bln();
                     try testing.expect(val);
@@ -2577,14 +2576,14 @@ test "less than equals integer equal" {
     const resultWords = subSignedIntegers(&machine, a, b);
 
     const args = LinkedValues
-        .create(&heap, expr.BigInt, c, &expr.UplcInteger)
-        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), &expr.UplcInteger);
+        .create(&heap, expr.BigInt, c, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, resultWords.constant.bigInt(), ConstantTypeList.integer());
 
     const newVal = lessThanEqualsInteger(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .boolean => {
                     const val = con.bln();
                     try testing.expect(val);
@@ -2618,14 +2617,14 @@ test "append bytes" {
     const result = expr.Bytes{ .length = 5, .bytes = resultBytes };
 
     const args = LinkedValues
-        .create(&heap, expr.Bytes, a, &expr.UplcBytes)
-        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
+        .create(&heap, expr.Bytes, a, ConstantTypeList.bytes())
+        .extend(&heap, expr.Bytes, b, ConstantTypeList.bytes());
 
     const newVal = appendByteString(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .bytes => {
                     const val = con.innerBytes();
                     try testing.expectEqual(val.length, result.length);
@@ -2664,14 +2663,14 @@ test "cons bytes" {
     const result = expr.Bytes{ .length = 4, .bytes = resultBytes };
 
     const args = LinkedValues
-        .create(&heap, expr.BigInt, a, &expr.UplcInteger)
-        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
+        .create(&heap, expr.BigInt, a, ConstantTypeList.integer())
+        .extend(&heap, expr.Bytes, b, ConstantTypeList.bytes());
 
     const newVal = consByteString(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .bytes => {
                     const val = con.innerBytes();
                     try testing.expectEqual(val.length, result.length);
@@ -2711,15 +2710,15 @@ test "slice bytes" {
     const result = expr.Bytes{ .length = 3, .bytes = resultBytes };
 
     const args = LinkedValues
-        .create(&heap, expr.BigInt, drop, &expr.UplcInteger)
-        .extend(&heap, expr.BigInt, take, &expr.UplcInteger)
-        .extend(&heap, expr.Bytes, a, &expr.UplcBytes);
+        .create(&heap, expr.BigInt, drop, ConstantTypeList.integer())
+        .extend(&heap, expr.BigInt, take, ConstantTypeList.integer())
+        .extend(&heap, expr.Bytes, a, ConstantTypeList.bytes());
 
     const newVal = sliceByteString(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .bytes => {
                     const val = con.innerBytes();
                     try testing.expectEqual(val.length, result.length);
@@ -2753,13 +2752,13 @@ test "length bytes" {
 
     const result = expr.BigInt{ .length = 1, .sign = 0, .words = resultBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a, &expr.UplcBytes);
+    const args = LinkedValues.create(&heap, expr.Bytes, a, ConstantTypeList.bytes());
 
     const newVal = lengthOfByteString(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .integer => {
                     const val = con.bigInt();
                     try testing.expectEqual(val.length, result.length);
@@ -2794,14 +2793,14 @@ test "index bytes" {
 
     const result = expr.BigInt{ .length = 1, .sign = 0, .words = resultBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a, &expr.UplcBytes)
-        .extend(&heap, expr.BigInt, b, &expr.UplcInteger);
+    const args = LinkedValues.create(&heap, expr.Bytes, a, ConstantTypeList.bytes())
+        .extend(&heap, expr.BigInt, b, ConstantTypeList.integer());
 
     const newVal = indexByteString(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .integer => {
                     const val = con.bigInt();
                     try testing.expectEqual(val.length, result.length);
@@ -2832,14 +2831,14 @@ test "equals bytes" {
     const a = expr.Bytes{ .length = 5, .bytes = aBytes };
     const b = expr.Bytes{ .length = 5, .bytes = aBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a, &expr.UplcBytes)
-        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
+    const args = LinkedValues.create(&heap, expr.Bytes, a, ConstantTypeList.bytes())
+        .extend(&heap, expr.Bytes, b, ConstantTypeList.bytes());
 
     const newVal = equalsByteString(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .boolean => {
                     const val = con.bln();
                     try testing.expect(val);
@@ -2869,14 +2868,14 @@ test "less than bytes" {
     const a = expr.Bytes{ .length = 6, .bytes = aBytes };
     const b = expr.Bytes{ .length = 5, .bytes = bBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a, &expr.UplcBytes)
-        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
+    const args = LinkedValues.create(&heap, expr.Bytes, a, ConstantTypeList.bytes())
+        .extend(&heap, expr.Bytes, b, ConstantTypeList.bytes());
 
     const newVal = lessThanByteString(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .boolean => {
                     const val = con.bln();
                     try testing.expect(val);
@@ -2906,14 +2905,14 @@ test "less than equal bytes less" {
     const a = expr.Bytes{ .length = 6, .bytes = aBytes };
     const b = expr.Bytes{ .length = 5, .bytes = bBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a, &expr.UplcBytes)
-        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
+    const args = LinkedValues.create(&heap, expr.Bytes, a, ConstantTypeList.bytes())
+        .extend(&heap, expr.Bytes, b, ConstantTypeList.bytes());
 
     const newVal = lessThanEqualsByteString(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .boolean => {
                     const val = con.bln();
                     try testing.expect(val);
@@ -2942,14 +2941,14 @@ test "less than equal bytes equal" {
     const a = expr.Bytes{ .length = 6, .bytes = aBytes };
     const b = expr.Bytes{ .length = 6, .bytes = aBytes };
 
-    const args = LinkedValues.create(&heap, expr.Bytes, a, &expr.UplcBytes)
-        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
+    const args = LinkedValues.create(&heap, expr.Bytes, a, ConstantTypeList.bytes())
+        .extend(&heap, expr.Bytes, b, ConstantTypeList.bytes());
 
     const newVal = lessThanEqualsByteString(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .boolean => {
                     const val = con.bln();
                     try testing.expect(val);
@@ -2983,14 +2982,14 @@ test "append string" {
     const result = expr.String{ .length = 5, .bytes = resultBytes };
 
     const args = LinkedValues
-        .create(&heap, expr.String, a, &expr.UplcString)
-        .extend(&heap, expr.String, b, &expr.UplcString);
+        .create(&heap, expr.String, a, ConstantTypeList.string())
+        .extend(&heap, expr.String, b, ConstantTypeList.string());
 
     const newVal = appendString(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .string => {
                     const val = con.string();
                     try testing.expectEqual(val.length, result.length);
@@ -3027,15 +3026,15 @@ test "if then else" {
     const b = expr.Bytes{ .length = 3, .bytes = bBytes };
 
     const args = LinkedValues
-        .create(&heap, expr.Bool, expr.Bool{ .val = true }, &expr.UplcBoolean)
-        .extend(&heap, expr.Bytes, a, &expr.UplcBytes)
-        .extend(&heap, expr.Bytes, b, &expr.UplcBytes);
+        .create(&heap, expr.Bool, expr.Bool{ .val = true }, ConstantTypeList.boolean())
+        .extend(&heap, expr.Bytes, a, ConstantTypeList.bytes())
+        .extend(&heap, expr.Bytes, b, ConstantTypeList.bytes());
 
     const newVal = ifThenElse(&machine, args);
 
     switch (newVal.*) {
         .constant => |con| {
-            switch (con.constType().*) {
+            switch (con.type_list.constType().*) {
                 .bytes => {
                     const val = con.innerBytes();
                     try testing.expectEqual(val.length, 2);

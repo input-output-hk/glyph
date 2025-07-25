@@ -152,7 +152,7 @@ fn serialize_term(preceeding_byte_size: u32, term: &Term<DeBruijn>) -> Result<Ve
         }
         Term::Force(term) => serialize_force(preceeding_byte_size, term),
         Term::Delay(term) => serialize_delay(preceeding_byte_size, term),
-        Term::Constant(constant) => serialize_constant(constant),
+        Term::Constant(constant) => serialize_constant(preceeding_byte_size, constant),
         Term::Builtin(builtin) => serialize_builtin(*builtin),
         Term::Error => serialize_error(),
         Term::Constr { tag, fields } => serialize_constructor(preceeding_byte_size, *tag, fields),
@@ -179,7 +179,7 @@ fn serialize_lambda(preceeding_byte_size: u32, body: &Rc<Term<DeBruijn>>) -> Res
     x.write_u32::<LittleEndian>(term_tag::LAMBDA)?;
 
     // Serialize the body (recursively)
-    let body_ser = serialize_term(preceeding_byte_size + 1, body)?;
+    let body_ser = serialize_term(preceeding_byte_size + 4, body)?;
 
     // Write body address
     x.write_all(&body_ser)?;
@@ -221,7 +221,7 @@ fn serialize_force(preceeding_byte_size: u32, term: &Rc<Term<DeBruijn>>) -> Resu
 
     // Serialize the term being forced (recursively)
     // preceeding_byte_size + 1 for the force tag
-    let term_ser = serialize_term(preceeding_byte_size + 1, term)?;
+    let term_ser = serialize_term(preceeding_byte_size + 4, term)?;
 
     // Write term address
     x.write_all(&term_ser)?;
@@ -237,7 +237,7 @@ fn serialize_delay(preceeding_byte_size: u32, term: &Rc<Term<DeBruijn>>) -> Resu
 
     // Serialize the term being delayed (recursively)
     // preceeding_byte_size + 1 for the delay tag
-    let term_ser = serialize_term(preceeding_byte_size + 1, term)?;
+    let term_ser = serialize_term(preceeding_byte_size + 4, term)?;
 
     // Write term address
     x.write_all(&term_ser)?;
@@ -246,24 +246,22 @@ fn serialize_delay(preceeding_byte_size: u32, term: &Rc<Term<DeBruijn>>) -> Resu
 }
 
 /// Serialize a constant term
-fn serialize_constant(constant: &Rc<Constant>) -> Result<Vec<u8>> {
+fn serialize_constant(preceeding_byte_size: u32, constant: &Rc<Constant>) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Tag byte for constant
     x.write_u32::<LittleEndian>(term_tag::CONSTANT)?;
 
-    // Determine the type length and store it
-    // (This is a placeholder - you may need to calculate the actual type length)
-    let type_length: u32 = 1; // For simple types
-    x.write_u32::<LittleEndian>(type_length)?;
-
     // Serialize the constant based on its type
     let serialized_data = match &**constant {
-        Constant::Integer(int) => serialize_integer_constant(int)?,
-        Constant::ByteString(bytes) => serialize_bytestring_constant(bytes)?,
+        Constant::Integer(int) => serialize_integer_constant(preceeding_byte_size + 4, int)?,
+        Constant::ByteString(bytes) => {
+            serialize_bytestring_constant(preceeding_byte_size + 4, bytes)?
+        }
         // Constant::String(s) => serialize_string_constant(s)?, wait wut todo
-        Constant::Unit => serialize_unit_constant()?,
-        Constant::Bool(b) => serialize_bool_constant(*b)?,
-        Constant::Data(data) => serialize_data_constant(data)?,
+        Constant::Unit => serialize_unit_constant(preceeding_byte_size + 4)?,
+        Constant::Bool(b) => serialize_bool_constant(preceeding_byte_size + 4, *b)?,
+        Constant::Data(data) => serialize_data_constant(preceeding_byte_size + 4, data)?,
+        Constant::ProtoList(_, _) => todo!(),
         _ => {
             return Err(SerializationError::InvalidTermType(format!(
                 "Unsupported constant type: {constant:?}",
@@ -278,10 +276,12 @@ fn serialize_constant(constant: &Rc<Constant>) -> Result<Vec<u8>> {
 }
 
 /// Serialize an integer constant
-fn serialize_integer_constant(int: &num_bigint::BigInt) -> Result<Vec<u8>> {
+fn serialize_integer_constant(
+    preceeding_byte_size: u32,
+    int: &num_bigint::BigInt,
+) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
-    // Write constant type tag
-    x.write_u32::<LittleEndian>(const_tag::INTEGER)?;
+    let mut int_type: Vec<u8> = Vec::new();
 
     // BigInt (variable size)
     let (sign, bytes) = int.to_u32_digits();
@@ -305,12 +305,20 @@ fn serialize_integer_constant(int: &num_bigint::BigInt) -> Result<Vec<u8>> {
             .collect::<Vec<u8>>(),
     )?;
 
-    Ok(x)
+    int_type.write_u32::<LittleEndian>(preceeding_byte_size + x.len() as u32 + 4)?;
+
+    x.write_u32::<LittleEndian>(1)?;
+    x.write_u32::<LittleEndian>(const_tag::INTEGER)?;
+
+    int_type.extend(x);
+
+    Ok(int_type)
 }
 
 /// Serialize a bytestring constant
-fn serialize_bytestring_constant(bytes: &[u8]) -> Result<Vec<u8>> {
+fn serialize_bytestring_constant(preceeding_byte_size: u32, bytes: &[u8]) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
+    let mut bytes_type: Vec<u8> = Vec::new();
     // Check if the bytestring is too large
     if bytes.len() > u32::MAX as usize {
         return Err(SerializationError::ByteStringTooLarge(format!(
@@ -318,9 +326,6 @@ fn serialize_bytestring_constant(bytes: &[u8]) -> Result<Vec<u8>> {
             bytes.len()
         )));
     }
-
-    // Write constant type tag
-    x.write_u32::<LittleEndian>(const_tag::BYTESTRING)?;
 
     // Write actual length in bytes
     x.write_u32::<LittleEndian>(bytes.len() as u32)?;
@@ -333,12 +338,25 @@ fn serialize_bytestring_constant(bytes: &[u8]) -> Result<Vec<u8>> {
             .collect::<Vec<u8>>(),
     )?;
 
-    Ok(x)
+    bytes_type.write_u32::<LittleEndian>(preceeding_byte_size + x.len() as u32 + 4)?;
+
+    x.write_u32::<LittleEndian>(1)?;
+    x.write_u32::<LittleEndian>(const_tag::BYTESTRING)?;
+
+    bytes_type.extend(x);
+
+    Ok(bytes_type)
 }
 
 /// Serialize a unit constant
-fn serialize_unit_constant() -> Result<Vec<u8>> {
+fn serialize_unit_constant(preceeding_byte_size: u32) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
+
+    // type pointer
+    x.write_u32::<LittleEndian>(preceeding_byte_size + 4)?;
+
+    x.write_u32::<LittleEndian>(1)?;
+
     // Write constant type tag
     x.write_u32::<LittleEndian>(const_tag::UNIT)?;
 
@@ -347,10 +365,11 @@ fn serialize_unit_constant() -> Result<Vec<u8>> {
 }
 
 /// Serialize a boolean constant
-fn serialize_bool_constant(value: bool) -> Result<Vec<u8>> {
+fn serialize_bool_constant(preceeding_byte_size: u32, value: bool) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
-    // Write constant type tag
-    x.write_u32::<LittleEndian>(const_tag::BOOL)?;
+
+    // type pointer
+    x.write_u32::<LittleEndian>(preceeding_byte_size + 8)?;
 
     // Write boolean value (0x00 for false, 0x01 for true)
     x.write_u32::<LittleEndian>(if value {
@@ -359,11 +378,16 @@ fn serialize_bool_constant(value: bool) -> Result<Vec<u8>> {
         bool_val::FALSE
     })?;
 
+    x.write_u32::<LittleEndian>(1)?;
+
+    // Write constant type tag
+    x.write_u32::<LittleEndian>(const_tag::BOOL)?;
+
     Ok(x)
 }
 
 /// Serialize a Plutus Data constant
-fn serialize_data_constant(data: &PlutusData) -> Result<Vec<u8>> {
+fn serialize_data_constant(_: u32, data: &PlutusData) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     // Constant type tag
     x.write_u32::<LittleEndian>(const_tag::DATA)?;
