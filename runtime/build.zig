@@ -11,24 +11,24 @@ pub fn build(b: *std.Build) !void {
 
     const optimize = b.standardOptimizeOption(.{});
 
-    // NEW: Get the blst dependency (fetched from build.zig.zon)
+    // Get the blst dependency (fetched from build.zig.zon)
     const blst_dep = b.dependency("blst", .{
         .target = riscvBuildTarget,
         .optimize = .ReleaseFast,
     });
 
-    // NEW: Build blst as a static library in portable mode
+    // Build blst as a static library in portable mode
     const blst_lib = b.addStaticLibrary(.{
         .name = "blst",
         .target = riscvBuildTarget,
         .optimize = .ReleaseFast,
     });
 
-    // NEW: Add include paths from the dependency
+    // Add include paths from the dependency
     blst_lib.addIncludePath(blst_dep.path("bindings"));
     blst_lib.addIncludePath(blst_dep.path("src"));
 
-    // NEW: Compile blst's main source file with portable flag (no assembly)
+    // Compile blst's main source file with portable flag (no assembly)
     blst_lib.addCSourceFile(.{
         .file = blst_dep.path("src/server.c"),
         .flags = &[_][]const u8{
@@ -45,7 +45,10 @@ pub fn build(b: *std.Build) !void {
         .optimize = .ReleaseFast,
     });
 
-    // NEW: Link blst to the runtime object
+    // Add BLST include paths to the Zig object compilation (this fixes the 'blst.h' not found error)
+    obj.addIncludePath(blst_dep.path("bindings"));
+
+    // Link blst to the runtime object
     obj.linkLibrary(blst_lib);
 
     const loc = obj.getEmittedBin();
@@ -74,7 +77,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = .ReleaseFast,
     });
 
-    // NEW: Link blst to memsetObj (if it uses BLS functions; otherwise optional)
+    // Link blst to memsetObj (if it uses BLS functions; otherwise optional)
     memsetObj.linkLibrary(blst_lib);
 
     const memLoc = memsetObj.getEmittedBin();
@@ -91,7 +94,7 @@ pub fn build(b: *std.Build) !void {
 
     const riscv_test_target = b.resolveTargetQuery(riscv_test_target_query);
 
-    // NEW: Get the blst dependency (fetched from build.zig.zon)
+    // Get the blst dependency (fetched from build.zig.zon)
     const blst_test_dep = b.dependency("blst", .{
         .target = riscv_test_target,
         .optimize = .ReleaseFast,
@@ -125,8 +128,7 @@ pub fn build(b: *std.Build) !void {
     lib_unit_tests.addIncludePath(blst_test_dep.path("bindings"));
     lib_unit_tests.addIncludePath(blst_test_dep.path("src"));
 
-    // lib_unit_tests.linkLibC();
-    // NEW: Link blst to unit tests
+    // Link blst to unit tests
     lib_unit_tests.linkLibrary(blst_test_lib);
 
     const qemu_run = b.addSystemCommand(&.{"qemu-riscv32"});
