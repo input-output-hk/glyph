@@ -564,7 +564,7 @@ pub const List = struct {
         buf[0] = self.type_length + 1;
         buf[1] = @intFromPtr(types);
         buf[2] = self.length;
-        buf[3] = self.items;
+        buf[3] = @intFromPtr(self.items);
 
         return @ptrCast(buf);
     }

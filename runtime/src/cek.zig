@@ -3065,3 +3065,56 @@ test "if then else" {
         },
     }
 }
+
+test "chooseList Empty" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const aBytes: [*]const u32 = &.{ 0, 254 };
+    const bBytes: [*]const u32 = &.{ 1, 253, 3 };
+
+    const a = expr.Bytes{ .length = 2, .bytes = aBytes };
+    const b = expr.Bytes{ .length = 3, .bytes = bBytes };
+
+    const listIntType = [2]ConstantType{
+        ConstantType.list,
+        ConstantType.integer,
+    };
+
+    const types: *const ConstantType = @ptrCast(&listIntType);
+
+    const args = LinkedValues
+        .create(&heap, expr.List, expr.List{
+            .type_length = 1,
+            .inner_type = @ptrCast(ConstantType.integerType()),
+            .length = 0,
+            .items = null,
+        }, types)
+        .extend(&heap, expr.Bytes, a, ConstantType.bytesType())
+        .extend(&heap, expr.Bytes, b, ConstantType.bytesType());
+
+    const newVal = chooseList(&machine, args);
+
+    switch (newVal.*) {
+        .constant => |con| {
+            switch (con.constType().*) {
+                .bytes => {
+                    const val = con.innerBytes();
+                    try testing.expectEqual(val.length, 2);
+                    try testing.expectEqual(val.bytes[0], 0);
+                    try testing.expectEqual(val.bytes[1], 254);
+                },
+                else => {
+                    @panic("TODO");
+                },
+            }
+        },
+        else => {
+            @panic("TODO");
+        },
+    }
+}
