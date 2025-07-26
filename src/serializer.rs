@@ -305,9 +305,10 @@ fn serialize_integer_constant(
             .collect::<Vec<u8>>(),
     )?;
 
-    int_type.write_u32::<LittleEndian>(preceeding_byte_size + x.len() as u32 + 4)?;
+    int_type.write_u32::<LittleEndian>(1)?;
 
-    x.write_u32::<LittleEndian>(1)?;
+    int_type.write_u32::<LittleEndian>(preceeding_byte_size + x.len() as u32 + 8)?;
+
     x.write_u32::<LittleEndian>(const_tag::INTEGER)?;
 
     int_type.extend(x);
@@ -338,9 +339,10 @@ fn serialize_bytestring_constant(preceeding_byte_size: u32, bytes: &[u8]) -> Res
             .collect::<Vec<u8>>(),
     )?;
 
-    bytes_type.write_u32::<LittleEndian>(preceeding_byte_size + x.len() as u32 + 4)?;
+    bytes_type.write_u32::<LittleEndian>(1)?;
 
-    x.write_u32::<LittleEndian>(1)?;
+    bytes_type.write_u32::<LittleEndian>(preceeding_byte_size + x.len() as u32 + 8)?;
+
     x.write_u32::<LittleEndian>(const_tag::BYTESTRING)?;
 
     bytes_type.extend(x);
@@ -352,10 +354,10 @@ fn serialize_bytestring_constant(preceeding_byte_size: u32, bytes: &[u8]) -> Res
 fn serialize_unit_constant(preceeding_byte_size: u32) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
 
-    // type pointer
-    x.write_u32::<LittleEndian>(preceeding_byte_size + 4)?;
-
     x.write_u32::<LittleEndian>(1)?;
+
+    // type pointer
+    x.write_u32::<LittleEndian>(preceeding_byte_size + 8)?;
 
     // Write constant type tag
     x.write_u32::<LittleEndian>(const_tag::UNIT)?;
@@ -368,8 +370,10 @@ fn serialize_unit_constant(preceeding_byte_size: u32) -> Result<Vec<u8>> {
 fn serialize_bool_constant(preceeding_byte_size: u32, value: bool) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
 
+    x.write_u32::<LittleEndian>(1)?;
+
     // type pointer
-    x.write_u32::<LittleEndian>(preceeding_byte_size + 8)?;
+    x.write_u32::<LittleEndian>(preceeding_byte_size + 12)?;
 
     // Write boolean value (0x00 for false, 0x01 for true)
     x.write_u32::<LittleEndian>(if value {
@@ -377,8 +381,6 @@ fn serialize_bool_constant(preceeding_byte_size: u32, value: bool) -> Result<Vec
     } else {
         bool_val::FALSE
     })?;
-
-    x.write_u32::<LittleEndian>(1)?;
 
     // Write constant type tag
     x.write_u32::<LittleEndian>(const_tag::BOOL)?;
