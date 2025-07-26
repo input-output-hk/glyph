@@ -405,19 +405,20 @@ pub const BigInt = extern struct {
     /// returns: pointer to the freshly‑allocated `Constant`
     pub fn createConstant(
         self: BigInt,
-        types: *const ConstantTypeList,
+        types: *const ConstantType,
         heap: *Heap,
     ) *Constant {
-        const total_words: u32 = self.length + 3; // len of type | tag | sign | length | words…
+        const total_words: u32 = self.length + 4; // len of type | tag | sign | length | words
         var buf = heap.createArray(u32, total_words);
 
-        buf[0] = @intFromPtr(types);
-        buf[1] = self.sign;
-        buf[2] = self.length;
+        buf[0] = 1;
+        buf[1] = @intFromPtr(types);
+        buf[2] = self.sign;
+        buf[3] = self.length;
 
         var i: u32 = 0;
         while (i < self.length) : (i += 1) {
-            buf[i + 3] = self.words[i];
+            buf[i + 4] = self.words[i];
         }
 
         return @ptrCast(buf);
@@ -455,18 +456,19 @@ pub const Bytes = extern struct {
 
     pub fn createConstant(
         self: Bytes,
-        types: *const ConstantTypeList,
+        types: *const ConstantType,
         heap: *Heap,
     ) *Constant {
-        const total_words: u32 = 2 + self.length;
+        const total_words: u32 = self.length + 3; // len of type | tag | sign | length | words
         var buf = heap.createArray(u32, total_words);
 
-        buf[0] = @intFromPtr(types);
-        buf[1] = self.length;
+        buf[0] = 1;
+        buf[1] = @intFromPtr(types);
+        buf[2] = self.length;
 
         var i: u32 = 0;
         while (i < self.length) : (i += 1) {
-            buf[i + 2] = self.bytes[i];
+            buf[i + 3] = self.bytes[i];
         }
 
         return @ptrCast(buf);
@@ -479,18 +481,19 @@ pub const String = extern struct {
 
     pub fn createConstant(
         self: String,
-        types: *const ConstantTypeList,
+        types: *const ConstantType,
         heap: *Heap,
     ) *Constant {
-        const total_words: u32 = 2 + self.length;
+        const total_words: u32 = self.length + 3; // len of type | tag | sign | length | words
         var buf = heap.createArray(u32, total_words);
 
-        buf[0] = @intFromPtr(types);
-        buf[1] = self.length;
+        buf[0] = 1;
+        buf[1] = @intFromPtr(types);
+        buf[2] = self.length;
 
         var i: u32 = 0;
         while (i < self.length) : (i += 1) {
-            buf[i + 2] = self.bytes[i];
+            buf[i + 3] = self.bytes[i];
         }
 
         return @ptrCast(buf);
@@ -527,13 +530,14 @@ pub const Bool = extern struct {
 
     pub fn createConstant(
         self: Bool,
-        types: *const ConstantTypeList,
+        types: *const ConstantType,
         heap: *Heap,
     ) *Constant {
-        var buf = heap.createArray(u32, 2);
+        var buf = heap.createArray(u32, 3);
 
-        buf[0] = @intFromPtr(types);
-        buf[1] = @intFromBool(self.val);
+        buf[0] = 1;
+        buf[1] = @intFromPtr(types);
+        buf[2] = @intFromBool(self.val);
 
         return @ptrCast(buf);
     }
@@ -552,100 +556,32 @@ pub const List = struct {
 
     pub fn createConstant(
         self: List,
-        types: *const ConstantTypeList,
+        types: *const ConstantType,
         heap: *Heap,
     ) *Constant {
         var buf = heap.createArray(u32, 3);
 
-        buf[0] = @intFromPtr(types);
-        buf[1] = self.length;
-        buf[2] = self.items;
+        buf[0] = self.type_length + 1;
+        buf[1] = @intFromPtr(types);
+        buf[2] = self.length;
+        buf[3] = self.items;
 
         return @ptrCast(buf);
     }
 };
 
 pub const Constant = extern struct {
-    type_list: *ConstantTypeList,
-
-    const Self = @This();
-
-    pub fn rawValue(self: *const Self) u32 {
-        const value = @intFromPtr(self) + @sizeOf(u32);
-
-        return value;
-    }
-
-    pub fn bigInt(self: *const Self) BigInt {
-        const sign: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
-
-        const words: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 3);
-
-        return BigInt{
-            .sign = sign.*,
-            .length = length.*,
-            .words = words,
-        };
-    }
-
-    pub fn innerBytes(self: *const Self) Bytes {
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
-
-        return Bytes{
-            .length = length.*,
-            .bytes = bytes,
-        };
-    }
-
-    pub fn string(self: *const Self) String {
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
-
-        return String{
-            .length = length.*,
-            .bytes = bytes,
-        };
-    }
-
-    pub fn bln(self: *const Self) bool {
-        const b: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        return b.* == 1;
-    }
-
-    pub fn list(self: *const Self) List {
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        const items: ?*ListNode = if (length.* > 0) blk: {
-            break :blk @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
-        } else blk: {
-            break :blk null;
-        };
-
-        return List{
-            .type_length = self.type_list.length - 1,
-            .inner_type = self.type_list.innerListType(),
-            .length = length.*,
-            .items = items,
-        };
-    }
-};
-
-pub const ConstantTypeList = extern struct {
     length: u32,
+    type_list: [*]const ConstantType,
 
     const Self = @This();
 
     pub fn constType(self: *const Self) *const ConstantType {
-        return @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
+        return @ptrCast(self.type_list);
     }
 
     pub fn innerListType(self: *const Self) [*]const ConstantType {
-        return @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+        return @ptrCast(self.type_list + 1);
     }
 
     pub fn matchingTypes(self: *const Self, listInnerType: [*]const ConstantType, len: u32) bool {
@@ -665,35 +601,66 @@ pub const ConstantTypeList = extern struct {
         return true;
     }
 
-    pub fn listData() *const ConstantTypeList {
-        const types: *const ConstantTypeList = @ptrCast(&UplcListData);
-        return types;
+    pub fn rawValue(self: *const Self) u32 {
+        return @intFromPtr(self) + @sizeOf(u32) * 2;
     }
 
-    pub fn integer() *const ConstantTypeList {
-        const types: *const ConstantTypeList = @ptrCast(&UplcInteger);
+    pub fn bigInt(self: *const Self) BigInt {
+        const sign: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 3);
 
-        return types;
+        const words: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 4);
+
+        return BigInt{
+            .sign = sign.*,
+            .length = length.*,
+            .words = words,
+        };
     }
 
-    pub fn bytes() *const ConstantTypeList {
-        const types: *const ConstantTypeList = @ptrCast(&UplcBytes);
-        return types;
+    pub fn innerBytes(self: *const Self) Bytes {
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 3);
+
+        return Bytes{
+            .length = length.*,
+            .bytes = bytes,
+        };
     }
 
-    pub fn string() *const ConstantTypeList {
-        const types: *const ConstantTypeList = @ptrCast(&UplcString);
-        return types;
+    pub fn string(self: *const Self) String {
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+
+        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 3);
+
+        return String{
+            .length = length.*,
+            .bytes = bytes,
+        };
     }
 
-    pub fn unit() *const ConstantTypeList {
-        const types: *const ConstantTypeList = @ptrCast(&UplcUnit);
-        return types;
+    pub fn bln(self: *const Self) bool {
+        const b: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+
+        return b.* == 1;
     }
 
-    pub fn boolean() *const ConstantTypeList {
-        const types: *const ConstantTypeList = @ptrCast(&UplcBoolean);
-        return types;
+    pub fn list(self: *const Self) List {
+        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+
+        const items: ?*ListNode = if (length.* > 0) blk: {
+            break :blk @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 3);
+        } else blk: {
+            break :blk null;
+        };
+
+        return List{
+            .type_length = self.length - 1,
+            .inner_type = self.innerListType(),
+            .length = length.*,
+            .items = items,
+        };
     }
 };
 
@@ -706,31 +673,56 @@ pub const ConstantType = enum(u32) {
     list,
     pair,
     data,
+
+    pub fn listDataType() *const ConstantType {
+        const types: *const ConstantType = @ptrCast(&UplcListData);
+        return types;
+    }
+
+    pub fn integerType() *const ConstantType {
+        const types: *const ConstantType = @ptrCast(&UplcInteger);
+
+        return types;
+    }
+
+    pub fn bytesType() *const ConstantType {
+        const types: *const ConstantType = @ptrCast(&UplcBytes);
+        return types;
+    }
+
+    pub fn stringType() *const ConstantType {
+        const types: *const ConstantType = @ptrCast(&UplcString);
+        return types;
+    }
+
+    pub fn unitType() *const ConstantType {
+        const types: *const ConstantType = @ptrCast(&UplcUnit);
+        return types;
+    }
+
+    pub fn booleanType() *const ConstantType {
+        const types: *const ConstantType = @ptrCast(&UplcBoolean);
+        return types;
+    }
 };
 
-const UplcInteger = [2]u32{
-    1,
+const UplcInteger = [1]u32{
     @intFromEnum(ConstantType.integer),
 };
-const UplcBytes = [2]u32{
-    1,
+const UplcBytes = [1]u32{
     @intFromEnum(ConstantType.bytes),
 };
-const UplcString = [2]u32{
-    1,
+const UplcString = [1]u32{
     @intFromEnum(ConstantType.string),
 };
-const UplcUnit = [2]u32{
-    1,
+const UplcUnit = [1]u32{
     @intFromEnum(ConstantType.unit),
 };
 const UplcBoolean =
-    [2]u32{
-        1,
+    [1]u32{
         @intFromEnum(ConstantType.boolean),
     };
-const UplcListData = [3]u32{
-    2,
+const UplcListData = [2]u32{
     @intFromEnum(ConstantType.list),
     @intFromEnum(ConstantType.data),
 };
