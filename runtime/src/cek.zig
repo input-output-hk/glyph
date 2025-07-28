@@ -1480,20 +1480,20 @@ pub fn bls12_381_G1_Add(m: *Machine, args: *LinkedValues) *const Value {
     const q = args.value.unwrapG1();
     const p = args.next.?.value.unwrapG1();
 
-    var p_bytes: [96]u8 = undefined;
-    for (0..96) |i| p_bytes[i] = @truncate(p.bytes[i]);
-    var q_bytes: [96]u8 = undefined;
-    for (0..96) |i| q_bytes[i] = @truncate(q.bytes[i]);
+    var p_bytes: [48]u8 = undefined;
+    @memcpy(&p_bytes, p.bytes);
+    var q_bytes: [48]u8 = undefined;
+    @memcpy(&q_bytes, q.bytes);
 
     var aff_p: blst.blst_p1_affine = undefined;
-    if (blst.blst_p1_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p1_uncompress(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G1 point\n");
         utils.exit(std.math.maxInt(u32));
     }
     var point_p: blst.blst_p1 = undefined;
     blst.blst_p1_from_affine(&point_p, &aff_p);
     var aff_q: blst.blst_p1_affine = undefined;
-    if (blst.blst_p1_deserialize(&aff_q, &q_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p1_uncompress(&aff_q, &q_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G1 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1503,10 +1503,13 @@ pub fn bls12_381_G1_Add(m: *Machine, args: *LinkedValues) *const Value {
     var point_r: blst.blst_p1 = undefined;
     blst.blst_p1_add(&point_r, &point_p, &point_q);
 
-    var out_bytes: [96]u8 = undefined;
-    blst.blst_p1_serialize(&out_bytes, &point_r);
+    var buf = m.heap.createArray(u32, 13);
+    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g1_element());
+    // var out_bytes: [48]u8 = undefined;
+    const out_bytes: [*]u8 = @ptrCast(buf + 1);
+    blst.blst_p1_compress(out_bytes, &point_r);
 
-    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g1_element, 96, out_bytes[0..96]));
+    return createConst(m.heap, @ptrCast(buf));
 }
 
 pub fn bls12_381_G1_Neg(m: *Machine, args: *LinkedValues) *const Value {
@@ -4410,36 +4413,13 @@ test "bls12_381_G1_add" {
     // const p_bytes_hex = "abd61864f519748032551e42e0ac417fd828f079454e3e3c9891c5c29ed7f10bdecc046854e3931cb7002779bd76d71f";
     // const q_bytes_hex = "950dfd33da2682260c76038dfb8bad6e84ae9d599a3c151815945ac1e6ef6b1027cd917f3907479d20d636ce437a41f5";
     // const expected_hex = "a4870e983a149bb1e7cc70fde907a2aa52302833bce4d62f679819022924e9caab52e3631d376d36d9692664b4cfbc22";
+    const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+    const q_bytes: [*]const u8 = &[_]u8{ 0x95, 0x0d, 0xfd, 0x33, 0xda, 0x26, 0x82, 0x26, 0x0c, 0x76, 0x03, 0x8d, 0xfb, 0x8b, 0xad, 0x6e, 0x84, 0xae, 0x9d, 0x59, 0x9a, 0x3c, 0x15, 0x18, 0x15, 0x94, 0x5a, 0xc1, 0xe6, 0xef, 0x6b, 0x10, 0x27, 0xcd, 0x91, 0x7f, 0x39, 0x07, 0x47, 0x9d, 0x20, 0xd6, 0x36, 0xce, 0x43, 0x7a, 0x41, 0xf5 }; // Same as p for this test
 
-    const p_bytes: [*]const u32 = &[_]u32{
-        0xD60B170B, 0x197465F5, 0x421E5532, 0x7FA1CEE0,
-        0x79F028D8, 0x3C4E4545, 0xC5C19198, 0x0BF1D79E,
-        0x6804CCDE, 0x1C93E354, 0x277900B7, 0x1FD776BD,
-        0x53B17A14, 0x77A569E5, 0x04CB42C5, 0xFF4B5E04,
-        0x7ADEC097, 0x47B9A306, 0xC226948B, 0x4B5ED9EE,
-        0x275A8059, 0xB05D786F, 0xD3E03D4B, 0xF717BF02,
-    };
+    const expected_bytes: [*]const u8 = &[_]u8{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22 };
 
-    const q_bytes: [*]const u32 = &[_]u32{
-        0x33FD0D15, 0x268ADA82, 0x8D03760C, 0x6EAD8BFB,
-        0x599DAE84, 0x18153C9A, 0xC15A9415, 0x106BEFE6,
-        0x7F91CD27, 0x9D470739, 0xCE36D620, 0xF5417A43,
-        0x82B50705, 0xC2FC65D3, 0xD5C22D2A, 0x8EB80C6E,
-        0xD5342EC6, 0x66A5600B, 0xA5806C8E, 0xC38B9393,
-        0x432163C3, 0x020B2387, 0x6872269C, 0x660B1C85,
-    };
-
-    const expected_bytes: [*]const u32 = &[_]u32{
-        0x980E8704, 0xB19B143A, 0xFD70CCE7, 0xAAA207E9,
-        0x33283052, 0x2FD6E4BC, 0x02199867, 0xCAE92429,
-        0x63E352AB, 0x366D371D, 0x646826D9, 0x22BCCFB4,
-        0x134EC217, 0x29C72367, 0xE640F8C8, 0x5951F5E7,
-        0x1313A1AA, 0xDF4B94C1, 0x8BC5DE24, 0x2CEB9680,
-        0x5D5DC566, 0xBB14D586, 0x2D6F5EC4, 0x27802F5B,
-    };
-
-    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .length = 96, .bytes = q_bytes }, ConstantTypeList.bls12_381_g1_element())
-        .extend(&heap, expr.G1Element, expr.G1Element{ .length = 96, .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = q_bytes }, ConstantTypeList.bls12_381_g1_element())
+        .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
 
     const result_val = bls12_381_G1_Add(&machine, args);
 
@@ -4448,7 +4428,6 @@ test "bls12_381_G1_add" {
             switch (c.type_list.constType().*) {
                 .bls12_381_g1_element => {
                     const r = c.g1Element();
-                    try testing.expectEqual(48, r.length);
                     for (0..48) |i| {
                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
                     }
