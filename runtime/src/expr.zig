@@ -579,23 +579,25 @@ pub const List = struct {
 };
 
 pub const G1Element = extern struct {
-    length: u32,
-    bytes: [*]const u32,
+    bytes: [*]const u8,
 
     pub fn createConstant(
         self: G1Element,
         types: *const ConstantTypeList,
         heap: *Heap,
     ) *Constant {
-        const total_words: u32 = self.length + 2;
+        const total_words: u32 = 13;
         var buf = heap.createArray(u32, total_words);
 
         buf[0] = @intFromPtr(types);
-        buf[1] = self.length;
 
         var i: u32 = 0;
-        while (i < self.length) : (i += 1) {
-            buf[i + 2] = self.bytes[i];
+        while (i < 13) : (i += 1) {
+            const byte_offset = i * 4;
+            buf[i + 1] = (@as(u32, self.bytes[byte_offset])) |
+                (@as(u32, self.bytes[byte_offset + 1]) << 8) |
+                (@as(u32, self.bytes[byte_offset + 2]) << 16) |
+                (@as(u32, self.bytes[byte_offset + 3]) << 24);
         }
 
         return @ptrCast(buf);
@@ -703,12 +705,9 @@ pub const Constant = extern struct {
     }
 
     pub fn g1Element(self: *const Self) G1Element {
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+        const bytes: [*]const u8 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
 
         return G1Element{
-            .length = length.*,
             .bytes = bytes,
         };
     }
