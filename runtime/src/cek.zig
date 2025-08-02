@@ -1022,12 +1022,50 @@ pub fn mkCons(m: *Machine, args: *LinkedValues) *const Value {
     }
 }
 
-pub fn headList(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn headList(m: *Machine, args: *LinkedValues) *const Value {
+    const y = args.value;
+
+    const list = y.unwrapList();
+
+    if (list.length > 0) {
+        const c = Constant{
+            .length = list.type_length,
+            .type_list = list.inner_type,
+            .value = list.items.?.value,
+        };
+
+        const con = m.heap.create(Constant, &c);
+
+        return createConst(m.heap, con);
+    } else {
+        utils.printlnString("called headList on an empty list");
+        utils.exit(std.math.maxInt(u32));
+    }
 }
 
-pub fn tailList(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn tailList(m: *Machine, args: *LinkedValues) *const Value {
+    const y = args.value;
+
+    const list = y.unwrapList();
+
+    if (list.length > 0) {
+        const result = m.heap.createArray(u32, 2);
+        result[0] = list.length - 1;
+        result[1] = @intFromPtr(list.items.?.next);
+
+        const c = Constant{
+            .length = list.type_length,
+            .type_list = list.inner_type,
+            .value = @intFromPtr(result),
+        };
+
+        const con = m.heap.create(Constant, &c);
+
+        return createConst(m.heap, con);
+    } else {
+        utils.printlnString("called tailList on an empty list");
+        utils.exit(std.math.maxInt(u32));
+    }
 }
 
 pub fn nullList(_: *Machine, _: *LinkedValues) *const Value {
