@@ -89,7 +89,7 @@ pub type Result<T> = std::result::Result<T, SerializationError>;
 ///
 /// A `Result` containing the serialized program as a `Vec<u8>` or a `SerializationError`
 pub fn serialize_program(program: &Program<DeBruijn>) -> Result<Vec<u8>> {
-    serialize(program, 0)
+    serialize(program, 0, true)
 }
 
 /// Parse a UPLC file and serialize it to binary format
@@ -121,9 +121,21 @@ pub fn deserialize(_binary: &[u8]) -> Result<Program<DeBruijn>> {
 }
 
 /// Serialize the program to a binary format
-pub fn serialize(program: &Program<DeBruijn>, preceeding_byte_size: u32) -> Result<Vec<u8>> {
+pub fn serialize(
+    program: &Program<DeBruijn>,
+    preceeding_byte_size: u32,
+    space_for_input: bool,
+) -> Result<Vec<u8>> {
     // Now serialize the root term
     let mut x: Vec<u8> = Vec::new();
+
+    if space_for_input {
+        x.write_u32::<LittleEndian>(term_tag::APPLY)?;
+
+        // the input argument will be inserted by the emulator into .bss section aka 0xA0000000
+        x.write_u32::<LittleEndian>(0xA0000000)?;
+    }
+
     let serialized_bytes = serialize_term(preceeding_byte_size, &program.term)?;
 
     x.write_all(&serialized_bytes)?;

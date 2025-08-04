@@ -20,6 +20,9 @@ pub struct Args {
     /// Input contents will be hex decoded
     #[clap(long)]
     hex: bool,
+
+    #[clap(short, long, default_value = "false")]
+    no_input: bool,
 }
 
 #[derive(Copy, Clone, clap::ValueEnum)]
@@ -62,7 +65,8 @@ impl Args {
 
         let thing = glyph::Cek::default();
 
-        let riscv_program = glyph::serialize(&program, 0x90000000).into_diagnostic()?;
+        let riscv_program =
+            glyph::serialize(&program, 0x90000000, !self.no_input).into_diagnostic()?;
 
         let riscv_program = thing.cek_assembly(riscv_program).generate();
 
@@ -127,6 +131,8 @@ impl Args {
         fs::copy(program_elf_path, "program.elf")
             .await
             .into_diagnostic()?;
+
+        temp_dir.close().into_diagnostic()?;
 
         Ok(())
     }

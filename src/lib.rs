@@ -1,4 +1,4 @@
-mod cek;
+pub mod cek;
 mod emulator;
 mod serializer;
 

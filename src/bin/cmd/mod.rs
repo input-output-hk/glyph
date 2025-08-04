@@ -2,6 +2,7 @@ use clap::Parser;
 
 mod build;
 mod compile;
+mod run;
 
 pub const BANNER: &str = color_print::cstr! {
 r#"
@@ -41,6 +42,7 @@ impl Cli {
 pub enum Cmd {
     Build(build::Args),
     Compile(compile::Args),
+    Run(run::Args),
 }
 
 impl Cmd {
@@ -48,6 +50,7 @@ impl Cmd {
         match self {
             Cmd::Build(args) => args.exec().await,
             Cmd::Compile(args) => args.exec().await,
+            Cmd::Run(args) => args.exec().await,
         }
     }
 }

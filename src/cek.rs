@@ -1,5 +1,9 @@
 use crate::emulator::{Assign, CodeGenerator, Instruction, Register};
 use crate::serializer::constants::const_tag::{self, BOOL};
+use emulator::ExecutionResult;
+use emulator::executor::fetcher::{FullTrace, execute_program};
+use emulator::executor::utils::FailConfiguration;
+use emulator::loader::program::{self, load_elf};
 use strum::IntoEnumIterator;
 
 // pub enum Value {
@@ -5503,6 +5507,36 @@ impl Default for Cek {
     }
 }
 
+/// Run a RISC-V ELF file by executing it in the BitVMX emulator with an input
+pub fn run_file(
+    fname: &str,
+    input: Vec<u8>,
+) -> Result<(ExecutionResult, FullTrace, program::Program), ExecutionResult> {
+    let mut program = load_elf(fname, true).unwrap();
+
+    // Execute the program with default settings
+
+    let (result, trace) = execute_program(
+        &mut program,
+        input,
+        ".bss",
+        true,
+        &None,
+        None,
+        true,
+        false,
+        false,
+        true,
+        true,
+        true,
+        None,
+        None,
+        FailConfiguration::default(),
+    );
+
+    Ok((result, trace, program))
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs::{self};
@@ -5525,7 +5559,7 @@ mod tests {
     /// Verify a RISC-V ELF file by executing it in the BitVMX emulator
     pub fn verify_file(
         fname: &str,
-    ) -> std::result::Result<(ExecutionResult, FullTrace, program::Program), ExecutionResult> {
+    ) -> Result<(ExecutionResult, FullTrace, program::Program), ExecutionResult> {
         let mut program = load_elf(fname, true).unwrap();
 
         // Execute the program with default settings
@@ -5534,7 +5568,7 @@ mod tests {
             &mut program,
             Vec::new(),
             ".bss",
-            false,
+            true,
             &None,
             None,
             true,
@@ -5952,7 +5986,7 @@ mod tests {
             term,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -6029,7 +6063,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -6105,7 +6139,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -6181,7 +6215,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -6305,7 +6339,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -6429,7 +6463,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -6557,7 +6591,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -6675,7 +6709,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -6793,7 +6827,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -6906,7 +6940,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -7026,7 +7060,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -7147,7 +7181,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -7266,7 +7300,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
@@ -7387,7 +7421,7 @@ mod tests {
             term: term_debruijn,
         };
 
-        let riscv_program = serialize(&program, 0x90000000).unwrap();
+        let riscv_program = serialize(&program, 0x90000000, false).unwrap();
 
         let gene = thing.cek_assembly(riscv_program);
 
