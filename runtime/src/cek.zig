@@ -1592,7 +1592,13 @@ pub const Machine = struct {
                         .branches = cs.branches,
                     },
                 });
-                return self.compute(env, cs.constr);
+
+                return State{
+                    .compute = .{
+                        .env = env,
+                        .term = cs.constr,
+                    },
+                };
             },
         }
     }
@@ -1617,6 +1623,7 @@ pub const Machine = struct {
                         },
                     },
                 );
+
                 return State{
                     .compute = .{
                         .env = arg.env,

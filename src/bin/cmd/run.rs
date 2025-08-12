@@ -48,7 +48,7 @@ impl Args {
             buffer
         };
 
-        let riscv_input = if program.is_empty() {
+        let riscv_input = if !program.is_empty() {
             let program: Program<DeBruijn> = match self.encoding {
                 Encoding::Cbor => todo!(),
                 Encoding::Flat => todo!(),

@@ -123,7 +123,7 @@ pub fn deserialize(_binary: &[u8]) -> Result<Program<DeBruijn>> {
 /// Serialize the program to a binary format
 pub fn serialize(
     program: &Program<DeBruijn>,
-    preceeding_byte_size: u32,
+    mut preceeding_byte_size: u32,
     space_for_input: bool,
 ) -> Result<Vec<u8>> {
     // Now serialize the root term
@@ -134,6 +134,8 @@ pub fn serialize(
 
         // the input argument will be inserted by the emulator into .bss section aka 0xA0000000
         x.write_u32::<LittleEndian>(0xA0000000)?;
+
+        preceeding_byte_size += 8;
     }
 
     let serialized_bytes = serialize_term(preceeding_byte_size, &program.term)?;
@@ -575,18 +577,12 @@ fn serialize_constructor(
 
     // Serialize each field with its appropriate offset and collect results
     let mut field_bodies = Vec::with_capacity(fields.len());
-    let mut field_pointers = Vec::with_capacity(fields.len());
 
     for field in fields {
-        field_pointers.push(current_offset);
+        x.write_u32::<LittleEndian>(current_offset)?;
         let field_body = serialize_term(current_offset, field)?;
         current_offset += field_body.len() as u32;
         field_bodies.push(field_body);
-    }
-
-    // Write field pointers (not sizes)
-    for pointer in &field_pointers {
-        x.write_u32::<LittleEndian>(*pointer)?;
     }
 
     // Write field bodies
@@ -615,31 +611,24 @@ fn serialize_case(
     // - 4 bytes per branch for branch pointers
     let mut current_offset = preceeding_byte_size + 4 + 4 + 4 + (branches.len() as u32 * 4);
 
-    // Serialize the constructor expression
-    let constr_pointer = current_offset;
-    let constr_ser = serialize_term(constr_pointer, constr)?;
-    current_offset += constr_ser.len() as u32;
+    // Constructor pointer
+    x.write_u32::<LittleEndian>(current_offset)?;
 
     // Case count (32-bit)
     x.write_u32::<LittleEndian>(branches.len() as u32)?;
 
-    // Write constructor pointer (not size)
-    x.write_u32::<LittleEndian>(constr_pointer)?;
+    // Serialize the constructor expression
+    let constr_ser = serialize_term(current_offset, constr)?;
+    current_offset += constr_ser.len() as u32;
 
     // Serialize each branch and collect pointers
-    let mut branch_pointers = Vec::with_capacity(branches.len());
     let mut branch_bodies = Vec::with_capacity(branches.len());
 
     for branch in branches {
-        branch_pointers.push(current_offset);
+        x.write_u32::<LittleEndian>(current_offset)?;
         let branch_ser = serialize_term(current_offset, branch)?;
         current_offset += branch_ser.len() as u32;
         branch_bodies.push(branch_ser);
-    }
-
-    // Write branch pointers (not sizes)
-    for branch_pointer in &branch_pointers {
-        x.write_u32::<LittleEndian>(*branch_pointer)?;
     }
 
     // Write constructor body
