@@ -2075,12 +2075,19 @@ test "case compute ret" {
     };
 
     nextState = switch (nextState) {
-        .ret => |r| blk: {
-            break :blk machine.ret(r.value);
+        .compute => |c| blk: {
+            break :blk machine.compute(c.env, c.term);
         },
         else => {
             @panic("HERE???2");
         },
+    };
+
+    nextState = switch (nextState) {
+        .ret => |r| blk: {
+            break :blk machine.ret(r.value);
+        },
+        else => @panic("HERE???3"),
     };
 
     nextState = switch (nextState) {
@@ -2095,7 +2102,7 @@ test "case compute ret" {
             break :blk machine.ret(r.value);
         },
         else => {
-            @panic("HERE???2");
+            @panic("HERE???5");
         },
     };
 
