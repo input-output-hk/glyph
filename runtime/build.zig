@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) !void {
 
     const obj = b.addObject(.{
         .name = "runtime",
-        .root_source_file = b.path("src/root.zig"),
+        .root_source_file = b.path("src/runtimeValidator.zig"),
         .target = riscvBuildTarget,
         .optimize = .ReleaseFast,
     });
@@ -23,6 +23,19 @@ pub fn build(b: *std.Build) !void {
     const file = b.addInstallFile(loc, "lib/runtime.o");
 
     b.getInstallStep().dependOn(&file.step);
+
+    const objRuntimeFunction = b.addObject(.{
+        .name = "runtimeFunction",
+        .root_source_file = b.path("src/runtimeFunction.zig"),
+        .target = riscvBuildTarget,
+        .optimize = .ReleaseFast,
+    });
+
+    const locrf = objRuntimeFunction.getEmittedBin();
+
+    const filerf = b.addInstallFile(locrf, "lib/runtimeFunction.o");
+
+    b.getInstallStep().dependOn(&filerf.step);
 
     const memsetObj = b.addObject(.{
         .name = "memset",
@@ -46,7 +59,7 @@ pub fn build(b: *std.Build) !void {
     const riscv_test_target = b.resolveTargetQuery(riscv_test_target_query);
 
     const lib_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/root.zig"),
+        .root_source_file = b.path("src/runtimeFunction.zig"),
         .target = riscv_test_target,
         .optimize = optimize,
     });

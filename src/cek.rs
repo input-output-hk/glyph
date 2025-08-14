@@ -5542,8 +5542,10 @@ mod tests {
     use std::fs::{self};
     use std::process::Command;
 
+    use crate::constants::value_tag;
     use crate::serializer::{constants::const_tag, serialize};
-    use crate::{LINKER_SCRIPT, MEMSET, RUNTIME};
+    use crate::{LINKER_SCRIPT, MEMSET, RUNTIMEFUNCTION};
+    use emulator::executor::fetcher::TraceStepResult;
     use emulator::{
         ExecutionResult,
         executor::{
@@ -5557,7 +5559,7 @@ mod tests {
     use crate::cek::Cek;
 
     /// Verify a RISC-V ELF file by executing it in the BitVMX emulator
-    pub fn verify_file(
+    fn verify_file(
         fname: &str,
     ) -> Result<(ExecutionResult, FullTrace, program::Program), ExecutionResult> {
         let mut program = load_elf(fname, true).unwrap();
@@ -5583,6 +5585,19 @@ mod tests {
         );
 
         Ok((result, trace, program))
+    }
+
+    fn deref_pointer(
+        v: &(ExecutionResult, Vec<TraceStepResult>, program::Program),
+        pointer: u32,
+    ) -> (&[u32], usize) {
+        let section = v.2.find_section(pointer).unwrap();
+
+        let section_data = &section.data;
+
+        let offset_index = ((pointer - section.start) / 4) as usize;
+
+        (section_data, offset_index)
     }
 
     // #[test]
@@ -6010,7 +6025,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -6087,7 +6102,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -6163,7 +6178,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -6239,7 +6254,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -6276,29 +6291,17 @@ mod tests {
 
         assert_ne!(result_pointer, u32::MAX);
 
-        let section = v.2.find_section(result_pointer).unwrap();
+        let (section_data, offset_index) = deref_pointer(&v, result_pointer);
 
-        let section_data = &section.data;
-
-        let offset_index = ((result_pointer - section.start) / 4) as usize;
-
-        assert_eq!(section_data[offset_index], 0);
+        assert_eq!(section_data[offset_index], value_tag::CONSTANT);
 
         let constant_pointer = section_data[offset_index + 1].to_be();
 
-        let section = v.2.find_section(constant_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((constant_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, constant_pointer);
 
         let type_pointer = section_data[offset_index + 1].to_be();
 
-        let type_section = v.2.find_section(type_pointer).unwrap();
-
-        let type_section_data = &type_section.data;
-
-        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+        let (type_section_data, type_offset_index) = deref_pointer(&v, type_pointer);
 
         let type_length = section_data[offset_index];
 
@@ -6308,17 +6311,20 @@ mod tests {
 
         assert_eq!(const_tag::INTEGER, integer_type.to_be());
 
-        let sign = section_data[offset_index + 2];
+        let (section_data, offset_index) =
+            deref_pointer(&v, section_data[offset_index + 2].to_be());
+
+        let sign = section_data[offset_index];
 
         assert_eq!(1, sign.to_be());
 
-        let length = section_data[offset_index + 3];
+        let length = section_data[offset_index + 1];
 
         assert_eq!(2, length.to_be());
 
-        let mut word = section_data[offset_index + 4].to_be() as u64;
+        let mut word = section_data[offset_index + 2].to_be() as u64;
 
-        word += section_data[offset_index + 5].to_be() as u64 * 256_u64.pow(4);
+        word += section_data[offset_index + 3].to_be() as u64 * 256_u64.pow(4);
 
         assert_eq!(word, 5000000005);
     }
@@ -6363,7 +6369,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -6400,29 +6406,17 @@ mod tests {
 
         assert_ne!(result_pointer, u32::MAX);
 
-        let section = v.2.find_section(result_pointer).unwrap();
+        let (section_data, offset_index) = deref_pointer(&v, result_pointer);
 
-        let section_data = &section.data;
-
-        let offset_index = ((result_pointer - section.start) / 4) as usize;
-
-        assert_eq!(section_data[offset_index], 0);
+        assert_eq!(section_data[offset_index], value_tag::CONSTANT);
 
         let constant_pointer = section_data[offset_index + 1].to_be();
 
-        let section = v.2.find_section(constant_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((constant_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, constant_pointer);
 
         let type_pointer = section_data[offset_index + 1].to_be();
 
-        let type_section = v.2.find_section(type_pointer).unwrap();
-
-        let type_section_data = &type_section.data;
-
-        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+        let (type_section_data, type_offset_index) = deref_pointer(&v, type_pointer);
 
         let type_length = section_data[offset_index];
 
@@ -6431,18 +6425,20 @@ mod tests {
         let integer_type = type_section_data[type_offset_index];
 
         assert_eq!(const_tag::INTEGER, integer_type.to_be());
+        let (section_data, offset_index) =
+            deref_pointer(&v, section_data[offset_index + 2].to_be());
 
-        let sign = section_data[offset_index + 2];
+        let sign = section_data[offset_index];
 
         assert_eq!(1, sign.to_be());
 
-        let length = section_data[offset_index + 3];
+        let length = section_data[offset_index + 1];
 
         assert_eq!(2, length.to_be());
 
-        let mut word = section_data[offset_index + 4].to_be() as u64;
+        let mut word = section_data[offset_index + 2].to_be() as u64;
 
-        word += section_data[offset_index + 5].to_be() as u64 * 256_u64.pow(4);
+        word += section_data[offset_index + 3].to_be() as u64 * 256_u64.pow(4);
 
         assert_eq!(word, 4999999995);
     }
@@ -6487,7 +6483,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -6524,29 +6520,17 @@ mod tests {
 
         assert_ne!(result_pointer, u32::MAX);
 
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((result_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, result_pointer);
 
         assert_eq!(section_data[offset_index], 0);
 
         let constant_pointer = section_data[offset_index + 1].to_be();
 
-        let section = v.2.find_section(constant_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((constant_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, constant_pointer);
 
         let type_pointer = section_data[offset_index + 1].to_be();
 
-        let type_section = v.2.find_section(type_pointer).unwrap();
-
-        let type_section_data = &type_section.data;
-
-        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+        let (type_section_data, type_offset_index) = deref_pointer(&v, type_pointer);
 
         let type_length = section_data[offset_index];
 
@@ -6556,17 +6540,20 @@ mod tests {
 
         assert_eq!(const_tag::INTEGER, integer_type.to_be());
 
-        let sign = section_data[offset_index + 2];
+        let (section_data, offset_index) =
+            deref_pointer(&v, section_data[offset_index + 2].to_be());
+
+        let sign = section_data[offset_index];
 
         assert_eq!(0, sign.to_be());
 
-        let length = section_data[offset_index + 3];
+        let length = section_data[offset_index + 1];
 
         assert_eq!(2, length.to_be());
 
-        let mut word = section_data[offset_index + 4].to_be() as u64;
+        let mut word = section_data[offset_index + 2].to_be() as u64;
 
-        word += section_data[offset_index + 5].to_be() as u64 * 256_u64.pow(4);
+        word += section_data[offset_index + 3].to_be() as u64 * 256_u64.pow(4);
 
         assert_eq!(word, 4999999995);
     }
@@ -6615,7 +6602,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -6652,29 +6639,17 @@ mod tests {
 
         assert_ne!(result_pointer, u32::MAX);
 
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((result_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, result_pointer);
 
         assert_eq!(section_data[offset_index], 0);
 
         let constant_pointer = section_data[offset_index + 1].to_be();
 
-        let section = v.2.find_section(constant_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((constant_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, constant_pointer);
 
         let type_pointer = section_data[offset_index + 1].to_be();
 
-        let type_section = v.2.find_section(type_pointer).unwrap();
-
-        let type_section_data = &type_section.data;
-
-        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+        let (type_section_data, type_offset_index) = deref_pointer(&v, type_pointer);
 
         let type_length = section_data[offset_index];
 
@@ -6684,7 +6659,10 @@ mod tests {
 
         assert_eq!(const_tag::BOOL, integer_type.to_be());
 
-        let value = section_data[offset_index + 2];
+        let (section_data, offset_index) =
+            deref_pointer(&v, section_data[offset_index + 2].to_be());
+
+        let value = section_data[offset_index];
 
         assert_eq!(1, value.to_be());
     }
@@ -6733,7 +6711,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -6770,29 +6748,17 @@ mod tests {
 
         assert_ne!(result_pointer, u32::MAX);
 
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((result_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, result_pointer);
 
         assert_eq!(section_data[offset_index], 0);
 
         let constant_pointer = section_data[offset_index + 1].to_be();
 
-        let section = v.2.find_section(constant_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((constant_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, constant_pointer);
 
         let type_pointer = section_data[offset_index + 1].to_be();
 
-        let type_section = v.2.find_section(type_pointer).unwrap();
-
-        let type_section_data = &type_section.data;
-
-        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+        let (type_section_data, type_offset_index) = deref_pointer(&v, type_pointer);
 
         let type_length = section_data[offset_index];
 
@@ -6802,7 +6768,10 @@ mod tests {
 
         assert_eq!(const_tag::BOOL, integer_type.to_be());
 
-        let value = section_data[offset_index + 2];
+        let (section_data, offset_index) =
+            deref_pointer(&v, section_data[offset_index + 2].to_be());
+
+        let value = section_data[offset_index];
 
         assert_eq!(0, value.to_be());
     }
@@ -6851,7 +6820,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -6888,29 +6857,17 @@ mod tests {
 
         assert_ne!(result_pointer, u32::MAX);
 
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((result_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, result_pointer);
 
         assert_eq!(section_data[offset_index], 0);
 
         let constant_pointer = section_data[offset_index + 1].to_be();
 
-        let section = v.2.find_section(constant_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((constant_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, constant_pointer);
 
         let type_pointer = section_data[offset_index + 1].to_be();
 
-        let type_section = v.2.find_section(type_pointer).unwrap();
-
-        let type_section_data = &type_section.data;
-
-        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+        let (type_section_data, type_offset_index) = deref_pointer(&v, type_pointer);
 
         let type_length = section_data[offset_index];
 
@@ -6920,7 +6877,10 @@ mod tests {
 
         assert_eq!(const_tag::BOOL, integer_type.to_be());
 
-        let value = section_data[offset_index + 2];
+        let (section_data, offset_index) =
+            deref_pointer(&v, section_data[offset_index + 2].to_be());
+
+        let value = section_data[offset_index];
 
         assert_eq!(1, value.to_be());
     }
@@ -6964,7 +6924,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -7001,29 +6961,17 @@ mod tests {
 
         assert_ne!(result_pointer, u32::MAX);
 
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((result_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, result_pointer);
 
         assert_eq!(section_data[offset_index], 0);
 
         let constant_pointer = section_data[offset_index + 1].to_be();
 
-        let section = v.2.find_section(constant_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((constant_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, constant_pointer);
 
         let type_pointer = section_data[offset_index + 1].to_be();
 
-        let type_section = v.2.find_section(type_pointer).unwrap();
-
-        let type_section_data = &type_section.data;
-
-        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+        let (type_section_data, type_offset_index) = deref_pointer(&v, type_pointer);
 
         let type_length = section_data[offset_index];
 
@@ -7033,11 +6981,14 @@ mod tests {
 
         assert_eq!(const_tag::BYTESTRING, integer_type.to_be());
 
-        let byte_length = section_data[offset_index + 2];
+        let (section_data, offset_index) =
+            deref_pointer(&v, section_data[offset_index + 2].to_be());
+
+        let byte_length = section_data[offset_index];
 
         assert_eq!(byte_length.to_be(), 4);
 
-        let value = section_data[(offset_index + 3)..(offset_index + 7)]
+        let value = section_data[(offset_index + 1)..(offset_index + 5)]
             .iter()
             .map(|i| i.to_be())
             .collect::<Vec<u32>>();
@@ -7084,7 +7035,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -7121,29 +7072,17 @@ mod tests {
 
         assert_ne!(result_pointer, u32::MAX);
 
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((result_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, result_pointer);
 
         assert_eq!(section_data[offset_index], 0);
 
         let constant_pointer = section_data[offset_index + 1].to_be();
 
-        let section = v.2.find_section(constant_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((constant_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, constant_pointer);
 
         let type_pointer = section_data[offset_index + 1].to_be();
 
-        let type_section = v.2.find_section(type_pointer).unwrap();
-
-        let type_section_data = &type_section.data;
-
-        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+        let (type_section_data, type_offset_index) = deref_pointer(&v, type_pointer);
 
         let type_length = section_data[offset_index];
 
@@ -7153,11 +7092,14 @@ mod tests {
 
         assert_eq!(constant_type.to_be(), const_tag::BYTESTRING);
 
-        let byte_length = section_data[offset_index + 2];
+        let (section_data, offset_index) =
+            deref_pointer(&v, section_data[offset_index + 2].to_be());
+
+        let byte_length = section_data[offset_index];
 
         assert_eq!(byte_length.to_be(), 3);
 
-        let value = section_data[(offset_index + 3)..(offset_index + 6)]
+        let value = section_data[(offset_index + 1)..(offset_index + 4)]
             .iter()
             .map(|i| i.to_be())
             .collect::<Vec<u32>>();
@@ -7205,7 +7147,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -7242,29 +7184,17 @@ mod tests {
 
         assert_ne!(result_pointer, u32::MAX);
 
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((result_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, result_pointer);
 
         assert_eq!(section_data[offset_index], 0);
 
         let constant_pointer = section_data[offset_index + 1].to_be();
 
-        let section = v.2.find_section(constant_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((constant_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, constant_pointer);
 
         let type_pointer = section_data[offset_index + 1].to_be();
 
-        let type_section = v.2.find_section(type_pointer).unwrap();
-
-        let type_section_data = &type_section.data;
-
-        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+        let (type_section_data, type_offset_index) = deref_pointer(&v, type_pointer);
 
         let type_length = section_data[offset_index];
 
@@ -7274,11 +7204,14 @@ mod tests {
 
         assert_eq!(const_tag::BYTESTRING, bytestring_type.to_be());
 
-        let byte_length = section_data[offset_index + 2];
+        let (section_data, offset_index) =
+            deref_pointer(&v, section_data[offset_index + 2].to_be());
+
+        let byte_length = section_data[offset_index];
 
         assert_eq!(byte_length.to_be(), 2);
 
-        let value = section_data[(offset_index + 3)..(offset_index + 5)]
+        let value = section_data[(offset_index + 1)..(offset_index + 3)]
             .iter()
             .map(|i| i.to_be())
             .collect::<Vec<u32>>();
@@ -7324,7 +7257,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -7361,29 +7294,17 @@ mod tests {
 
         assert_ne!(result_pointer, u32::MAX);
 
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((result_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, result_pointer);
 
         assert_eq!(section_data[offset_index], 0);
 
         let constant_pointer = section_data[offset_index + 1].to_be();
 
-        let section = v.2.find_section(constant_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((constant_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, constant_pointer);
 
         let type_pointer = section_data[offset_index + 1].to_be();
 
-        let type_section = v.2.find_section(type_pointer).unwrap();
-
-        let type_section_data = &type_section.data;
-
-        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+        let (type_section_data, type_offset_index) = deref_pointer(&v, type_pointer);
 
         let type_length = section_data[offset_index];
 
@@ -7393,15 +7314,18 @@ mod tests {
 
         assert_eq!(const_tag::INTEGER, integer_type.to_be());
 
-        let sign = section_data[offset_index + 2];
+        let (section_data, offset_index) =
+            deref_pointer(&v, section_data[offset_index + 2].to_be());
+
+        let sign = section_data[offset_index];
 
         assert_eq!(sign.to_be(), 0);
 
-        let length = section_data[offset_index + 3];
+        let length = section_data[offset_index + 1];
 
         assert_eq!(length.to_be(), 1);
 
-        let value = section_data[offset_index + 4];
+        let value = section_data[offset_index + 2];
 
         assert_eq!(value.to_be(), 4);
     }
@@ -7445,7 +7369,7 @@ mod tests {
 
         // create runtime.o file in temp_dir
         let runtime_o_path = temp_dir.path().join("runtime.o");
-        fs::write(runtime_o_path, RUNTIME).unwrap();
+        fs::write(runtime_o_path, RUNTIMEFUNCTION).unwrap();
 
         // create memset.o file in temp_dir
         let memset_o_path = temp_dir.path().join("memset.o");
@@ -7482,29 +7406,17 @@ mod tests {
 
         assert_ne!(result_pointer, u32::MAX);
 
-        let section = v.2.find_section(result_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((result_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, result_pointer);
 
         assert_eq!(section_data[offset_index], 0);
 
         let constant_pointer = section_data[offset_index + 1].to_be();
 
-        let section = v.2.find_section(constant_pointer).unwrap();
-
-        let section_data = &section.data;
-
-        let offset_index = ((constant_pointer - section.start) / 4) as usize;
+        let (section_data, offset_index) = deref_pointer(&v, constant_pointer);
 
         let type_pointer = section_data[offset_index + 1].to_be();
 
-        let type_section = v.2.find_section(type_pointer).unwrap();
-
-        let type_section_data = &type_section.data;
-
-        let type_offset_index = ((type_pointer - type_section.start) / 4) as usize;
+        let (type_section_data, type_offset_index) = deref_pointer(&v, type_pointer);
 
         let type_length = section_data[offset_index];
 
@@ -7514,15 +7426,18 @@ mod tests {
 
         assert_eq!(const_tag::INTEGER, bytestring_type.to_be());
 
-        let sign = section_data[offset_index + 2];
+        let (section_data, offset_index) =
+            deref_pointer(&v, section_data[offset_index + 2].to_be());
+
+        let sign = section_data[offset_index];
 
         assert_eq!(sign.to_be(), 0);
 
-        let length = section_data[offset_index + 3];
+        let length = section_data[offset_index + 1];
 
         assert_eq!(length.to_be(), 1);
 
-        let value = section_data[offset_index + 4];
+        let value = section_data[offset_index + 2];
 
         assert_eq!(value.to_be(), 254);
     }

@@ -6,6 +6,7 @@ pub use cek::Cek;
 pub use serializer::*;
 
 // CEK Semantics written in zig
+pub const RUNTIMEFUNCTION: &[u8] = include_bytes!("../runtime/zig-out/lib/runtimeFunction.o");
 pub const RUNTIME: &[u8] = include_bytes!("../runtime/zig-out/lib/runtime.o");
 
 // Some weird thing cause idk
