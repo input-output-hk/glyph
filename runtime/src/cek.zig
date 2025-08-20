@@ -1430,14 +1430,6 @@ pub fn verifySchnorrSecp256k1Signature(_: *Machine, _: *LinkedValues) *const Val
 }
 
 // BLS Builtins
-fn bytesToU8(heap: *Heap, b: Bytes) []u8 {
-    const word_array = heap.createArray(u32, b.length / 4);
-    const byte_array = @as([*]u8, @ptrCast(word_array))[0..b.length];
-    for (0..b.length) |i| {
-        byte_array[i] = @truncate(b.bytes[i]);
-    }
-    return byte_array;
-}
 
 fn integerToScalarBytes(bi: BigInt) [32]u8 {
     if (bi.sign != 0) {
@@ -1464,16 +1456,24 @@ fn integerToScalarBytes(bi: BigInt) [32]u8 {
     return scalar_bytes;
 }
 
-fn createElementConstant(heap: *Heap, typ: ConstantType, len: u32, u8bytes: []const u8) *Constant {
-    if (u8bytes.len != len) unreachable;
-    var buf = heap.createArray(u32, len + 3);
-    buf[0] = 1;
-    buf[1] = @intFromEnum(typ);
-    buf[2] = len;
-    for (0..len) |i| {
-        buf[3 + i] = u8bytes[i];
+fn blst_fp12_from_bendian(ret: *blst.blst_fp12, bytes: [*]const u8) c_int {
+    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[0].fp[0], bytes + 0 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[0].fp[1], bytes + 1 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[1].fp[0], bytes + 2 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[1].fp[1], bytes + 3 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[2].fp[0], bytes + 4 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[2].fp[1], bytes + 5 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[0].fp[0], bytes + 6 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[0].fp[1], bytes + 7 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[1].fp[0], bytes + 8 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[1].fp[1], bytes + 9 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[2].fp[0], bytes + 10 * 48);
+    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[2].fp[1], bytes + 11 * 48);
+    if (blst.blst_fp12_in_group(ret)) {
+        return blst.BLST_SUCCESS;
+    } else {
+        return blst.BLST_BAD_ENCODING;
     }
-    return @ptrCast(buf);
 }
 
 pub fn bls12_381_G1_Add(m: *Machine, args: *LinkedValues) *const Value {
@@ -1505,7 +1505,6 @@ pub fn bls12_381_G1_Add(m: *Machine, args: *LinkedValues) *const Value {
 
     var buf = m.heap.createArray(u32, 13);
     buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g1_element());
-    // var out_bytes: [48]u8 = undefined;
     const out_bytes: [*]u8 = @ptrCast(buf + 1);
     blst.blst_p1_compress(out_bytes, &point_r);
 
@@ -1515,11 +1514,11 @@ pub fn bls12_381_G1_Add(m: *Machine, args: *LinkedValues) *const Value {
 pub fn bls12_381_G1_Neg(m: *Machine, args: *LinkedValues) *const Value {
     const p = args.value.unwrapG1();
 
-    var p_bytes: [96]u8 = undefined;
-    for (0..96) |i| p_bytes[i] = @truncate(p.bytes[i]);
+    var p_bytes: [48]u8 = undefined;
+    @memcpy(&p_bytes, p.bytes);
 
     var aff_p: blst.blst_p1_affine = undefined;
-    if (blst.blst_p1_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p1_uncompress(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G1 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1528,21 +1527,23 @@ pub fn bls12_381_G1_Neg(m: *Machine, args: *LinkedValues) *const Value {
 
     blst.blst_p1_cneg(&point_p, true);
 
-    var out_bytes: [96]u8 = undefined;
-    blst.blst_p1_serialize(&out_bytes, &point_p);
+    var buf = m.heap.createArray(u32, 13);
+    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g1_element());
+    const out_ptr: [*]u8 = @ptrCast(buf + 1);
+    blst.blst_p1_compress(out_ptr, &point_p);
 
-    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g1_element, 96, out_bytes[0..96]));
+    return createConst(m.heap, @ptrCast(buf));
 }
 
 pub fn bls12_381_G1_ScalarMul(m: *Machine, args: *LinkedValues) *const Value {
     const scalar = args.value.unwrapInteger();
     const p = args.next.?.value.unwrapG1();
 
-    var p_bytes: [96]u8 = undefined;
-    for (0..96) |i| p_bytes[i] = @truncate(p.bytes[i]);
+    var p_bytes: [48]u8 = undefined;
+    @memcpy(&p_bytes, p.bytes);
 
     var aff_p: blst.blst_p1_affine = undefined;
-    if (blst.blst_p1_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p1_uncompress(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G1 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1554,23 +1555,25 @@ pub fn bls12_381_G1_ScalarMul(m: *Machine, args: *LinkedValues) *const Value {
     var point_r: blst.blst_p1 = undefined;
     blst.blst_p1_mult(&point_r, &point_p, &scalar_bytes, 256);
 
-    var out_bytes: [96]u8 = undefined;
-    blst.blst_p1_serialize(&out_bytes, &point_r);
+    var buf = m.heap.createArray(u32, 13);
+    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g1_element());
+    const out_ptr: [*]u8 = @ptrCast(buf + 1);
+    blst.blst_p1_compress(out_ptr, &point_r);
 
-    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g1_element, 96, out_bytes[0..96]));
+    return createConst(m.heap, @ptrCast(buf));
 }
 
 pub fn bls12_381_G1_Equal(m: *Machine, args: *LinkedValues) *const Value {
     const q = args.value.unwrapG1();
     const p = args.next.?.value.unwrapG1();
 
-    var p_bytes: [96]u8 = undefined;
-    for (0..96) |i| p_bytes[i] = @truncate(p.bytes[i]);
-    var q_bytes: [96]u8 = undefined;
-    for (0..96) |i| q_bytes[i] = @truncate(q.bytes[i]);
+    var p_bytes: [48]u8 = undefined;
+    @memcpy(&p_bytes, p.bytes);
+    var q_bytes: [48]u8 = undefined;
+    @memcpy(&q_bytes, q.bytes);
 
     var aff_p: blst.blst_p1_affine = undefined;
-    if (blst.blst_p1_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p1_uncompress(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G1 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1578,7 +1581,7 @@ pub fn bls12_381_G1_Equal(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p1_from_affine(&point_p, &aff_p);
 
     var aff_q: blst.blst_p1_affine = undefined;
-    if (blst.blst_p1_deserialize(&aff_q, &q_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p1_uncompress(&aff_q, &q_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G1 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1587,10 +1590,9 @@ pub fn bls12_381_G1_Equal(m: *Machine, args: *LinkedValues) *const Value {
 
     const equal = blst.blst_p1_is_equal(&point_p, &point_q);
 
-    var result = m.heap.createArray(u32, 3);
-    result[0] = 1;
-    result[1] = @intFromEnum(ConstantType.boolean);
-    result[2] = @intFromBool(equal);
+    var result = m.heap.createArray(u32, 2);
+    result[0] = @intFromPtr(ConstantTypeList.boolean());
+    result[1] = @intFromBool(equal);
 
     return createConst(m.heap, @ptrCast(result));
 }
@@ -1598,11 +1600,11 @@ pub fn bls12_381_G1_Equal(m: *Machine, args: *LinkedValues) *const Value {
 pub fn bls12_381_G1_Compress(m: *Machine, args: *LinkedValues) *const Value {
     const p = args.value.unwrapG1();
 
-    var p_bytes: [96]u8 = undefined;
-    for (0..96) |i| p_bytes[i] = @truncate(p.bytes[i]);
+    var p_bytes: [48]u8 = undefined;
+    @memcpy(&p_bytes, p.bytes);
 
     var aff_p: blst.blst_p1_affine = undefined;
-    if (blst.blst_p1_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p1_uncompress(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G1 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1612,12 +1614,11 @@ pub fn bls12_381_G1_Compress(m: *Machine, args: *LinkedValues) *const Value {
     var out_bytes: [48]u8 = undefined;
     blst.blst_p1_compress(&out_bytes, &point_p);
 
-    var buf = m.heap.createArray(u32, 48 + 3);
-    buf[0] = 1;
-    buf[1] = @intFromEnum(ConstantType.bytes);
-    buf[2] = 48;
+    var buf = m.heap.createArray(u32, 50);
+    buf[0] = @intFromPtr(ConstantTypeList.bytes());
+    buf[1] = 48;
     for (0..48) |i| {
-        buf[3 + i] = out_bytes[i];
+        buf[2 + i] = out_bytes[i];
     }
 
     return createConst(m.heap, @ptrCast(buf));
@@ -1631,7 +1632,9 @@ pub fn bls12_381_G1_Uncompress(m: *Machine, args: *LinkedValues) *const Value {
     }
 
     var in_bytes: [48]u8 = undefined;
-    for (0..48) |i| in_bytes[i] = @truncate(bs.bytes[i]);
+    for (0..48) |i| {
+        in_bytes[i] = @truncate(bs.bytes[i]);
+    }
 
     var aff_p: blst.blst_p1_affine = undefined;
     if (blst.blst_p1_uncompress(&aff_p, &in_bytes) != blst.BLST_SUCCESS) {
@@ -1641,39 +1644,43 @@ pub fn bls12_381_G1_Uncompress(m: *Machine, args: *LinkedValues) *const Value {
     var point_p: blst.blst_p1 = undefined;
     blst.blst_p1_from_affine(&point_p, &aff_p);
 
-    var out_bytes: [96]u8 = undefined;
-    blst.blst_p1_serialize(&out_bytes, &point_p);
+    var buf = m.heap.createArray(u32, 13);
+    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g1_element());
+    const out_ptr: [*]u8 = @ptrCast(buf + 1);
+    blst.blst_p1_compress(out_ptr, &point_p);
 
-    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g1_element, 96, out_bytes[0..96]));
+    return createConst(m.heap, @ptrCast(buf));
 }
 
 pub fn bls12_381_G1_HashToGroup(m: *Machine, args: *LinkedValues) *const Value {
     const dst = args.value.unwrapBytestring();
     const msg = args.next.?.value.unwrapBytestring();
 
-    const msg_u8 = bytesToU8(m.heap, msg);
-    const dst_u8 = bytesToU8(m.heap, dst);
+    const msg_bytes: [*]u8 = @ptrFromInt(@intFromPtr(msg.bytes));
+    const dst_bytes: [*]u8 = @ptrFromInt(@intFromPtr(dst.bytes));
 
     var point_r: blst.blst_p1 = undefined;
-    blst.blst_hash_to_g1(&point_r, msg_u8.ptr, msg.length, dst_u8.ptr, dst.length, null, 0);
+    blst.blst_hash_to_g1(&point_r, msg_bytes, msg.length * 4, dst_bytes, dst.length * 4, null, 0);
 
-    var out_bytes: [96]u8 = undefined;
-    blst.blst_p1_serialize(&out_bytes, &point_r);
+    var buf = m.heap.createArray(u32, 13);
+    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g1_element());
+    const out_ptr: [*]u8 = @ptrCast(buf + 1);
+    blst.blst_p1_compress(out_ptr, &point_r);
 
-    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g1_element, 96, out_bytes[0..96]));
+    return createConst(m.heap, @ptrCast(buf));
 }
 
 pub fn bls12_381_G2_Add(m: *Machine, args: *LinkedValues) *const Value {
     const q = args.value.unwrapG2();
     const p = args.next.?.value.unwrapG2();
 
-    var p_bytes: [192]u8 = undefined;
-    for (0..192) |i| p_bytes[i] = @truncate(p.bytes[i]);
-    var q_bytes: [192]u8 = undefined;
-    for (0..192) |i| q_bytes[i] = @truncate(q.bytes[i]);
+    var p_bytes: [96]u8 = undefined;
+    @memcpy(&p_bytes, p.bytes);
+    var q_bytes: [96]u8 = undefined;
+    @memcpy(&q_bytes, q.bytes);
 
     var aff_p: blst.blst_p2_affine = undefined;
-    if (blst.blst_p2_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p2_uncompress(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G2 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1681,7 +1688,7 @@ pub fn bls12_381_G2_Add(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p2_from_affine(&point_p, &aff_p);
 
     var aff_q: blst.blst_p2_affine = undefined;
-    if (blst.blst_p2_deserialize(&aff_q, &q_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p2_uncompress(&aff_q, &q_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G2 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1691,20 +1698,22 @@ pub fn bls12_381_G2_Add(m: *Machine, args: *LinkedValues) *const Value {
     var point_r: blst.blst_p2 = undefined;
     blst.blst_p2_add(&point_r, &point_p, &point_q);
 
-    var out_bytes: [192]u8 = undefined;
-    blst.blst_p2_serialize(&out_bytes, &point_r);
+    var buf = m.heap.createArray(u32, 25);
+    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g2_element());
+    const out_ptr: [*]u8 = @ptrCast(buf + 1);
+    blst.blst_p2_compress(out_ptr, &point_r);
 
-    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g2_element, 192, out_bytes[0..192]));
+    return createConst(m.heap, @ptrCast(buf));
 }
 
 pub fn bls12_381_G2_Neg(m: *Machine, args: *LinkedValues) *const Value {
     const p = args.value.unwrapG2();
 
-    var p_bytes: [192]u8 = undefined;
-    for (0..192) |i| p_bytes[i] = @truncate(p.bytes[i]);
+    var p_bytes: [96]u8 = undefined;
+    @memcpy(&p_bytes, p.bytes);
 
     var aff_p: blst.blst_p2_affine = undefined;
-    if (blst.blst_p2_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p2_uncompress(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G2 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1713,21 +1722,23 @@ pub fn bls12_381_G2_Neg(m: *Machine, args: *LinkedValues) *const Value {
 
     blst.blst_p2_cneg(&point_p, true);
 
-    var out_bytes: [192]u8 = undefined;
-    blst.blst_p2_serialize(&out_bytes, &point_p);
+    var buf = m.heap.createArray(u32, 25);
+    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g2_element());
+    const out_ptr: [*]u8 = @ptrCast(buf + 1);
+    blst.blst_p2_compress(out_ptr, &point_p);
 
-    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g2_element, 192, out_bytes[0..192]));
+    return createConst(m.heap, @ptrCast(buf));
 }
 
 pub fn bls12_381_G2_ScalarMul(m: *Machine, args: *LinkedValues) *const Value {
     const scalar = args.value.unwrapInteger();
     const p = args.next.?.value.unwrapG2();
 
-    var p_bytes: [192]u8 = undefined;
-    for (0..192) |i| p_bytes[i] = @truncate(p.bytes[i]);
+    var p_bytes: [96]u8 = undefined;
+    @memcpy(&p_bytes, p.bytes);
 
     var aff_p: blst.blst_p2_affine = undefined;
-    if (blst.blst_p2_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p2_uncompress(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G2 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1739,23 +1750,25 @@ pub fn bls12_381_G2_ScalarMul(m: *Machine, args: *LinkedValues) *const Value {
     var point_r: blst.blst_p2 = undefined;
     blst.blst_p2_mult(&point_r, &point_p, &scalar_bytes, 256);
 
-    var out_bytes: [192]u8 = undefined;
-    blst.blst_p2_serialize(&out_bytes, &point_r);
+    var buf = m.heap.createArray(u32, 25);
+    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g2_element());
+    const out_ptr: [*]u8 = @ptrCast(buf + 1);
+    blst.blst_p2_compress(out_ptr, &point_r);
 
-    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g2_element, 192, out_bytes[0..192]));
+    return createConst(m.heap, @ptrCast(buf));
 }
 
 pub fn bls12_381_G2_Equal(m: *Machine, args: *LinkedValues) *const Value {
     const q = args.value.unwrapG2();
     const p = args.next.?.value.unwrapG2();
 
-    var p_bytes: [192]u8 = undefined;
-    for (0..192) |i| p_bytes[i] = @truncate(p.bytes[i]);
-    var q_bytes: [192]u8 = undefined;
-    for (0..192) |i| q_bytes[i] = @truncate(q.bytes[i]);
+    var p_bytes: [96]u8 = undefined;
+    @memcpy(&p_bytes, p.bytes);
+    var q_bytes: [96]u8 = undefined;
+    @memcpy(&q_bytes, q.bytes);
 
     var aff_p: blst.blst_p2_affine = undefined;
-    if (blst.blst_p2_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p2_uncompress(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G2 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1763,7 +1776,7 @@ pub fn bls12_381_G2_Equal(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p2_from_affine(&point_p, &aff_p);
 
     var aff_q: blst.blst_p2_affine = undefined;
-    if (blst.blst_p2_deserialize(&aff_q, &q_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p2_uncompress(&aff_q, &q_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G2 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1772,10 +1785,9 @@ pub fn bls12_381_G2_Equal(m: *Machine, args: *LinkedValues) *const Value {
 
     const equal = blst.blst_p2_is_equal(&point_p, &point_q);
 
-    var result = m.heap.createArray(u32, 3);
-    result[0] = 1;
-    result[1] = @intFromEnum(ConstantType.boolean);
-    result[2] = @intFromBool(equal);
+    var result = m.heap.createArray(u32, 2);
+    result[0] = @intFromPtr(ConstantTypeList.boolean());
+    result[1] = @intFromBool(equal);
 
     return createConst(m.heap, @ptrCast(result));
 }
@@ -1783,11 +1795,11 @@ pub fn bls12_381_G2_Equal(m: *Machine, args: *LinkedValues) *const Value {
 pub fn bls12_381_G2_Compress(m: *Machine, args: *LinkedValues) *const Value {
     const p = args.value.unwrapG2();
 
-    var p_bytes: [192]u8 = undefined;
-    for (0..192) |i| p_bytes[i] = @truncate(p.bytes[i]);
+    var p_bytes: [96]u8 = undefined;
+    @memcpy(&p_bytes, p.bytes);
 
     var aff_p: blst.blst_p2_affine = undefined;
-    if (blst.blst_p2_deserialize(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p2_uncompress(&aff_p, &p_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G2 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1797,12 +1809,11 @@ pub fn bls12_381_G2_Compress(m: *Machine, args: *LinkedValues) *const Value {
     var out_bytes: [96]u8 = undefined;
     blst.blst_p2_compress(&out_bytes, &point_p);
 
-    var buf = m.heap.createArray(u32, 96 + 3);
-    buf[0] = 1;
-    buf[1] = @intFromEnum(ConstantType.bytes);
-    buf[2] = 96;
+    var buf = m.heap.createArray(u32, 98);
+    buf[0] = @intFromPtr(ConstantTypeList.bytes());
+    buf[1] = 96;
     for (0..96) |i| {
-        buf[3 + i] = out_bytes[i];
+        buf[2 + i] = out_bytes[i];
     }
 
     return createConst(m.heap, @ptrCast(buf));
@@ -1816,7 +1827,9 @@ pub fn bls12_381_G2_Uncompress(m: *Machine, args: *LinkedValues) *const Value {
     }
 
     var in_bytes: [96]u8 = undefined;
-    for (0..96) |i| in_bytes[i] = @truncate(bs.bytes[i]);
+    for (0..96) |i| {
+        in_bytes[i] = @truncate(bs.bytes[i]);
+    }
 
     var aff_p: blst.blst_p2_affine = undefined;
     if (blst.blst_p2_uncompress(&aff_p, &in_bytes) != blst.BLST_SUCCESS) {
@@ -1826,39 +1839,43 @@ pub fn bls12_381_G2_Uncompress(m: *Machine, args: *LinkedValues) *const Value {
     var point_p: blst.blst_p2 = undefined;
     blst.blst_p2_from_affine(&point_p, &aff_p);
 
-    var out_bytes: [192]u8 = undefined;
-    blst.blst_p2_serialize(&out_bytes, &point_p);
+    var buf = m.heap.createArray(u32, 25);
+    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g2_element());
+    const out_ptr: [*]u8 = @ptrCast(buf + 1);
+    blst.blst_p2_compress(out_ptr, &point_p);
 
-    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g2_element, 192, out_bytes[0..192]));
+    return createConst(m.heap, @ptrCast(buf));
 }
 
 pub fn bls12_381_G2_HashToGroup(m: *Machine, args: *LinkedValues) *const Value {
     const dst = args.value.unwrapBytestring();
     const msg = args.next.?.value.unwrapBytestring();
 
-    const msg_u8 = bytesToU8(m.heap, msg);
-    const dst_u8 = bytesToU8(m.heap, dst);
+    const msg_bytes: [*]u8 = @ptrFromInt(@intFromPtr(msg.bytes));
+    const dst_bytes: [*]u8 = @ptrFromInt(@intFromPtr(dst.bytes));
 
     var point_r: blst.blst_p2 = undefined;
-    blst.blst_hash_to_g2(&point_r, msg_u8.ptr, msg.length, dst_u8.ptr, dst.length, null, 0);
+    blst.blst_hash_to_g2(&point_r, msg_bytes, msg.length * 4, dst_bytes, dst.length * 4, null, 0);
 
-    var out_bytes: [192]u8 = undefined;
-    blst.blst_p2_serialize(&out_bytes, &point_r);
+    var buf = m.heap.createArray(u32, 25);
+    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g2_element());
+    const out_ptr: [*]u8 = @ptrCast(buf + 1);
+    blst.blst_p2_compress(out_ptr, &point_r);
 
-    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_g2_element, 192, out_bytes[0..192]));
+    return createConst(m.heap, @ptrCast(buf));
 }
 
 pub fn bls12_381_MillerLoop(m: *Machine, args: *LinkedValues) *const Value {
     const g2 = args.value.unwrapG2();
     const g1 = args.next.?.value.unwrapG1();
 
-    var g1_bytes: [96]u8 = undefined;
-    for (0..96) |i| g1_bytes[i] = @truncate(g1.bytes[i]);
-    var g2_bytes: [192]u8 = undefined;
-    for (0..192) |i| g2_bytes[i] = @truncate(g2.bytes[i]);
+    var g1_bytes: [48]u8 = undefined;
+    @memcpy(&g1_bytes, g1.bytes);
+    var g2_bytes: [96]u8 = undefined;
+    @memcpy(&g2_bytes, g2.bytes);
 
     var aff_g1: blst.blst_p1_affine = undefined;
-    if (blst.blst_p1_deserialize(&aff_g1, &g1_bytes) != blst.BLST_SUCCESS) {
+    if (blst.blst_p1_uncompress(&aff_g1, &g1_bytes) != blst.BLST_SUCCESS) {
         utils.printString("Invalid G1 point\n");
         utils.exit(std.math.maxInt(u32));
     }
@@ -1872,30 +1889,12 @@ pub fn bls12_381_MillerLoop(m: *Machine, args: *LinkedValues) *const Value {
     var ml: blst.blst_fp12 = undefined;
     blst.blst_miller_loop(&ml, &aff_g2, &aff_g1);
 
-    var out_bytes: [576]u8 = undefined;
-    blst.blst_bendian_from_fp12(&out_bytes, &ml);
+    var buf = m.heap.createArray(u32, 145);
+    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_mlresult());
+    const out_ptr: [*]u8 = @ptrCast(buf + 1);
+    blst.blst_bendian_from_fp12(out_ptr, &ml);
 
-    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_mlresult, 576, out_bytes[0..576]));
-}
-
-fn blst_fp12_from_bendian(ret: *blst.blst_fp12, bytes: [*]const u8) c_int {
-    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[0].fp[0], bytes + 0 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[0].fp[1], bytes + 1 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[1].fp[0], bytes + 2 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[1].fp[1], bytes + 3 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[2].fp[0], bytes + 4 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[2].fp[1], bytes + 5 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[0].fp[0], bytes + 6 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[0].fp[1], bytes + 7 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[1].fp[0], bytes + 8 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[1].fp[1], bytes + 9 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[2].fp[0], bytes + 10 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[2].fp[1], bytes + 11 * 48);
-    if (blst.blst_fp12_in_group(ret)) {
-        return blst.BLST_SUCCESS;
-    } else {
-        return blst.BLST_BAD_ENCODING;
-    }
+    return createConst(m.heap, @ptrCast(buf));
 }
 
 pub fn bls12_381_MulMlResult(m: *Machine, args: *LinkedValues) *const Value {
@@ -1903,9 +1902,9 @@ pub fn bls12_381_MulMlResult(m: *Machine, args: *LinkedValues) *const Value {
     const a = args.next.?.value.unwrapMlResult();
 
     var a_bytes: [576]u8 = undefined;
-    for (0..576) |i| a_bytes[i] = @truncate(a.bytes[i]);
+    @memcpy(&a_bytes, a.bytes);
     var b_bytes: [576]u8 = undefined;
-    for (0..576) |i| b_bytes[i] = @truncate(b.bytes[i]);
+    @memcpy(&b_bytes, b.bytes);
 
     var fp_a: blst.blst_fp12 = undefined;
     if (blst_fp12_from_bendian(&fp_a, &a_bytes) != blst.BLST_SUCCESS) {
@@ -1922,10 +1921,12 @@ pub fn bls12_381_MulMlResult(m: *Machine, args: *LinkedValues) *const Value {
     var fp_r: blst.blst_fp12 = undefined;
     blst.blst_fp12_mul(&fp_r, &fp_a, &fp_b);
 
-    var out_bytes: [576]u8 = undefined;
-    blst.blst_bendian_from_fp12(&out_bytes, &fp_r);
+    var buf = m.heap.createArray(u32, 145);
+    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_mlresult());
+    const out_ptr: [*]u8 = @ptrCast(buf + 1);
+    blst.blst_bendian_from_fp12(out_ptr, &fp_r);
 
-    return createConst(m.heap, createElementConstant(m.heap, .bls12_381_mlresult, 576, out_bytes[0..576]));
+    return createConst(m.heap, @ptrCast(buf));
 }
 
 pub fn bls12_381_FinalVerify(m: *Machine, args: *LinkedValues) *const Value {
@@ -1933,9 +1934,9 @@ pub fn bls12_381_FinalVerify(m: *Machine, args: *LinkedValues) *const Value {
     const ml1 = args.next.?.value.unwrapMlResult();
 
     var ml1_bytes: [576]u8 = undefined;
-    for (0..576) |i| ml1_bytes[i] = @truncate(ml1.bytes[i]);
+    @memcpy(&ml1_bytes, ml1.bytes);
     var ml2_bytes: [576]u8 = undefined;
-    for (0..576) |i| ml2_bytes[i] = @truncate(ml2.bytes[i]);
+    @memcpy(&ml2_bytes, ml2.bytes);
 
     var fp_ml1: blst.blst_fp12 = undefined;
     if (blst_fp12_from_bendian(&fp_ml1, &ml1_bytes) != blst.BLST_SUCCESS) {
@@ -1951,10 +1952,9 @@ pub fn bls12_381_FinalVerify(m: *Machine, args: *LinkedValues) *const Value {
 
     const res = blst.blst_fp12_finalverify(&fp_ml1, &fp_ml2);
 
-    var result = m.heap.createArray(u32, 3);
-    result[0] = 1;
-    result[1] = @intFromEnum(ConstantType.boolean);
-    result[2] = @intFromBool(res);
+    var result = m.heap.createArray(u32, 2);
+    result[0] = @intFromPtr(ConstantTypeList.boolean());
+    result[1] = @intFromBool(res);
 
     return createConst(m.heap, @ptrCast(result));
 }
@@ -4414,7 +4414,7 @@ test "bls12_381_G1_add" {
     // const q_bytes_hex = "950dfd33da2682260c76038dfb8bad6e84ae9d599a3c151815945ac1e6ef6b1027cd917f3907479d20d636ce437a41f5";
     // const expected_hex = "a4870e983a149bb1e7cc70fde907a2aa52302833bce4d62f679819022924e9caab52e3631d376d36d9692664b4cfbc22";
     const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
-    const q_bytes: [*]const u8 = &[_]u8{ 0x95, 0x0d, 0xfd, 0x33, 0xda, 0x26, 0x82, 0x26, 0x0c, 0x76, 0x03, 0x8d, 0xfb, 0x8b, 0xad, 0x6e, 0x84, 0xae, 0x9d, 0x59, 0x9a, 0x3c, 0x15, 0x18, 0x15, 0x94, 0x5a, 0xc1, 0xe6, 0xef, 0x6b, 0x10, 0x27, 0xcd, 0x91, 0x7f, 0x39, 0x07, 0x47, 0x9d, 0x20, 0xd6, 0x36, 0xce, 0x43, 0x7a, 0x41, 0xf5 }; // Same as p for this test
+    const q_bytes: [*]const u8 = &[_]u8{ 0x95, 0x0d, 0xfd, 0x33, 0xda, 0x26, 0x82, 0x26, 0x0c, 0x76, 0x03, 0x8d, 0xfb, 0x8b, 0xad, 0x6e, 0x84, 0xae, 0x9d, 0x59, 0x9a, 0x3c, 0x15, 0x18, 0x15, 0x94, 0x5a, 0xc1, 0xe6, 0xef, 0x6b, 0x10, 0x27, 0xcd, 0x91, 0x7f, 0x39, 0x07, 0x47, 0x9d, 0x20, 0xd6, 0x36, 0xce, 0x43, 0x7a, 0x41, 0xf5 };
 
     const expected_bytes: [*]const u8 = &[_]u8{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22 };
 
@@ -4438,3 +4438,1067 @@ test "bls12_381_G1_add" {
         else => unreachable,
     }
 }
+
+test "bls12_381_G1_neg" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+    const expected_bytes: [*]const u8 = &[_]u8{ 0x8b, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+
+    const result_val = bls12_381_G1_Neg(&machine, args);
+
+    switch (result_val.*) {
+        .constant => |c| {
+            switch (c.type_list.constType().*) {
+                .bls12_381_g1_element => {
+                    const r = c.g1Element();
+                    for (0..48) |i| {
+                        try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+                    }
+                },
+                else => unreachable,
+            }
+        },
+        else => unreachable,
+    }
+}
+
+test "bls12_381_G1_equal" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element())
+        .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+
+    const result_val = bls12_381_G1_Equal(&machine, args);
+
+    switch (result_val.*) {
+        .constant => |c| {
+            switch (c.type_list.constType().*) {
+                .boolean => {
+                    const r = c.bln();
+                    try testing.expect(r);
+                },
+                else => unreachable,
+            }
+        },
+        else => unreachable,
+    }
+}
+
+test "bls12_381_G1_compress" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+    const expected_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+
+    const result_val = bls12_381_G1_Compress(&machine, args);
+
+    switch (result_val.*) {
+        .constant => |c| {
+            switch (c.type_list.constType().*) {
+                .bytes => {
+                    const r = c.innerBytes();
+                    try testing.expectEqual(r.length, 48);
+                    for (0..48) |i| {
+                        try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+                    }
+                },
+                else => unreachable,
+            }
+        },
+        else => unreachable,
+    }
+}
+
+// test "bls12_381_G1_uncompress" { // TODO FIX
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const expected_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 48, .bytes = p_bytes }, ConstantTypeList.bytes());
+
+//     const result_val = bls12_381_G1_Uncompress(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g1_element => {
+//                     const r = c.g1Element();
+//                     for (0..48) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G1_hashToGroup" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const message_bytes: [*]const u8 = &[_]u8{ 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20 };
+
+//     const dst_bytes: [*]const u8 = &[_]u8{ 0x42, 0x4c, 0x53, 0x5f, 0x47, 0x31, 0x32, 0x5f, 0x47, 0x31, 0x5f, 0x58, 0x4d, 0x44, 0x3a, 0x53, 0x48, 0x41, 0x32, 0x35, 0x36, 0x5f, 0x52, 0x4f, 0x5f };
+
+//     const expected_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 32, .bytes = message_bytes }, ConstantTypeList.bytes())
+//         .extend(&heap, expr.Bytes, expr.Bytes{ .length = 25, .bytes = dst_bytes }, ConstantTypeList.bytes());
+
+//     const result_val = bls12_381_G1_HashToGroup(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g1_element => {
+//                     const r = c.g1Element();
+//                     for (0..48) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G1_scalarMul" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const scalar_words: [*]const u32 = &.{2};
+
+//     const scalar = expr.BigInt{ .sign = 0, .length = 1, .words = scalar_words };
+
+//     const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const expected_bytes: [*]const u8 = &[_]u8{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22 };
+
+//     const args = LinkedValues.create(&heap, expr.BigInt, scalar, ConstantTypeList.integer())
+//         .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+
+//     const result_val = bls12_381_G1_ScalarMul(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g1_element => {
+//                     const r = c.g1Element();
+//                     for (0..48) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+test "bls12_381_G2_add" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const p_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+    const q_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+    const expected_bytes: [*]const u8 = &[_]u8{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+    const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = q_bytes }, ConstantTypeList.bls12_381_g2_element())
+        .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+
+    const result_val = bls12_381_G2_Add(&machine, args);
+
+    switch (result_val.*) {
+        .constant => |c| {
+            switch (c.type_list.constType().*) {
+                .bls12_381_g2_element => {
+                    const r = c.g2Element();
+                    for (0..96) |i| {
+                        try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+                    }
+                },
+                else => unreachable,
+            }
+        },
+        else => unreachable,
+    }
+}
+
+test "bls12_381_G2_neg" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const p_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+    const expected_bytes: [*]const u8 = &[_]u8{ 0x94, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+    const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+
+    const result_val = bls12_381_G2_Neg(&machine, args);
+
+    switch (result_val.*) {
+        .constant => |c| {
+            switch (c.type_list.constType().*) {
+                .bls12_381_g2_element => {
+                    const r = c.g2Element();
+                    for (0..96) |i| {
+                        try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+                    }
+                },
+                else => unreachable,
+            }
+        },
+        else => unreachable,
+    }
+}
+
+test "bls12_381_G2_equal" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const p_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+    const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element())
+        .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+
+    const result_val = bls12_381_G2_Equal(&machine, args);
+
+    switch (result_val.*) {
+        .constant => |c| {
+            switch (c.type_list.constType().*) {
+                .boolean => {
+                    const r = c.bln();
+                    try testing.expect(r);
+                },
+                else => unreachable,
+            }
+        },
+        else => unreachable,
+    }
+}
+
+test "bls12_381_G2_compress" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const p_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+    const expected_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+    const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+
+    const result_val = bls12_381_G2_Compress(&machine, args);
+
+    switch (result_val.*) {
+        .constant => |c| {
+            switch (c.type_list.constType().*) {
+                .bytes => {
+                    const r = c.innerBytes();
+                    try testing.expectEqual(r.length, 96);
+                    for (0..96) |i| {
+                        try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+                    }
+                },
+                else => unreachable,
+            }
+        },
+        else => unreachable,
+    }
+}
+
+// test "bls12_381_G2_uncompress" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const p_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const expected_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 96, .bytes = p_bytes }, ConstantTypeList.bytes());
+
+//     const result_val = bls12_381_G2_Uncompress(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g2_element => {
+//                     const r = c.g2Element();
+//                     for (0..96) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G2_hashToGroup" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const message_bytes: [*]const u8 = &[_]u8{ 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20 };
+
+//     const dst_bytes: [*]const u8 = &[_]u8{ 0x42, 0x4c, 0x53, 0x5f, 0x47, 0x31, 0x32, 0x5f, 0x47, 0x32, 0x5f, 0x58, 0x4d, 0x44, 0x3a, 0x53, 0x48, 0x41, 0x32, 0x35, 0x36, 0x5f, 0x52, 0x4f, 0x5f };
+
+//     const expected_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 32, .bytes = message_bytes }, ConstantTypeList.bytes())
+//         .extend(&heap, expr.Bytes, expr.Bytes{ .length = 25, .bytes = dst_bytes }, ConstantTypeList.bytes());
+
+//     const result_val = bls12_381_G2_HashToGroup(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g2_element => {
+//                     const r = c.g2Element();
+//                     for (0..96) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G2_scalarMul" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const scalar_words: [*]const u32 = &.{2};
+
+//     const scalar = expr.BigInt{ .sign = 0, .length = 1, .words = scalar_words };
+
+//     const p_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const expected_bytes: [*]const u8 = &[_]u8{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+//     const args = LinkedValues.create(&heap, expr.BigInt, scalar, ConstantTypeList.integer())
+//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+
+//     const result_val = bls12_381_G2_ScalarMul(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g2_element => {
+//                     const r = c.g2Element();
+//                     for (0..96) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+test "bls12_381_millerLoop" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const g1_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+    const g2_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+    const expected_bytes: [*]const u8 = &[_]u8{0} ** 576;
+
+    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = g1_bytes }, ConstantTypeList.bls12_381_g1_element())
+        .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = g2_bytes }, ConstantTypeList.bls12_381_g2_element());
+
+    const result_val = bls12_381_MillerLoop(&machine, args);
+
+    switch (result_val.*) {
+        .constant => |c| {
+            switch (c.type_list.constType().*) {
+                .bls12_381_mlresult => {
+                    const r = c.mlResult();
+                    for (0..576) |i| {
+                        try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+                    }
+                },
+                else => unreachable,
+            }
+        },
+        else => unreachable,
+    }
+}
+
+test "bls12_381_mulMlResult" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const ml1_bytes: [*]const u8 = &[_]u8{0} ** 576;
+
+    const ml2_bytes: [*]const u8 = &[_]u8{0} ** 576;
+
+    const expected_bytes: [*]const u8 = &[_]u8{0} ** 576;
+
+    const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml1_bytes }, ConstantTypeList.bls12_381_mlresult())
+        .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml2_bytes }, ConstantTypeList.bls12_381_mlresult());
+
+    const result_val = bls12_381_MulMlResult(&machine, args);
+
+    switch (result_val.*) {
+        .constant => |c| {
+            switch (c.type_list.constType().*) {
+                .bls12_381_mlresult => {
+                    const r = c.mlResult();
+                    for (0..576) |i| {
+                        try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+                    }
+                },
+                else => unreachable,
+            }
+        },
+        else => unreachable,
+    }
+}
+
+test "bls12_381_finalVerify" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const gt1_bytes: [*]const u8 = &[_]u8{0} ** 576;
+
+    const gt2_bytes: [*]const u8 = &[_]u8{0} ** 576;
+
+    const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt1_bytes }, ConstantTypeList.bls12_381_mlresult())
+        .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt2_bytes }, ConstantTypeList.bls12_381_mlresult());
+
+    const result_val = bls12_381_FinalVerify(&machine, args);
+
+    switch (result_val.*) {
+        .constant => |c| {
+            switch (c.type_list.constType().*) {
+                .boolean => {
+                    const r = c.bln();
+                    try testing.expect(r);
+                },
+                else => unreachable,
+            }
+        },
+        else => unreachable,
+    }
+}
+
+// test "bls12_381_G1_neg" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const expected_bytes: [*]const u8 = &[_]u8{ 0x8b, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+
+//     const result_val = bls12_381_G1_Neg(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g1_element => {
+//                     const r = c.g1Element();
+//                     for (0..48) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G1_equal" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element())
+//         .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+
+//     const result_val = bls12_381_G1_Equal(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .boolean => {
+//                     const r = c.bln();
+//                     try testing.expect(r);
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G1_compress" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const expected_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+
+//     const result_val = bls12_381_G1_Compress(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bytes => {
+//                     const r = c.innerBytes();
+//                     try testing.expectEqual(r.length, 48);
+//                     for (0..48) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G1_uncompress" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const expected_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 48, .bytes = p_bytes }, ConstantTypeList.bytes());
+
+//     const result_val = bls12_381_G1_Uncompress(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g1_element => {
+//                     const r = c.g1Element();
+//                     for (0..48) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G1_hashToGroup" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const message_bytes: [*]const u8 = &[_]u8{ 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20 };
+
+//     const dst_bytes: [*]const u8 = &[_]u8{ 0x42, 0x4c, 0x53, 0x5f, 0x47, 0x31, 0x32, 0x5f, 0x47, 0x31, 0x5f, 0x58, 0x4d, 0x44, 0x3a, 0x53, 0x48, 0x41, 0x32, 0x35, 0x36, 0x5f, 0x52, 0x4f, 0x5f };
+
+//     const expected_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 32, .bytes = message_bytes }, ConstantTypeList.bytes())
+//         .extend(&heap, expr.Bytes, expr.Bytes{ .length = 25, .bytes = dst_bytes }, ConstantTypeList.bytes());
+
+//     const result_val = bls12_381_G1_HashToGroup(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g1_element => {
+//                     const r = c.g1Element();
+//                     for (0..48) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G1_scalarMul" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const scalar_words: [*]const u32 = &.{2};
+
+//     const scalar = expr.BigInt{ .sign = 0, .length = 1, .words = scalar_words };
+
+//     const p_bytes: [*]const u32 = &[_]u32{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const expected_bytes: [*]const u32 = &[_]u32{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22 };
+
+//     const args = LinkedValues.create(&heap, expr.BigInt, scalar, ConstantTypeList.integer())
+//         .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+
+//     const result_val = bls12_381_G1_ScalarMul(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g1_element => {
+//                     const r = c.g1Element();
+//                     for (0..48) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G2_add" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const p_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const q_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const expected_bytes: [*]const u32 = &[_]u32{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+//     const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = q_bytes }, ConstantTypeList.bls12_381_g2_element())
+//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+
+//     const result_val = bls12_381_G2_Add(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g2_element => {
+//                     const r = c.g2Element();
+//                     for (0..96) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G2_neg" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const p_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const expected_bytes: [*]const u32 = &[_]u32{ 0x94, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+
+//     const result_val = bls12_381_G2_Neg(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g2_element => {
+//                     const r = c.g2Element();
+//                     for (0..96) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G2_equal" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const p_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element())
+//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+
+//     const result_val = bls12_381_G2_Equal(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .boolean => {
+//                     const r = c.bln();
+//                     try testing.expect(r);
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G2_compress" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const p_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const expected_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+
+//     const result_val = bls12_381_G2_Compress(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bytes => {
+//                     const r = c.innerBytes();
+//                     try testing.expectEqual(r.length, 96);
+//                     for (0..96) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G2_uncompress" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const p_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const expected_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 96, .bytes = p_bytes }, ConstantTypeList.bytes());
+
+//     const result_val = bls12_381_G2_Uncompress(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g2_element => {
+//                     const r = c.g2Element();
+//                     for (0..96) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G2_hashToGroup" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const message_bytes: [*]const u32 = &[_]u32{ 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20 };
+
+//     const dst_bytes: [*]const u32 = &[_]u32{ 0x42, 0x4c, 0x53, 0x5f, 0x47, 0x31, 0x32, 0x5f, 0x47, 0x32, 0x5f, 0x58, 0x4d, 0x44, 0x3a, 0x53, 0x48, 0x41, 0x32, 0x35, 0x36, 0x5f, 0x52, 0x4f, 0x5f };
+
+//     const expected_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 32, .bytes = message_bytes }, ConstantTypeList.bytes())
+//         .extend(&heap, expr.Bytes, expr.Bytes{ .length = 25, .bytes = dst_bytes }, ConstantTypeList.bytes());
+
+//     const result_val = bls12_381_G2_HashToGroup(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g2_element => {
+//                     const r = c.g2Element();
+//                     for (0..96) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_G2_scalarMul" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const scalar_words: [*]const u32 = &.{2};
+
+//     const scalar = expr.BigInt{ .sign = 0, .length = 1, .words = scalar_words };
+
+//     const p_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const expected_bytes: [*]const u32 = &[_]u32{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+//     const args = LinkedValues.create(&heap, expr.BigInt, scalar, ConstantTypeList.integer())
+//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+
+//     const result_val = bls12_381_G2_ScalarMul(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_g2_element => {
+//                     const r = c.g2Element();
+//                     for (0..96) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_millerLoop" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const g1_bytes: [*]const u32 = &[_]u32{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
+
+//     const g2_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
+
+//     const expected_bytes: [*]const u32 = &[_]u32{0} ** 576;
+
+//     const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = g1_bytes }, ConstantTypeList.bls12_381_g1_element())
+//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = g2_bytes }, ConstantTypeList.bls12_381_g2_element());
+
+//     const result_val = bls12_381_MillerLoop(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_mlresult => {
+//                     const r = c.mlResult();
+//                     for (0..576) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_mulMlResult" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const ml1_bytes: [*]const u32 = &[_]u32{0} ** 576;
+
+//     const ml2_bytes: [*]const u32 = &[_]u32{0} ** 576;
+
+//     const expected_bytes: [*]const u32 = &[_]u32{0} ** 576;
+
+//     const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml1_bytes }, ConstantTypeList.bls12_381_mlresult())
+//         .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml2_bytes }, ConstantTypeList.bls12_381_mlresult());
+
+//     const result_val = bls12_381_MulMlResult(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .bls12_381_mlresult => {
+//                     const r = c.mlResult();
+//                     for (0..576) |i| {
+//                         try testing.expectEqual(expected_bytes[i], r.bytes[i]);
+//                     }
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }
+
+// test "bls12_381_finalVerify" {
+//     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+//     defer arena.deinit();
+
+//     var heap = try Heap.createTestHeap(&arena);
+//     var frames = try Frames.createTestFrames(&arena);
+//     var machine = Machine{ .heap = &heap, .frames = &frames };
+
+//     const gt1_bytes: [*]const u32 = &[_]u32{0} ** 576;
+
+//     const gt2_bytes: [*]const u32 = &[_]u32{0} ** 576;
+
+//     const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt1_bytes }, ConstantTypeList.bls12_381_mlresult())
+//         .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt2_bytes }, ConstantTypeList.bls12_381_mlresult());
+
+//     const result_val = bls12_381_FinalVerify(&machine, args);
+
+//     switch (result_val.*) {
+//         .constant => |c| {
+//             switch (c.type_list.constType().*) {
+//                 .boolean => {
+//                     const r = c.bln();
+//                     try testing.expect(r);
+//                 },
+//                 else => unreachable,
+//             }
+//         },
+//         else => unreachable,
+//     }
+// }

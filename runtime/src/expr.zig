@@ -591,8 +591,12 @@ pub const G1Element = extern struct {
 
         buf[0] = @intFromPtr(types);
 
+        // var i: u32 = 0;
+        // while (i < 12) : (i += 1) {
+        //     buf[i + 1] = self.bytes[i];
+        // }
         var i: u32 = 0;
-        while (i < 13) : (i += 1) {
+        while (i < 24) : (i += 1) {
             const byte_offset = i * 4;
             buf[i + 1] = (@as(u32, self.bytes[byte_offset])) |
                 (@as(u32, self.bytes[byte_offset + 1]) << 8) |
@@ -605,23 +609,29 @@ pub const G1Element = extern struct {
 };
 
 pub const G2Element = extern struct {
-    length: u32,
-    bytes: [*]const u32,
+    bytes: [*]const u8,
 
     pub fn createConstant(
         self: G2Element,
         types: *const ConstantTypeList,
         heap: *Heap,
     ) *Constant {
-        const total_words: u32 = self.length + 2;
+        const total_words: u32 = 25;
         var buf = heap.createArray(u32, total_words);
 
         buf[0] = @intFromPtr(types);
-        buf[1] = self.length;
 
+        // var i: u32 = 0;
+        // while (i < 24) : (i += 1) {
+        //     buf[i + 1] = self.bytes[i];
+        // }
         var i: u32 = 0;
-        while (i < self.length) : (i += 1) {
-            buf[i + 2] = self.bytes[i];
+        while (i < 24) : (i += 1) {
+            const byte_offset = i * 4;
+            buf[i + 1] = (@as(u32, self.bytes[byte_offset])) |
+                (@as(u32, self.bytes[byte_offset + 1]) << 8) |
+                (@as(u32, self.bytes[byte_offset + 2]) << 16) |
+                (@as(u32, self.bytes[byte_offset + 3]) << 24);
         }
 
         return @ptrCast(buf);
@@ -630,7 +640,7 @@ pub const G2Element = extern struct {
 
 pub const MlResult = extern struct {
     length: u32,
-    bytes: [*]const u32,
+    bytes: [*]const u8,
 
     pub fn createConstant(
         self: MlResult,
@@ -643,9 +653,17 @@ pub const MlResult = extern struct {
         buf[0] = @intFromPtr(types);
         buf[1] = self.length;
 
+        // var i: u32 = 0;
+        // while (i < self.length) : (i += 1) {
+        //     buf[i + 2] = self.bytes[i];
+        // }
         var i: u32 = 0;
-        while (i < self.length) : (i += 1) {
-            buf[i + 2] = self.bytes[i];
+        while (i < 24) : (i += 1) {
+            const byte_offset = i * 4;
+            buf[i + 1] = (@as(u32, self.bytes[byte_offset])) |
+                (@as(u32, self.bytes[byte_offset + 1]) << 8) |
+                (@as(u32, self.bytes[byte_offset + 2]) << 16) |
+                (@as(u32, self.bytes[byte_offset + 3]) << 24);
         }
 
         return @ptrCast(buf);
@@ -713,12 +731,9 @@ pub const Constant = extern struct {
     }
 
     pub fn g2Element(self: *const Self) G2Element {
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+        const bytes: [*]const u8 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
 
         return G2Element{
-            .length = length.*,
             .bytes = bytes,
         };
     }
@@ -726,7 +741,7 @@ pub const Constant = extern struct {
     pub fn mlResult(self: *const Self) MlResult {
         const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
 
-        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
+        const bytes: [*]const u8 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
 
         return MlResult{
             .length = length.*,
@@ -857,7 +872,7 @@ pub const ConstantTypeList = extern struct {
         return types;
     }
 
-    pub fn bls12_321_mlresult() *const ConstantTypeList {
+    pub fn bls12_381_mlresult() *const ConstantTypeList {
         const types: *const ConstantTypeList = @ptrCast(&UplcMlResult);
         return types;
     }
