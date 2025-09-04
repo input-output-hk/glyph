@@ -1,36 +1,47 @@
-# UPLC to RISC-V Compiler
-
-## Dev Setup
-
-### macOS
-
-```sh
-brew install riscv64-elf-gcc
-```
-
-> [!WARNING]
->
-> This project is currently under active development and is NOT
-> ready for production use. It is in an experimental state with
-> many features still being implemented and tested.
-
-A compiler that translates Untyped Plutus Core (UPLC) to RISC-V assembly code.
+# Glyph: A UPLC to RISC-V Compilation Pipeline
 
 ## Project Structure
 
-The project is organized into multiple crates:
+The project is organized into a CLI tool with a built-in serializer for UPLC, as well as a runtime written in Zig.
 
-- `uplc-parser`: A parser for UPLC code
-- `risc-v-gen`: A RISC-V assembly code generator
-- `uplc-to-risc`: The main compiler library
-- `cli`: A command-line interface for the compiler
+- `bin`: A CLI tool to interact with Glyph.
+- `serializer`: A parser and serializer for UPLC code.
+- `runtime`: A CEK Machine with multiple entry-points written in Zig and compiled to RISC-V.
+
+## Installing Glyph
+Installing Glyph from a prebuilt binary can be done with the following command(s). Replace the version with the most up-to-date release.
+
+Using Shell Script:
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/input-output-hk/glyph/releases/download/v0.1.7/glyph-installer.sh | sh
+```
+
+Using Powershell Script:
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/input-output-hk/glyph/releases/download/v0.1.7/glyph-installer.ps1 | iex"
+```
 
 ## Building
 
-To build the project, you need to have Rust and Cargo installed. Then, run:
+### Requirements
+To build the project, you need to have Rust and Cargo installed, as well as a risc-v toolchain.
+
+On Debian based systems:
+```bash
+sudo apt-get install -y gcc-riscv64-unknown-elf
+```
+
+On MacOS:
+```bash
+brew install riscv64-elf-gcc
+```
+
+### Build Command(s)
+Then, run:
 
 ```bash
-cargo build --release
+cargo build
+cargo test
 ```
 
 ## Usage
@@ -45,80 +56,11 @@ The CLI provides several commands for working with UPLC code:
 uplc-to-risc-cli compile --input input.uplc --output output.s
 ```
 
-Options:
-
-- `--mode`: Compilation mode (direct, evaluate, optimize)
-- `--optimize`: Optimization level (none, default, aggressive)
-
-### Library Usage
-
-```rust
-use uplc_to_risc::{Compiler, CompilationMode, OptimizationLevel};
-
-// Create a compiler with default settings
-let compiler = Compiler::new();
-
-// Or with custom settings
-let compiler = Compiler::new()
-    .with_mode(CompilationMode::Optimize)
-    .with_optimization_level(OptimizationLevel::Aggressive);
-
-// Compile UPLC code to RISC-V assembly
-let uplc_code = "(program (1 0 0) (con integer 42))";
-let risc_v_code = compiler.compile(uplc_code)?;
-
-// Evaluate UPLC code
-let result = compiler.evaluate(uplc_code)?;
-```
-
 ## Features
 
-- Parsing of UPLC code
-- Compilation to RISC-V assembly
-- Evaluation of UPLC terms using a CEK machine
-- Optimization of intermediate code
-- Support for various RISC-V instructions and directives
+- Parsing and serialization of UPLC code
+- Evaluation of serialized UPLC terms using a CEK machine
 
 ## Production Readiness
 
-This project is currently in active development and requires several key improvements before it can be considered production-ready:
-
-### Current Progress
-
-- ✅ Successfully integrated the `uplc` crate as a dependency
-- ✅ Created a modular architecture with separate crates
-- ✅ Implemented BitVMX-specific code generation with PC tracking
-- ✅ Added support for integer constants, lambda expressions, applications, and basic builtins
-- ✅ Implemented Delay/Force term types and ByteString operations
-- ✅ Added support for case expressions in the IR and code generation
-- ✅ Improved error handling and documentation
-
-### Remaining Work for Production Readiness
-
-1. **Complete UPLC Term Support**
-
-   - Implement remaining UPLC term types (Error handling, Constructors)
-   - Add support for all required builtin functions (Boolean, List, Pair, Cryptographic operations)
-
-2. **BitVMX Compatibility**
-
-   - Enhance memory segmentation (read-only vs. read-write)
-   - Complete execution trace generation for verification
-   - Implement hash chain support and dispute resolution utilities
-
-3. **Testing and Documentation**
-
-   - Create a comprehensive test suite covering all components
-   - Develop detailed documentation for API usage and BitVMX integration
-   - Add examples demonstrating smart contracts and validation logic
-
-4. **Performance and Optimization**
-
-   - Implement BitVMX-specific optimizations
-   - Optimize memory usage and reduce code size
-   - Benchmark against other UPLC compilers
-
-5. **Ecosystem Integration**
-   - Create seamless integration with Aiken compiler
-   - Ensure compatibility with Cardano's smart contract platform
-   - Complete integration with BitVMX runtime
+This project is currently in active development and requires some key improvements before it can be considered production-ready:
