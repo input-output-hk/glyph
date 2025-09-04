@@ -245,7 +245,7 @@ const Value = union(enum(u32)) {
     pub fn unwrapG1(v: *const Value) G1Element {
         switch (v.*) {
             .constant => |c| {
-                switch (c.type_list.constType().*) {
+                switch (c.constType().*) {
                     .bls12_381_g1_element => {
                         return c.g1Element();
                     },
@@ -265,7 +265,7 @@ const Value = union(enum(u32)) {
     pub fn unwrapG2(v: *const Value) G2Element {
         switch (v.*) {
             .constant => |c| {
-                switch (c.type_list.constType().*) {
+                switch (c.constType().*) {
                     .bls12_381_g2_element => {
                         return c.g2Element();
                     },
@@ -285,7 +285,7 @@ const Value = union(enum(u32)) {
     pub fn unwrapMlResult(v: *const Value) MlResult {
         switch (v.*) {
             .constant => |c| {
-                switch (c.type_list.constType().*) {
+                switch (c.constType().*) {
                     .bls12_381_mlresult => {
                         return c.mlResult();
                     },
@@ -634,7 +634,7 @@ pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
     if (n.length == 1 and n.words[0] == 0) {
         // Allocate result for integer 0 (sign=0, length=1, word=0)
         var z = m.heap.createArray(u32, 5);
-        z[0] = @intFromPtr(ConstantTypeList.integer());
+        z[0] = @intFromPtr(ConstantType.integerType());
         z[1] = 0; // sign = 0 (non-negative)
         z[2] = 1; // length = 1
         z[3] = 0; // limb value = 0
@@ -659,7 +659,7 @@ pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
         if (!needMinusOne) {
             // If signs are same, floor division yields 0
             var z = m.heap.createArray(u32, 5);
-            z[0] = @intFromPtr(ConstantTypeList.integer());
+            z[0] = @intFromPtr(ConstantType.integerType());
             z[1] = 0;
             z[2] = 1;
             z[3] = 0;
@@ -667,7 +667,7 @@ pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
         } else {
             // Signs differ and |n|<|d|, result is -1
             var negOne = m.heap.createArray(u32, 5);
-            negOne[0] = @intFromPtr(ConstantTypeList.integer());
+            negOne[0] = @intFromPtr(ConstantType.integerType());
             negOne[1] = 1; // sign = 1 (negative)
             negOne[2] = 1; // length = 1
             negOne[3] = 1; // magnitude = 1
@@ -818,7 +818,7 @@ pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
     const res_sign: u32 = if (signsDiffer) 1 else 0;
     // Allocate result array (with space for header + quotient limbs, possibly +1 limb for carry)
     var res = m.heap.createArray(u32, q_len + 4);
-    res[0] = @intFromPtr(ConstantTypeList.integer());
+    res[0] = @intFromPtr(ConstantType.integerType());
     res[1] = res_sign;
     // Copy quotient magnitude
     var i_cpy: u32 = 0;
@@ -1504,7 +1504,7 @@ pub fn bls12_381_G1_Add(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p1_add(&point_r, &point_p, &point_q);
 
     var buf = m.heap.createArray(u32, 13);
-    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g1_element());
+    buf[0] = @intFromPtr(ConstantType.g1ElementType());
     const out_bytes: [*]u8 = @ptrCast(buf + 1);
     blst.blst_p1_compress(out_bytes, &point_r);
 
@@ -1528,7 +1528,7 @@ pub fn bls12_381_G1_Neg(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p1_cneg(&point_p, true);
 
     var buf = m.heap.createArray(u32, 13);
-    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g1_element());
+    buf[0] = @intFromPtr(ConstantType.g1ElementType());
     const out_ptr: [*]u8 = @ptrCast(buf + 1);
     blst.blst_p1_compress(out_ptr, &point_p);
 
@@ -1556,7 +1556,7 @@ pub fn bls12_381_G1_ScalarMul(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p1_mult(&point_r, &point_p, &scalar_bytes, 256);
 
     var buf = m.heap.createArray(u32, 13);
-    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g1_element());
+    buf[0] = @intFromPtr(ConstantType.g1ElementType());
     const out_ptr: [*]u8 = @ptrCast(buf + 1);
     blst.blst_p1_compress(out_ptr, &point_r);
 
@@ -1591,7 +1591,7 @@ pub fn bls12_381_G1_Equal(m: *Machine, args: *LinkedValues) *const Value {
     const equal = blst.blst_p1_is_equal(&point_p, &point_q);
 
     var result = m.heap.createArray(u32, 2);
-    result[0] = @intFromPtr(ConstantTypeList.boolean());
+    result[0] = @intFromPtr(ConstantType.booleanType());
     result[1] = @intFromBool(equal);
 
     return createConst(m.heap, @ptrCast(result));
@@ -1615,7 +1615,7 @@ pub fn bls12_381_G1_Compress(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p1_compress(&out_bytes, &point_p);
 
     var buf = m.heap.createArray(u32, 50);
-    buf[0] = @intFromPtr(ConstantTypeList.bytes());
+    buf[0] = @intFromPtr(ConstantType.bytesType());
     buf[1] = 48;
     for (0..48) |i| {
         buf[2 + i] = out_bytes[i];
@@ -1645,7 +1645,7 @@ pub fn bls12_381_G1_Uncompress(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p1_from_affine(&point_p, &aff_p);
 
     var buf = m.heap.createArray(u32, 13);
-    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g1_element());
+    buf[0] = @intFromPtr(ConstantType.g1ElementType());
     const out_ptr: [*]u8 = @ptrCast(buf + 1);
     blst.blst_p1_compress(out_ptr, &point_p);
 
@@ -1663,7 +1663,7 @@ pub fn bls12_381_G1_HashToGroup(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_hash_to_g1(&point_r, msg_bytes, msg.length * 4, dst_bytes, dst.length * 4, null, 0);
 
     var buf = m.heap.createArray(u32, 13);
-    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g1_element());
+    buf[0] = @intFromPtr(ConstantType.g1ElementType());
     const out_ptr: [*]u8 = @ptrCast(buf + 1);
     blst.blst_p1_compress(out_ptr, &point_r);
 
@@ -1699,7 +1699,7 @@ pub fn bls12_381_G2_Add(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p2_add(&point_r, &point_p, &point_q);
 
     var buf = m.heap.createArray(u32, 25);
-    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g2_element());
+    buf[0] = @intFromPtr(ConstantType.g2ElementType());
     const out_ptr: [*]u8 = @ptrCast(buf + 1);
     blst.blst_p2_compress(out_ptr, &point_r);
 
@@ -1723,7 +1723,7 @@ pub fn bls12_381_G2_Neg(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p2_cneg(&point_p, true);
 
     var buf = m.heap.createArray(u32, 25);
-    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g2_element());
+    buf[0] = @intFromPtr(ConstantType.g2ElementType());
     const out_ptr: [*]u8 = @ptrCast(buf + 1);
     blst.blst_p2_compress(out_ptr, &point_p);
 
@@ -1751,7 +1751,7 @@ pub fn bls12_381_G2_ScalarMul(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p2_mult(&point_r, &point_p, &scalar_bytes, 256);
 
     var buf = m.heap.createArray(u32, 25);
-    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g2_element());
+    buf[0] = @intFromPtr(ConstantType.g2ElementType());
     const out_ptr: [*]u8 = @ptrCast(buf + 1);
     blst.blst_p2_compress(out_ptr, &point_r);
 
@@ -1786,7 +1786,7 @@ pub fn bls12_381_G2_Equal(m: *Machine, args: *LinkedValues) *const Value {
     const equal = blst.blst_p2_is_equal(&point_p, &point_q);
 
     var result = m.heap.createArray(u32, 2);
-    result[0] = @intFromPtr(ConstantTypeList.boolean());
+    result[0] = @intFromPtr(ConstantType.booleanType());
     result[1] = @intFromBool(equal);
 
     return createConst(m.heap, @ptrCast(result));
@@ -1810,7 +1810,7 @@ pub fn bls12_381_G2_Compress(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p2_compress(&out_bytes, &point_p);
 
     var buf = m.heap.createArray(u32, 98);
-    buf[0] = @intFromPtr(ConstantTypeList.bytes());
+    buf[0] = @intFromPtr(ConstantType.bytesType());
     buf[1] = 96;
     for (0..96) |i| {
         buf[2 + i] = out_bytes[i];
@@ -1840,7 +1840,7 @@ pub fn bls12_381_G2_Uncompress(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_p2_from_affine(&point_p, &aff_p);
 
     var buf = m.heap.createArray(u32, 25);
-    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g2_element());
+    buf[0] = @intFromPtr(ConstantType.g2ElementType());
     const out_ptr: [*]u8 = @ptrCast(buf + 1);
     blst.blst_p2_compress(out_ptr, &point_p);
 
@@ -1858,7 +1858,7 @@ pub fn bls12_381_G2_HashToGroup(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_hash_to_g2(&point_r, msg_bytes, msg.length * 4, dst_bytes, dst.length * 4, null, 0);
 
     var buf = m.heap.createArray(u32, 25);
-    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_g2_element());
+    buf[0] = @intFromPtr(ConstantType.g2ElementType());
     const out_ptr: [*]u8 = @ptrCast(buf + 1);
     blst.blst_p2_compress(out_ptr, &point_r);
 
@@ -1890,7 +1890,7 @@ pub fn bls12_381_MillerLoop(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_miller_loop(&ml, &aff_g2, &aff_g1);
 
     var buf = m.heap.createArray(u32, 145);
-    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_mlresult());
+    buf[0] = @intFromPtr(ConstantType.mlResultType());
     const out_ptr: [*]u8 = @ptrCast(buf + 1);
     blst.blst_bendian_from_fp12(out_ptr, &ml);
 
@@ -1922,7 +1922,7 @@ pub fn bls12_381_MulMlResult(m: *Machine, args: *LinkedValues) *const Value {
     blst.blst_fp12_mul(&fp_r, &fp_a, &fp_b);
 
     var buf = m.heap.createArray(u32, 145);
-    buf[0] = @intFromPtr(ConstantTypeList.bls12_381_mlresult());
+    buf[0] = @intFromPtr(ConstantType.mlResultType());
     const out_ptr: [*]u8 = @ptrCast(buf + 1);
     blst.blst_bendian_from_fp12(out_ptr, &fp_r);
 
@@ -1953,7 +1953,7 @@ pub fn bls12_381_FinalVerify(m: *Machine, args: *LinkedValues) *const Value {
     const res = blst.blst_fp12_finalverify(&fp_ml1, &fp_ml2);
 
     var result = m.heap.createArray(u32, 2);
-    result[0] = @intFromPtr(ConstantTypeList.boolean());
+    result[0] = @intFromPtr(ConstantType.booleanType());
     result[1] = @intFromBool(res);
 
     return createConst(m.heap, @ptrCast(result));
@@ -3276,8 +3276,8 @@ test "divide: numerator == 0 → 0" {
     const n = expr.BigInt{ .sign = 0, .length = 1, .words = &.{0} }; // 0
     const d = expr.BigInt{ .sign = 0, .length = 1, .words = &.{1234} }; // any ≠ 0
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
-        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -3306,8 +3306,8 @@ test "divide: 1 / 2 floors to 0" {
     const n = expr.BigInt{ .sign = 0, .length = 1, .words = &.{1} }; // 1
     const d = expr.BigInt{ .sign = 0, .length = 1, .words = &.{2} }; // 2
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
-        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -3347,8 +3347,8 @@ test "divide: (-503) / (-1777777777) = 0" {
         .words = &[_]u32{1_777_777_777},
     };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
-        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
 
     //const n = expr.BigInt{ .sign = 1, .length = 1, .words = &a_words }; // −503
     //const d = expr.BigInt{ .sign = 1, .length = 1, .words = &b_words }; // −1777777777
@@ -3392,8 +3392,8 @@ test "divide: (-503) / (+1777777777) floors to −1" {
         .words = &[_]u32{1_777_777_777},
     };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
-        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -3434,8 +3434,8 @@ test "divide: (+503) / (−1777777777) floors to −1" {
         .words = &[_]u32{1_777_777_777},
     };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
-        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -3476,8 +3476,8 @@ test "divide: (+503) / (+1777777777) = 0" {
         .words = &[_]u32{1_777_777_777},
     };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
-        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -3509,8 +3509,8 @@ test "divide: multi-limb exact (positive / positive)" {
     const n = expr.BigInt{ .sign = 0, .length = 3, .words = a_words };
     const d = expr.BigInt{ .sign = 0, .length = 2, .words = b_words };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
-        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -3543,8 +3543,8 @@ test "divide: multi-limb with remainder and signs differ (positive / negative)" 
     const n = expr.BigInt{ .sign = 0, .length = 3, .words = a_words };
     const d = expr.BigInt{ .sign = 1, .length = 2, .words = b_words };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantTypeList.integer())
-        .extend(&heap, expr.BigInt, n, ConstantTypeList.integer());
+    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -4418,8 +4418,8 @@ test "bls12_381_G1_add" {
 
     const expected_bytes: [*]const u8 = &[_]u8{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22 };
 
-    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = q_bytes }, ConstantTypeList.bls12_381_g1_element())
-        .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = q_bytes }, ConstantType.g1ElementType())
+        .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantType.g1ElementType());
 
     const result_val = bls12_381_G1_Add(&machine, args);
 
@@ -4451,7 +4451,7 @@ test "bls12_381_G1_neg" {
 
     const expected_bytes: [*]const u8 = &[_]u8{ 0x8b, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
 
-    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantType.g1ElementType());
 
     const result_val = bls12_381_G1_Neg(&machine, args);
 
@@ -4481,8 +4481,8 @@ test "bls12_381_G1_equal" {
 
     const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
 
-    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element())
-        .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantType.g1ElementType())
+        .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantType.g1ElementType());
 
     const result_val = bls12_381_G1_Equal(&machine, args);
 
@@ -4512,7 +4512,7 @@ test "bls12_381_G1_compress" {
 
     const expected_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
 
-    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantType.g1ElementType());
 
     const result_val = bls12_381_G1_Compress(&machine, args);
 
@@ -4545,7 +4545,7 @@ test "bls12_381_G1_compress" {
 
 //     const expected_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
 
-//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 48, .bytes = p_bytes }, ConstantTypeList.bytes());
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 48, .bytes = p_bytes }, ConstantType.bytesType());
 
 //     const result_val = bls12_381_G1_Uncompress(&machine, args);
 
@@ -4579,8 +4579,8 @@ test "bls12_381_G1_compress" {
 
 //     const expected_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
 
-//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 32, .bytes = message_bytes }, ConstantTypeList.bytes())
-//         .extend(&heap, expr.Bytes, expr.Bytes{ .length = 25, .bytes = dst_bytes }, ConstantTypeList.bytes());
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 32, .bytes = message_bytes }, ConstantType.bytesType())
+//         .extend(&heap, expr.Bytes, expr.Bytes{ .length = 25, .bytes = dst_bytes }, ConstantType.bytesType());
 
 //     const result_val = bls12_381_G1_HashToGroup(&machine, args);
 
@@ -4616,8 +4616,8 @@ test "bls12_381_G1_compress" {
 
 //     const expected_bytes: [*]const u8 = &[_]u8{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22 };
 
-//     const args = LinkedValues.create(&heap, expr.BigInt, scalar, ConstantTypeList.integer())
-//         .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+//     const args = LinkedValues.create(&heap, expr.BigInt, scalar, ConstantType.integerType())
+//         .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantType.g1ElementType());
 
 //     const result_val = bls12_381_G1_ScalarMul(&machine, args);
 
@@ -4651,8 +4651,8 @@ test "bls12_381_G2_add" {
 
     const expected_bytes: [*]const u8 = &[_]u8{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-    const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = q_bytes }, ConstantTypeList.bls12_381_g2_element())
-        .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+    const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = q_bytes }, ConstantType.g2ElementType())
+        .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantType.g2ElementType());
 
     const result_val = bls12_381_G2_Add(&machine, args);
 
@@ -4684,7 +4684,7 @@ test "bls12_381_G2_neg" {
 
     const expected_bytes: [*]const u8 = &[_]u8{ 0x94, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
 
-    const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+    const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantType.g2ElementType());
 
     const result_val = bls12_381_G2_Neg(&machine, args);
 
@@ -4714,8 +4714,8 @@ test "bls12_381_G2_equal" {
 
     const p_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
 
-    const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element())
-        .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+    const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantType.g2ElementType())
+        .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantType.g2ElementType());
 
     const result_val = bls12_381_G2_Equal(&machine, args);
 
@@ -4745,7 +4745,7 @@ test "bls12_381_G2_compress" {
 
     const expected_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
 
-    const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+    const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantType.g2ElementType());
 
     const result_val = bls12_381_G2_Compress(&machine, args);
 
@@ -4778,7 +4778,7 @@ test "bls12_381_G2_compress" {
 
 //     const expected_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
 
-//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 96, .bytes = p_bytes }, ConstantTypeList.bytes());
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 96, .bytes = p_bytes }, ConstantType.bytesType());
 
 //     const result_val = bls12_381_G2_Uncompress(&machine, args);
 
@@ -4812,8 +4812,8 @@ test "bls12_381_G2_compress" {
 
 //     const expected_bytes: [*]const u8 = &[_]u8{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
 
-//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 32, .bytes = message_bytes }, ConstantTypeList.bytes())
-//         .extend(&heap, expr.Bytes, expr.Bytes{ .length = 25, .bytes = dst_bytes }, ConstantTypeList.bytes());
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 32, .bytes = message_bytes }, ConstantType.bytesType())
+//         .extend(&heap, expr.Bytes, expr.Bytes{ .length = 25, .bytes = dst_bytes }, ConstantType.bytesType());
 
 //     const result_val = bls12_381_G2_HashToGroup(&machine, args);
 
@@ -4849,8 +4849,8 @@ test "bls12_381_G2_compress" {
 
 //     const expected_bytes: [*]const u8 = &[_]u8{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-//     const args = LinkedValues.create(&heap, expr.BigInt, scalar, ConstantTypeList.integer())
-//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+//     const args = LinkedValues.create(&heap, expr.BigInt, scalar, ConstantType.integerType())
+//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantType.g2ElementType());
 
 //     const result_val = bls12_381_G2_ScalarMul(&machine, args);
 
@@ -4884,8 +4884,8 @@ test "bls12_381_millerLoop" {
 
     const expected_bytes: [*]const u8 = &[_]u8{0} ** 576;
 
-    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = g1_bytes }, ConstantTypeList.bls12_381_g1_element())
-        .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = g2_bytes }, ConstantTypeList.bls12_381_g2_element());
+    const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = g1_bytes }, ConstantType.g1ElementType())
+        .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = g2_bytes }, ConstantType.g2ElementType());
 
     const result_val = bls12_381_MillerLoop(&machine, args);
 
@@ -4919,8 +4919,8 @@ test "bls12_381_mulMlResult" {
 
     const expected_bytes: [*]const u8 = &[_]u8{0} ** 576;
 
-    const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml1_bytes }, ConstantTypeList.bls12_381_mlresult())
-        .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml2_bytes }, ConstantTypeList.bls12_381_mlresult());
+    const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml1_bytes }, ConstantType.mlResultType())
+        .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml2_bytes }, ConstantType.mlResultType());
 
     const result_val = bls12_381_MulMlResult(&machine, args);
 
@@ -4952,8 +4952,8 @@ test "bls12_381_finalVerify" {
 
     const gt2_bytes: [*]const u8 = &[_]u8{0} ** 576;
 
-    const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt1_bytes }, ConstantTypeList.bls12_381_mlresult())
-        .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt2_bytes }, ConstantTypeList.bls12_381_mlresult());
+    const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt1_bytes }, ConstantType.mlResultType())
+        .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt2_bytes }, ConstantType.mlResultType());
 
     const result_val = bls12_381_FinalVerify(&machine, args);
 
@@ -4983,7 +4983,7 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u8 = &[_]u8{ 0x8b, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
 
-//     const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+//     const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantType.g1ElementType());
 
 //     const result_val = bls12_381_G1_Neg(&machine, args);
 
@@ -5013,8 +5013,8 @@ test "bls12_381_finalVerify" {
 
 //     const p_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
 
-//     const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element())
-//         .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+//     const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantType.g1ElementType())
+//         .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantType.g1ElementType());
 
 //     const result_val = bls12_381_G1_Equal(&machine, args);
 
@@ -5044,7 +5044,7 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
 
-//     const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+//     const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantType.g1ElementType());
 
 //     const result_val = bls12_381_G1_Compress(&machine, args);
 
@@ -5077,7 +5077,7 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
 
-//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 48, .bytes = p_bytes }, ConstantTypeList.bytes());
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 48, .bytes = p_bytes }, ConstantType.bytesType());
 
 //     const result_val = bls12_381_G1_Uncompress(&machine, args);
 
@@ -5111,8 +5111,8 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u8 = &[_]u8{ 0xab, 0xd6, 0x18, 0x64, 0xf5, 0x19, 0x74, 0x80, 0x32, 0x55, 0x1e, 0x42, 0xe0, 0xac, 0x41, 0x7f, 0xd8, 0x28, 0xf0, 0x79, 0x45, 0x4e, 0x3e, 0x3c, 0x98, 0x91, 0xc5, 0xc2, 0x9e, 0xd7, 0xf1, 0x0b, 0xde, 0xcc, 0x04, 0x68, 0x54, 0xe3, 0x93, 0x1c, 0xb7, 0x00, 0x27, 0x79, 0xbd, 0x76, 0xd7, 0x1f };
 
-//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 32, .bytes = message_bytes }, ConstantTypeList.bytes())
-//         .extend(&heap, expr.Bytes, expr.Bytes{ .length = 25, .bytes = dst_bytes }, ConstantTypeList.bytes());
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 32, .bytes = message_bytes }, ConstantType.bytesType())
+//         .extend(&heap, expr.Bytes, expr.Bytes{ .length = 25, .bytes = dst_bytes }, ConstantType.bytesType());
 
 //     const result_val = bls12_381_G1_HashToGroup(&machine, args);
 
@@ -5148,8 +5148,8 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u32 = &[_]u32{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22 };
 
-//     const args = LinkedValues.create(&heap, expr.BigInt, scalar, ConstantTypeList.integer())
-//         .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g1_element());
+//     const args = LinkedValues.create(&heap, expr.BigInt, scalar, ConstantType.integerType())
+//         .extend(&heap, expr.G1Element, expr.G1Element{ .bytes = p_bytes }, ConstantType.g1ElementType());
 
 //     const result_val = bls12_381_G1_ScalarMul(&machine, args);
 
@@ -5183,8 +5183,8 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u32 = &[_]u32{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-//     const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = q_bytes }, ConstantTypeList.bls12_381_g2_element())
-//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+//     const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = q_bytes }, ConstantType.g2ElementType())
+//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantType.g2ElementType());
 
 //     const result_val = bls12_381_G2_Add(&machine, args);
 
@@ -5216,7 +5216,7 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u32 = &[_]u32{ 0x94, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
 
-//     const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+//     const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantType.g2ElementType());
 
 //     const result_val = bls12_381_G2_Neg(&machine, args);
 
@@ -5246,8 +5246,8 @@ test "bls12_381_finalVerify" {
 
 //     const p_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xc3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
 
-//     const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element())
-//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+//     const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantType.g2ElementType())
+//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantType.g2ElementType());
 
 //     const result_val = bls12_381_G2_Equal(&machine, args);
 
@@ -5277,7 +5277,7 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
 
-//     const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+//     const args = LinkedValues.create(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantType.g2ElementType());
 
 //     const result_val = bls12_381_G2_Compress(&machine, args);
 
@@ -5310,7 +5310,7 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
 
-//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 96, .bytes = p_bytes }, ConstantTypeList.bytes());
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 96, .bytes = p_bytes }, ConstantType.bytesType());
 
 //     const result_val = bls12_381_G2_Uncompress(&machine, args);
 
@@ -5344,8 +5344,8 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u32 = &[_]u32{ 0xb4, 0x95, 0x3c, 0x4b, 0xa1, 0x0c, 0x4d, 0x41, 0x96, 0xf9, 0x01, 0x69, 0xe7, 0x6f, 0xaf, 0x15, 0x4c, 0x26, 0x0e, 0xd7, 0x3f, 0xc7, 0x7b, 0xb6, 0x5d, 0xd3, 0xbe, 0x31, 0xe0, 0xce, 0xc6, 0x14, 0xa7, 0x28, 0x7c, 0xda, 0x94, 0x19, 0x53, 0x43, 0x67, 0x6c, 0x2c, 0x57, 0x49, 0x4f, 0x0e, 0x65, 0x15, 0x27, 0xe6, 0x50, 0x4c, 0x98, 0x40, 0x8e, 0x59, 0x9a, 0x4e, 0xb9, 0x6f, 0x7c, 0x5a, 0x8c, 0xfb, 0x85, 0xd2, 0xfd, 0xc7, 0x72, 0xf2, 0x85, 0x04, 0x58, 0x00, 0x84, 0xef, 0x55, 0x9b, 0x9b, 0x62, 0x3b, 0xc8, 0x4c, 0xe3, 0x05, 0x62, 0xed, 0x32, 0x0f, 0x6b, 0x7f, 0x65, 0x24, 0x5a, 0xd4 };
 
-//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 32, .bytes = message_bytes }, ConstantTypeList.bytes())
-//         .extend(&heap, expr.Bytes, expr.Bytes{ .length = 25, .bytes = dst_bytes }, ConstantTypeList.bytes());
+//     const args = LinkedValues.create(&heap, expr.Bytes, expr.Bytes{ .length = 32, .bytes = message_bytes }, ConstantType.bytesType())
+//         .extend(&heap, expr.Bytes, expr.Bytes{ .length = 25, .bytes = dst_bytes }, ConstantType.bytesType());
 
 //     const result_val = bls12_381_G2_HashToGroup(&machine, args);
 
@@ -5381,8 +5381,8 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u32 = &[_]u32{ 0xa4, 0x87, 0x0e, 0x98, 0x3a, 0x14, 0x9b, 0xb1, 0xe7, 0xcc, 0x70, 0xfd, 0xe9, 0x07, 0xa2, 0xaa, 0x52, 0x30, 0x28, 0x33, 0xbc, 0xe4, 0xd6, 0x2f, 0x67, 0x98, 0x19, 0x02, 0x29, 0x24, 0xe9, 0xca, 0xab, 0x52, 0xe3, 0x63, 0x1d, 0x37, 0x6d, 0x36, 0xd9, 0x69, 0x26, 0x64, 0xb4, 0xcf, 0xbc, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-//     const args = LinkedValues.create(&heap, expr.BigInt, scalar, ConstantTypeList.integer())
-//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantTypeList.bls12_381_g2_element());
+//     const args = LinkedValues.create(&heap, expr.BigInt, scalar, ConstantType.integerType())
+//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = p_bytes }, ConstantType.g2ElementType());
 
 //     const result_val = bls12_381_G2_ScalarMul(&machine, args);
 
@@ -5416,8 +5416,8 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u32 = &[_]u32{0} ** 576;
 
-//     const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = g1_bytes }, ConstantTypeList.bls12_381_g1_element())
-//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = g2_bytes }, ConstantTypeList.bls12_381_g2_element());
+//     const args = LinkedValues.create(&heap, expr.G1Element, expr.G1Element{ .bytes = g1_bytes }, ConstantType.g1ElementType())
+//         .extend(&heap, expr.G2Element, expr.G2Element{ .bytes = g2_bytes }, ConstantType.g2ElementType());
 
 //     const result_val = bls12_381_MillerLoop(&machine, args);
 
@@ -5451,8 +5451,8 @@ test "bls12_381_finalVerify" {
 
 //     const expected_bytes: [*]const u32 = &[_]u32{0} ** 576;
 
-//     const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml1_bytes }, ConstantTypeList.bls12_381_mlresult())
-//         .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml2_bytes }, ConstantTypeList.bls12_381_mlresult());
+//     const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml1_bytes }, ConstantType.mlResultType())
+//         .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml2_bytes }, ConstantType.mlResultType());
 
 //     const result_val = bls12_381_MulMlResult(&machine, args);
 
@@ -5484,8 +5484,8 @@ test "bls12_381_finalVerify" {
 
 //     const gt2_bytes: [*]const u32 = &[_]u32{0} ** 576;
 
-//     const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt1_bytes }, ConstantTypeList.bls12_381_mlresult())
-//         .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt2_bytes }, ConstantTypeList.bls12_381_mlresult());
+//     const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt1_bytes }, ConstantType.mlResultType())
+//         .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt2_bytes }, ConstantType.mlResultType());
 
 //     const result_val = bls12_381_FinalVerify(&machine, args);
 
