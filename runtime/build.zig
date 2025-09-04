@@ -64,6 +64,9 @@ pub fn build(b: *std.Build) !void {
         .optimize = .ReleaseFast,
     });
 
+    objRuntimeFunction.addIncludePath(blst_dep.path("bindings"));
+    objRuntimeFunction.linkLibrary(blst_lib);
+
     const locrf = objRuntimeFunction.getEmittedBin();
 
     const filerf = b.addInstallFile(locrf, "lib/runtimeFunction.o");

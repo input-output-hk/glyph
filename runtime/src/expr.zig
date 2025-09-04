@@ -582,19 +582,13 @@ pub const G1Element = extern struct {
     bytes: [*]const u8,
 
     pub fn createConstant(
-        self: G1Element,
-        types: *const ConstantTypeList,
+        self: *const G1Element,
+        _: *const ConstantType,
         heap: *Heap,
     ) *Constant {
-        const total_words: u32 = 13;
+        const total_words: u32 = 12;
         var buf = heap.createArray(u32, total_words);
 
-        buf[0] = @intFromPtr(types);
-
-        // var i: u32 = 0;
-        // while (i < 12) : (i += 1) {
-        //     buf[i + 1] = self.bytes[i];
-        // }
         var i: u32 = 0;
         while (i < 24) : (i += 1) {
             const byte_offset = i * 4;
@@ -604,7 +598,13 @@ pub const G1Element = extern struct {
                 (@as(u32, self.bytes[byte_offset + 3]) << 24);
         }
 
-        return @ptrCast(buf);
+        const con = Constant{
+            .length = 1,
+            .type_list = @ptrCast(ConstantType.g1ElementType()),
+            .value = @intFromPtr(buf),
+        };
+
+        return heap.create(Constant, &con); // @ptrCast(buf);
     }
 };
 
@@ -612,19 +612,13 @@ pub const G2Element = extern struct {
     bytes: [*]const u8,
 
     pub fn createConstant(
-        self: G2Element,
-        types: *const ConstantTypeList,
+        self: *const G1Element,
+        _: *const ConstantType,
         heap: *Heap,
     ) *Constant {
-        const total_words: u32 = 25;
+        const total_words: u32 = 12;
         var buf = heap.createArray(u32, total_words);
 
-        buf[0] = @intFromPtr(types);
-
-        // var i: u32 = 0;
-        // while (i < 24) : (i += 1) {
-        //     buf[i + 1] = self.bytes[i];
-        // }
         var i: u32 = 0;
         while (i < 24) : (i += 1) {
             const byte_offset = i * 4;
@@ -634,29 +628,53 @@ pub const G2Element = extern struct {
                 (@as(u32, self.bytes[byte_offset + 3]) << 24);
         }
 
-        return @ptrCast(buf);
+        const con = Constant{
+            .length = 1,
+            .type_list = @ptrCast(ConstantType.g2ElementType()),
+            .value = @intFromPtr(buf),
+        };
+
+        return heap.create(Constant, &con); // @ptrCast(buf);
     }
+
+    // pub fn createConstant(
+    //     self: G2Element,
+    //     types: *const ConstantTypeList,
+    //     heap: *Heap,
+    // ) *Constant {
+    //     const total_words: u32 = 25;
+    //     var buf = heap.createArray(u32, total_words);
+
+    //     buf[0] = @intFromPtr(types);
+
+    //     // var i: u32 = 0;
+    //     // while (i < 24) : (i += 1) {
+    //     //     buf[i + 1] = self.bytes[i];
+    //     // }
+    //     var i: u32 = 0;
+    //     while (i < 24) : (i += 1) {
+    //         const byte_offset = i * 4;
+    //         buf[i + 1] = (@as(u32, self.bytes[byte_offset])) |
+    //             (@as(u32, self.bytes[byte_offset + 1]) << 8) |
+    //             (@as(u32, self.bytes[byte_offset + 2]) << 16) |
+    //             (@as(u32, self.bytes[byte_offset + 3]) << 24);
+    //     }
+
+    //     return @ptrCast(buf);
+    // }
 };
 
 pub const MlResult = extern struct {
-    length: u32,
     bytes: [*]const u8,
 
     pub fn createConstant(
-        self: MlResult,
-        types: *const ConstantTypeList,
+        self: *const G1Element,
+        _: *const ConstantType,
         heap: *Heap,
     ) *Constant {
-        const total_words: u32 = self.length + 2;
+        const total_words: u32 = 12;
         var buf = heap.createArray(u32, total_words);
 
-        buf[0] = @intFromPtr(types);
-        buf[1] = self.length;
-
-        // var i: u32 = 0;
-        // while (i < self.length) : (i += 1) {
-        //     buf[i + 2] = self.bytes[i];
-        // }
         var i: u32 = 0;
         while (i < 24) : (i += 1) {
             const byte_offset = i * 4;
@@ -666,108 +684,17 @@ pub const MlResult = extern struct {
                 (@as(u32, self.bytes[byte_offset + 3]) << 24);
         }
 
-        return @ptrCast(buf);
+        const con = Constant{
+            .length = 1,
+            .type_list = @ptrCast(ConstantType.mlResultType()),
+            .value = @intFromPtr(buf),
+        };
+
+        return heap.create(Constant, &con); // @ptrCast(buf);
     }
 };
 
 pub const Constant = extern struct {
-    type_list: *ConstantTypeList,
-
-    const Self = @This();
-
-    pub fn rawValue(self: *const Self) u32 {
-        const value = @intFromPtr(self) + @sizeOf(u32);
-
-        return value;
-    }
-
-    pub fn bigInt(self: *const Self) BigInt {
-        const sign: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
-
-        const words: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 3);
-
-        return BigInt{
-            .sign = sign.*,
-            .length = length.*,
-            .words = words,
-        };
-    }
-
-    pub fn innerBytes(self: *const Self) Bytes {
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
-
-        return Bytes{
-            .length = length.*,
-            .bytes = bytes,
-        };
-    }
-
-    pub fn string(self: *const Self) String {
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        const bytes: [*]const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
-
-        return String{
-            .length = length.*,
-            .bytes = bytes,
-        };
-    }
-
-    pub fn bln(self: *const Self) bool {
-        const b: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        return b.* == 1;
-    }
-
-    pub fn g1Element(self: *const Self) G1Element {
-        const bytes: [*]const u8 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        return G1Element{
-            .bytes = bytes,
-        };
-    }
-
-    pub fn g2Element(self: *const Self) G2Element {
-        const bytes: [*]const u8 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        return G2Element{
-            .bytes = bytes,
-        };
-    }
-
-    pub fn mlResult(self: *const Self) MlResult {
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        const bytes: [*]const u8 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
-
-        return MlResult{
-            .length = length.*,
-            .bytes = bytes,
-        };
-    }
-
-    pub fn list(self: *const Self) List {
-        const length: *const u32 = @ptrFromInt(@intFromPtr(self) + @sizeOf(u32));
-
-        const items: ?*ListNode = if (length.* > 0) blk: {
-            break :blk @ptrFromInt(@intFromPtr(self) + @sizeOf(u32) * 2);
-        } else blk: {
-            break :blk null;
-        };
-
-        return List{
-            .type_length = self.type_list.length - 1,
-            .inner_type = self.type_list.innerListType(),
-            .length = length.*,
-            .items = items,
-        };
-    }
-};
-
-pub const ConstantTypeList = extern struct {
     length: u32,
     type_list: [*]const ConstantType,
     value: u32,
@@ -862,19 +789,22 @@ pub const ConstantTypeList = extern struct {
         };
     }
 
-    pub fn bls12_381_g1_element() *const ConstantTypeList {
-        const types: *const ConstantTypeList = @ptrCast(&UplcG1Element);
-        return types;
+    pub fn g1Element(self: *const Self) G1Element {
+        const ptr = self.value;
+        const bytes: [*]const u8 = @ptrFromInt(ptr);
+        return G1Element{ .bytes = bytes };
     }
 
-    pub fn bls12_381_g2_element() *const ConstantTypeList {
-        const types: *const ConstantTypeList = @ptrCast(&UplcG2Element);
-        return types;
+    pub fn g2Element(self: *const Self) G2Element {
+        const ptr = self.value;
+        const bytes: [*]const u8 = @ptrFromInt(ptr);
+        return G2Element{ .bytes = bytes };
     }
 
-    pub fn bls12_381_mlresult() *const ConstantTypeList {
-        const types: *const ConstantTypeList = @ptrCast(&UplcMlResult);
-        return types;
+    pub fn mlResult(self: *const Self) MlResult {
+        const ptr = self.value;
+        const bytes: [*]const u8 = @ptrFromInt(ptr);
+        return MlResult{ .bytes = bytes };
     }
 };
 
@@ -919,6 +849,21 @@ pub const ConstantType = enum(u32) {
 
     pub fn booleanType() *const ConstantType {
         const types: *const ConstantType = @ptrCast(&UplcBoolean);
+        return types;
+    }
+
+    pub fn g1ElementType() *const ConstantType {
+        const types: *const ConstantType = @ptrCast(&UplcG1Element);
+        return types;
+    }
+
+    pub fn g2ElementType() *const ConstantType {
+        const types: *const ConstantType = @ptrCast(&UplcG1Element);
+        return types;
+    }
+
+    pub fn mlResultType() *const ConstantType {
+        const types: *const ConstantType = @ptrCast(&UplcG1Element);
         return types;
     }
 };
