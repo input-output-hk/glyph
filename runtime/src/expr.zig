@@ -612,7 +612,7 @@ pub const G2Element = extern struct {
     bytes: [*]const u8,
 
     pub fn createConstant(
-        self: *const G1Element,
+        self: *const G2Element,
         _: *const ConstantType,
         heap: *Heap,
     ) *Constant {
@@ -668,7 +668,7 @@ pub const MlResult = extern struct {
     bytes: [*]const u8,
 
     pub fn createConstant(
-        self: *const G1Element,
+        self: *const MlResult,
         _: *const ConstantType,
         heap: *Heap,
     ) *Constant {

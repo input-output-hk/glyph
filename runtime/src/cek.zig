@@ -3276,13 +3276,13 @@ test "divide: numerator == 0 → 0" {
     const n = expr.BigInt{ .sign = 0, .length = 1, .words = &.{0} }; // 0
     const d = expr.BigInt{ .sign = 0, .length = 1, .words = &.{1234} }; // any ≠ 0
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
-        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
+    const args = LinkedValues.create(&heap, *const expr.BigInt, &d, ConstantType.integerType())
+        .extend(&heap, *const expr.BigInt, &n, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.type_list.constType().*) {
+        .constant => |c| switch (c.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 0);
@@ -3312,7 +3312,7 @@ test "divide: 1 / 2 floors to 0" {
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.type_list.constType().*) {
+        .constant => |c| switch (c.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 0);
@@ -3356,7 +3356,7 @@ test "divide: (-503) / (-1777777777) = 0" {
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.type_list.constType().*) {
+        .constant => |c| switch (c.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 0);
@@ -3398,7 +3398,7 @@ test "divide: (-503) / (+1777777777) floors to −1" {
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.type_list.constType().*) {
+        .constant => |c| switch (c.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 1); // negative
@@ -3440,7 +3440,7 @@ test "divide: (+503) / (−1777777777) floors to −1" {
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.type_list.constType().*) {
+        .constant => |c| switch (c.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 1); // negative
@@ -3482,7 +3482,7 @@ test "divide: (+503) / (+1777777777) = 0" {
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.type_list.constType().*) {
+        .constant => |c| switch (c.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 0);
@@ -3515,7 +3515,7 @@ test "divide: multi-limb exact (positive / positive)" {
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.type_list.constType().*) {
+        .constant => |c| switch (c.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 0);
@@ -3549,7 +3549,7 @@ test "divide: multi-limb with remainder and signs differ (positive / negative)" 
     const res_val = divideInteger(&mach, args);
 
     switch (res_val.*) {
-        .constant => |c| switch (c.type_list.constType().*) {
+        .constant => |c| switch (c.constType().*) {
             .integer => {
                 const r = c.bigInt();
                 try testing.expect(r.sign == 1);
@@ -4425,7 +4425,7 @@ test "bls12_381_G1_add" {
 
     switch (result_val.*) {
         .constant => |c| {
-            switch (c.type_list.constType().*) {
+            switch (c.constType().*) {
                 .bls12_381_g1_element => {
                     const r = c.g1Element();
                     for (0..48) |i| {
@@ -4457,7 +4457,7 @@ test "bls12_381_G1_neg" {
 
     switch (result_val.*) {
         .constant => |c| {
-            switch (c.type_list.constType().*) {
+            switch (c.constType().*) {
                 .bls12_381_g1_element => {
                     const r = c.g1Element();
                     for (0..48) |i| {
@@ -4488,7 +4488,7 @@ test "bls12_381_G1_equal" {
 
     switch (result_val.*) {
         .constant => |c| {
-            switch (c.type_list.constType().*) {
+            switch (c.constType().*) {
                 .boolean => {
                     const r = c.bln();
                     try testing.expect(r);
@@ -4518,7 +4518,7 @@ test "bls12_381_G1_compress" {
 
     switch (result_val.*) {
         .constant => |c| {
-            switch (c.type_list.constType().*) {
+            switch (c.constType().*) {
                 .bytes => {
                     const r = c.innerBytes();
                     try testing.expectEqual(r.length, 48);
@@ -4551,7 +4551,7 @@ test "bls12_381_G1_compress" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g1_element => {
 //                     const r = c.g1Element();
 //                     for (0..48) |i| {
@@ -4586,7 +4586,7 @@ test "bls12_381_G1_compress" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g1_element => {
 //                     const r = c.g1Element();
 //                     for (0..48) |i| {
@@ -4623,7 +4623,7 @@ test "bls12_381_G1_compress" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g1_element => {
 //                     const r = c.g1Element();
 //                     for (0..48) |i| {
@@ -4658,7 +4658,7 @@ test "bls12_381_G2_add" {
 
     switch (result_val.*) {
         .constant => |c| {
-            switch (c.type_list.constType().*) {
+            switch (c.constType().*) {
                 .bls12_381_g2_element => {
                     const r = c.g2Element();
                     for (0..96) |i| {
@@ -4690,7 +4690,7 @@ test "bls12_381_G2_neg" {
 
     switch (result_val.*) {
         .constant => |c| {
-            switch (c.type_list.constType().*) {
+            switch (c.constType().*) {
                 .bls12_381_g2_element => {
                     const r = c.g2Element();
                     for (0..96) |i| {
@@ -4721,7 +4721,7 @@ test "bls12_381_G2_equal" {
 
     switch (result_val.*) {
         .constant => |c| {
-            switch (c.type_list.constType().*) {
+            switch (c.constType().*) {
                 .boolean => {
                     const r = c.bln();
                     try testing.expect(r);
@@ -4751,7 +4751,7 @@ test "bls12_381_G2_compress" {
 
     switch (result_val.*) {
         .constant => |c| {
-            switch (c.type_list.constType().*) {
+            switch (c.constType().*) {
                 .bytes => {
                     const r = c.innerBytes();
                     try testing.expectEqual(r.length, 96);
@@ -4784,7 +4784,7 @@ test "bls12_381_G2_compress" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g2_element => {
 //                     const r = c.g2Element();
 //                     for (0..96) |i| {
@@ -4819,7 +4819,7 @@ test "bls12_381_G2_compress" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g2_element => {
 //                     const r = c.g2Element();
 //                     for (0..96) |i| {
@@ -4856,7 +4856,7 @@ test "bls12_381_G2_compress" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g2_element => {
 //                     const r = c.g2Element();
 //                     for (0..96) |i| {
@@ -4891,7 +4891,7 @@ test "bls12_381_millerLoop" {
 
     switch (result_val.*) {
         .constant => |c| {
-            switch (c.type_list.constType().*) {
+            switch (c.constType().*) {
                 .bls12_381_mlresult => {
                     const r = c.mlResult();
                     for (0..576) |i| {
@@ -4919,14 +4919,14 @@ test "bls12_381_mulMlResult" {
 
     const expected_bytes: [*]const u8 = &[_]u8{0} ** 576;
 
-    const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml1_bytes }, ConstantType.mlResultType())
-        .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = ml2_bytes }, ConstantType.mlResultType());
+    const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .bytes = ml1_bytes }, ConstantType.mlResultType())
+        .extend(&heap, expr.MlResult, expr.MlResult{ .bytes = ml2_bytes }, ConstantType.mlResultType());
 
     const result_val = bls12_381_MulMlResult(&machine, args);
 
     switch (result_val.*) {
         .constant => |c| {
-            switch (c.type_list.constType().*) {
+            switch (c.constType().*) {
                 .bls12_381_mlresult => {
                     const r = c.mlResult();
                     for (0..576) |i| {
@@ -4952,14 +4952,14 @@ test "bls12_381_finalVerify" {
 
     const gt2_bytes: [*]const u8 = &[_]u8{0} ** 576;
 
-    const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt1_bytes }, ConstantType.mlResultType())
-        .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt2_bytes }, ConstantType.mlResultType());
+    const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .bytes = gt1_bytes }, ConstantType.mlResultType())
+        .extend(&heap, expr.MlResult, expr.MlResult{ .bytes = gt2_bytes }, ConstantType.mlResultType());
 
     const result_val = bls12_381_FinalVerify(&machine, args);
 
     switch (result_val.*) {
         .constant => |c| {
-            switch (c.type_list.constType().*) {
+            switch (c.constType().*) {
                 .boolean => {
                     const r = c.bln();
                     try testing.expect(r);
@@ -4989,7 +4989,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g1_element => {
 //                     const r = c.g1Element();
 //                     for (0..48) |i| {
@@ -5020,7 +5020,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .boolean => {
 //                     const r = c.bln();
 //                     try testing.expect(r);
@@ -5050,7 +5050,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bytes => {
 //                     const r = c.innerBytes();
 //                     try testing.expectEqual(r.length, 48);
@@ -5083,7 +5083,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g1_element => {
 //                     const r = c.g1Element();
 //                     for (0..48) |i| {
@@ -5118,7 +5118,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g1_element => {
 //                     const r = c.g1Element();
 //                     for (0..48) |i| {
@@ -5155,7 +5155,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g1_element => {
 //                     const r = c.g1Element();
 //                     for (0..48) |i| {
@@ -5190,7 +5190,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g2_element => {
 //                     const r = c.g2Element();
 //                     for (0..96) |i| {
@@ -5222,7 +5222,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g2_element => {
 //                     const r = c.g2Element();
 //                     for (0..96) |i| {
@@ -5253,7 +5253,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .boolean => {
 //                     const r = c.bln();
 //                     try testing.expect(r);
@@ -5283,7 +5283,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bytes => {
 //                     const r = c.innerBytes();
 //                     try testing.expectEqual(r.length, 96);
@@ -5316,7 +5316,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g2_element => {
 //                     const r = c.g2Element();
 //                     for (0..96) |i| {
@@ -5351,7 +5351,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g2_element => {
 //                     const r = c.g2Element();
 //                     for (0..96) |i| {
@@ -5388,7 +5388,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_g2_element => {
 //                     const r = c.g2Element();
 //                     for (0..96) |i| {
@@ -5423,7 +5423,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_mlresult => {
 //                     const r = c.mlResult();
 //                     for (0..576) |i| {
@@ -5458,7 +5458,7 @@ test "bls12_381_finalVerify" {
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .bls12_381_mlresult => {
 //                     const r = c.mlResult();
 //                     for (0..576) |i| {
@@ -5484,14 +5484,14 @@ test "bls12_381_finalVerify" {
 
 //     const gt2_bytes: [*]const u32 = &[_]u32{0} ** 576;
 
-//     const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt1_bytes }, ConstantType.mlResultType())
-//         .extend(&heap, expr.MlResult, expr.MlResult{ .length = 576, .bytes = gt2_bytes }, ConstantType.mlResultType());
+//     const args = LinkedValues.create(&heap, expr.MlResult, expr.MlResult{ .bytes = gt1_bytes }, ConstantType.mlResultType())
+//         .extend(&heap, expr.MlResult, expr.MlResult{ .bytes = gt2_bytes }, ConstantType.mlResultType());
 
 //     const result_val = bls12_381_FinalVerify(&machine, args);
 
 //     switch (result_val.*) {
 //         .constant => |c| {
-//             switch (c.type_list.constType().*) {
+//             switch (c.constType().*) {
 //                 .boolean => {
 //                     const r = c.bln();
 //                     try testing.expect(r);
