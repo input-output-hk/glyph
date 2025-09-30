@@ -586,25 +586,21 @@ pub const G1Element = extern struct {
         _: *const ConstantType,
         heap: *Heap,
     ) *Constant {
-        const total_words: u32 = 12;
-        var buf = heap.createArray(u32, total_words);
+        // Allocate 48 bytes (12 words) for the G1 element
+        const buf_bytes: [*]u8 = @ptrCast(heap.createArray(u32, 12));
 
-        var i: u32 = 0;
-        while (i < 24) : (i += 1) {
-            const byte_offset = i * 4;
-            buf[i + 1] = (@as(u32, self.bytes[byte_offset])) |
-                (@as(u32, self.bytes[byte_offset + 1]) << 8) |
-                (@as(u32, self.bytes[byte_offset + 2]) << 16) |
-                (@as(u32, self.bytes[byte_offset + 3]) << 24);
+        // Copy raw bytes directly
+        for (0..48) |i| {
+            buf_bytes[i] = self.bytes[i];
         }
 
         const con = Constant{
             .length = 1,
             .type_list = @ptrCast(ConstantType.g1ElementType()),
-            .value = @intFromPtr(buf),
+            .value = @intFromPtr(buf_bytes),
         };
 
-        return heap.create(Constant, &con); // @ptrCast(buf);
+        return heap.create(Constant, &con);
     }
 };
 
@@ -616,25 +612,21 @@ pub const G2Element = extern struct {
         _: *const ConstantType,
         heap: *Heap,
     ) *Constant {
-        const total_words: u32 = 12;
-        var buf = heap.createArray(u32, total_words);
+        // Allocate 96 bytes (24 words) for the G2 element
+        const buf_bytes: [*]u8 = @ptrCast(heap.createArray(u32, 24));
 
-        var i: u32 = 0;
-        while (i < 24) : (i += 1) {
-            const byte_offset = i * 4;
-            buf[i + 1] = (@as(u32, self.bytes[byte_offset])) |
-                (@as(u32, self.bytes[byte_offset + 1]) << 8) |
-                (@as(u32, self.bytes[byte_offset + 2]) << 16) |
-                (@as(u32, self.bytes[byte_offset + 3]) << 24);
+        // Copy raw bytes directly
+        for (0..96) |i| {
+            buf_bytes[i] = self.bytes[i];
         }
 
         const con = Constant{
             .length = 1,
             .type_list = @ptrCast(ConstantType.g2ElementType()),
-            .value = @intFromPtr(buf),
+            .value = @intFromPtr(buf_bytes),
         };
 
-        return heap.create(Constant, &con); // @ptrCast(buf);
+        return heap.create(Constant, &con);
     }
 
     // pub fn createConstant(
@@ -672,25 +664,21 @@ pub const MlResult = extern struct {
         _: *const ConstantType,
         heap: *Heap,
     ) *Constant {
-        const total_words: u32 = 12;
-        var buf = heap.createArray(u32, total_words);
+        // Allocate 576 bytes (144 words) for the MlResult
+        const buf_bytes: [*]u8 = @ptrCast(heap.createArray(u32, 144));
 
-        var i: u32 = 0;
-        while (i < 24) : (i += 1) {
-            const byte_offset = i * 4;
-            buf[i + 1] = (@as(u32, self.bytes[byte_offset])) |
-                (@as(u32, self.bytes[byte_offset + 1]) << 8) |
-                (@as(u32, self.bytes[byte_offset + 2]) << 16) |
-                (@as(u32, self.bytes[byte_offset + 3]) << 24);
+        // Copy raw bytes directly
+        for (0..576) |i| {
+            buf_bytes[i] = self.bytes[i];
         }
 
         const con = Constant{
             .length = 1,
             .type_list = @ptrCast(ConstantType.mlResultType()),
-            .value = @intFromPtr(buf),
+            .value = @intFromPtr(buf_bytes),
         };
 
-        return heap.create(Constant, &con); // @ptrCast(buf);
+        return heap.create(Constant, &con);
     }
 };
 
@@ -858,12 +846,12 @@ pub const ConstantType = enum(u32) {
     }
 
     pub fn g2ElementType() *const ConstantType {
-        const types: *const ConstantType = @ptrCast(&UplcG1Element);
+        const types: *const ConstantType = @ptrCast(&UplcG2Element);
         return types;
     }
 
     pub fn mlResultType() *const ConstantType {
-        const types: *const ConstantType = @ptrCast(&UplcG1Element);
+        const types: *const ConstantType = @ptrCast(&UplcMlResult);
         return types;
     }
 };
@@ -888,15 +876,12 @@ const UplcListData = [2]u32{
     @intFromEnum(ConstantType.list),
     @intFromEnum(ConstantType.data),
 };
-const UplcG1Element = [2]u32{
-    1,
+const UplcG1Element = [1]u32{
     @intFromEnum(ConstantType.bls12_381_g1_element),
 };
-const UplcG2Element = [2]u32{
-    1,
+const UplcG2Element = [1]u32{
     @intFromEnum(ConstantType.bls12_381_g2_element),
 };
-const UplcMlResult = [2]u32{
-    1,
+const UplcMlResult = [1]u32{
     @intFromEnum(ConstantType.bls12_381_mlresult),
 };
