@@ -29,7 +29,8 @@ SECTIONS
   .bss ALIGN(4) :
   {
     __bss_bottom = .;
-    . = . + LENGTH(BSS);
+    *(.bss*)
+    *(COMMON)
     __bss_top = .;
   } > BSS
 
@@ -37,15 +38,17 @@ SECTIONS
   .heap ALIGN(4) :
   {
      __heap_bottom = .;
-    . = . + LENGTH(HEAP);
+    *(.heap*)
+    . = . + 0x100000;  /* Allocate 1MB of heap space */
     __heap_top = .;
   } > HEAP
 
-    . = ORIGIN(FRAME);
-  .stack ALIGN(4) :
+  . = ORIGIN(FRAME);
+  .frame ALIGN(4) :
   {
     __frame_bottom = .;
-    . = . + LENGTH(STACK);
+    *(.frame*)
+    . = . + 0x100000;  /* Allocate 1MB of frame space */
     __frame_top = .;
   } > FRAME
 
@@ -53,7 +56,8 @@ SECTIONS
   .stack ALIGN(4) :
   {
     __stack_bottom = .;
-    . = . + LENGTH(STACK);
+    *(.stack*)
+    . = . + 0x100000;  /* Allocate 1MB of stack space */
     __stack_top = .;
   } > STACK
 }
