@@ -95,12 +95,24 @@ impl Cek {
     pub fn cek_assembly(mut self, bytes: Vec<u8>) -> CodeGenerator {
         // Generate the core CEK implementation
         self.generator
+            .add_instruction(Instruction::section("text".to_string()));
+        self.generator
             .add_instruction(Instruction::global("_start".to_string()));
         self.generator
             .add_instruction(Instruction::label("_start".to_string()));
 
         self.generator
-            .add_instruction(Instruction::section("text".to_string()));
+            .add_instruction(Instruction::Lui(Register::Sp, 0xE0100));
+        
+        // Call the init function from the runtime
+        self.generator
+            .add_instruction(Instruction::Jal(Register::Ra, "init".to_string()));
+        
+        // After init returns, halt (this shouldn't be reached as init calls exit)
+        self.generator
+            .add_instruction(Instruction::Li(Register::A7, 93)); // exit syscall
+        self.generator
+            .add_instruction(Instruction::Ecall);
 
         self.generator
             .add_instruction(Instruction::section("data".to_string()));
