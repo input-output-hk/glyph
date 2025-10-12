@@ -271,7 +271,7 @@ fn serialize_constant(preceeding_byte_size: u32, constant: &Rc<Constant>) -> Res
         Constant::ByteString(bytes) => {
             serialize_bytestring_constant(preceeding_byte_size + 4, bytes)?
         }
-        // Constant::String(s) => serialize_string_constant(s)?, wait wut todo
+        Constant::String(s) => serialize_string_constant(preceeding_byte_size + 4, s.as_str())?,
         Constant::Unit => serialize_unit_constant(preceeding_byte_size + 4)?,
         Constant::Bool(b) => serialize_bool_constant(preceeding_byte_size + 4, *b)?,
         Constant::Data(data) => serialize_data_constant(preceeding_byte_size + 4, data)?,
@@ -334,24 +334,32 @@ fn serialize_integer_constant(
 fn serialize_bytestring_constant(preceeding_byte_size: u32, bytes: &[u8]) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     let mut bytes_type: Vec<u8> = Vec::new();
-    // Check if the bytestring is too large
-    if bytes.len() > u32::MAX as usize {
+    // Check size
+    if bytes.len() > (u32::MAX as usize) * 4 {
         return Err(SerializationError::ByteStringTooLarge(format!(
             "ByteString too large: {} bytes",
             bytes.len()
         )));
     }
 
-    // Write actual length in bytes
-    x.write_u32::<LittleEndian>(bytes.len() as u32)?;
+    // We encode as a sequence of u32 words, little-endian packing of up to 4 bytes per word.
+    // Header stores the number of 32-bit words.
+    let word_count: u32 = if bytes.is_empty() {
+        0
+    } else {
+        ((bytes.len() + 3) / 4) as u32
+    };
 
-    // Write each byte as a word
-    x.write_all(
-        &bytes
-            .iter()
-            .flat_map(|byte| (*byte as u32).to_le_bytes())
-            .collect::<Vec<u8>>(),
-    )?;
+    x.write_u32::<LittleEndian>(word_count)?;
+
+    // Pack bytes into u32 words (little-endian within the word), zero-padding the final word
+    for chunk in bytes.chunks(4) {
+        let mut word: u32 = 0;
+        for (i, b) in chunk.iter().enumerate() {
+            word |= (*b as u32) << (8 * i as u32);
+        }
+        x.write_u32::<LittleEndian>(word)?;
+    }
 
     bytes_type.write_u32::<LittleEndian>(1)?;
 
@@ -362,6 +370,46 @@ fn serialize_bytestring_constant(preceeding_byte_size: u32, bytes: &[u8]) -> Res
     bytes_type.extend(x);
 
     Ok(bytes_type)
+}
+
+/// Serialize a string constant (UTF-8), using the same packed-word layout as ByteString
+fn serialize_string_constant(preceeding_byte_size: u32, s: &str) -> Result<Vec<u8>> {
+    let bytes = s.as_bytes();
+    let mut x: Vec<u8> = Vec::new();
+    let mut string_type: Vec<u8> = Vec::new();
+
+    if bytes.len() > (u32::MAX as usize) * 4 {
+        return Err(SerializationError::StringTooLarge(format!(
+            "String too large: {} bytes",
+            bytes.len()
+        )));
+    }
+
+    let word_count: u32 = if bytes.is_empty() {
+        0
+    } else {
+        ((bytes.len() + 3) / 4) as u32
+    };
+
+    x.write_u32::<LittleEndian>(word_count)?;
+
+    for chunk in bytes.chunks(4) {
+        let mut word: u32 = 0;
+        for (i, b) in chunk.iter().enumerate() {
+            word |= (*b as u32) << (8 * i as u32);
+        }
+        x.write_u32::<LittleEndian>(word)?;
+    }
+
+    string_type.write_u32::<LittleEndian>(1)?;
+
+    string_type.write_u32::<LittleEndian>(preceeding_byte_size + x.len() as u32 + 8)?;
+
+    x.write_u32::<LittleEndian>(const_tag::STRING)?;
+
+    string_type.extend(x);
+
+    Ok(string_type)
 }
 
 /// Serialize a unit constant
