@@ -82,7 +82,7 @@ impl Default for RegisterMap {
 
 #[derive(Debug)]
 pub struct Cek {
-     generator: CodeGenerator
+    generator: CodeGenerator,
 }
 
 impl Cek {
@@ -103,16 +103,15 @@ impl Cek {
 
         self.generator
             .add_instruction(Instruction::Lui(Register::Sp, 0xE0100));
-        
+
         // Call the init function from the runtime
         self.generator
             .add_instruction(Instruction::Jal(Register::Ra, "init".to_string()));
-        
+
         // After init returns, halt (this shouldn't be reached as init calls exit)
         self.generator
             .add_instruction(Instruction::Li(Register::A7, 93)); // exit syscall
-        self.generator
-            .add_instruction(Instruction::Ecall);
+        self.generator.add_instruction(Instruction::Ecall);
 
         self.generator
             .add_instruction(Instruction::section("data".to_string()));

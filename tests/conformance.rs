@@ -29,8 +29,8 @@ struct UplcCompiler {
 impl UplcCompiler {
     /// Create a new compiler with a temporary directory
     fn new() -> Result<Self, String> {
-        let temp_dir = tempfile::tempdir()
-            .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+        let temp_dir =
+            tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {}", e))?;
         Ok(Self { temp_dir })
     }
 
@@ -65,8 +65,7 @@ impl UplcCompiler {
 
         // Step 3: Write assembly to file
         let asm_path = self.temp_dir.path().join("program.s");
-        fs::write(&asm_path, &assembly)
-            .map_err(|e| format!("Failed to write assembly: {}", e))?;
+        fs::write(&asm_path, &assembly).map_err(|e| format!("Failed to write assembly: {}", e))?;
 
         // Step 4: Assemble to object file
         let status = Command::new("riscv64-elf-as")
@@ -136,24 +135,24 @@ fn parse_expected(expected_file: &Path) -> Result<Program<NamedDeBruijn>, String
         return Err(EVALUATION_FAILURE.to_string());
     }
 
-    let program = parser::program(&code)
-        .map_err(|e| format!("Failed to parse expected result: {:?}", e))?;
+    let program =
+        parser::program(&code).map_err(|e| format!("Failed to parse expected result: {:?}", e))?;
 
     Program::<NamedDeBruijn>::try_from(program)
         .map_err(|e| format!("Failed to convert to NamedDeBruijn: {:?}", e))
 }
 
 /// Run a UPLC program through the Zig CEK and get the result
-fn run_uplc_program(program: &Program<DeBruijn>) -> Result<(u32, emulator::loader::program::Program), String> {
+fn run_uplc_program(
+    program: &Program<DeBruijn>,
+) -> Result<(u32, emulator::loader::program::Program), String> {
     let compiler = UplcCompiler::new()?;
     let elf_path = compiler.compile(program)?;
 
     // Run in emulator
-    let (result, _trace, emu_program) = glyph::cek::run_file(
-        elf_path.to_str().unwrap(),
-        Vec::new(),
-    )
-    .map_err(|e| format!("Emulator execution failed: {:?}", e))?;
+    let (result, _trace, emu_program) =
+        glyph::cek::run_file(elf_path.to_str().unwrap(), Vec::new())
+            .map_err(|e| format!("Emulator execution failed: {:?}", e))?;
 
     use emulator::ExecutionResult;
     match result {
@@ -175,11 +174,10 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
     let expected_path = uplc_path.with_extension("uplc.expected");
 
     // Parse the input program
-    let code = fs::read_to_string(uplc_path)
-        .map_err(|e| format!("Failed to read UPLC file: {}", e))?;
+    let code =
+        fs::read_to_string(uplc_path).map_err(|e| format!("Failed to read UPLC file: {}", e))?;
 
-    let program = parser::program(&code)
-        .map_err(|_| PARSE_ERROR.to_string())?;
+    let program = parser::program(&code).map_err(|_| PARSE_ERROR.to_string())?;
 
     let program: Program<DeBruijn> = program
         .try_into()
@@ -207,23 +205,26 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
         (Ok((result_ptr, emu_program)), Ok(expected_program)) => {
             // Deserialize the result from memory and compare with expected
             use uplc::ast::{Constant as UplcConstant, Term as UplcTerm};
-            
+
             // Validate result pointer
             if result_ptr == 0 {
                 return Err("Null result pointer".to_string());
             }
-            
+
             if result_ptr < 0x90000000 {
-                return Err(format!("Result pointer out of expected range: {:#x}", result_ptr));
+                return Err(format!(
+                    "Result pointer out of expected range: {:#x}",
+                    result_ptr
+                ));
             }
-            
+
             // Helper function to read u32 from emulator memory via sections
             let read_u32 = |addr: u32| -> Result<u32, String> {
                 // Find the section containing this address
                 for section in &emu_program.sections {
                     let section_start = section.start as u32;
                     let section_end = section_start + (section.data.len() * 4) as u32;
-                    
+
                     if addr >= section_start && addr + 4 <= section_end {
                         let offset = ((addr - section_start) / 4) as usize;
                         if offset < section.data.len() {
@@ -236,35 +237,35 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
                 }
                 Err(format!("Address {:#x} not found in any section", addr))
             };
-            
+
             // Read the Value tag at result_ptr
             let value_tag = read_u32(result_ptr)?;
-            
+
             // Value is a tagged union: 0=constant, 1=delay, 2=lambda, 3=builtin, 4=constr
             if value_tag != 0 {
                 // For non-constant values (lambda, delay, builtin, constr),
                 // structural comparison is complex. Accept as passing.
                 return Ok(());
             }
-            
+
             // Read the Constant pointer (next 4 bytes after the tag)
             let const_ptr = read_u32(result_ptr + 4)?;
-            
+
             // Read the Constant structure: { length: u32, type_list: ptr, value: u32 }
             let _const_length = read_u32(const_ptr)?;
             let const_type_ptr = read_u32(const_ptr + 4)?;
             let const_value_ptr = read_u32(const_ptr + 8)?;
-            
+
             // Read the ConstantType (first element of type_list)
             let const_type = read_u32(const_type_ptr)?;
-            
+
             // Deserialize based on constant type: 0=integer, 1=bytes, 2=string, 3=unit, 4=boolean
             let actual_term: UplcTerm<DeBruijn> = match const_type {
                 0 => {
                     // Integer: { sign: u32, length: u32, words: [u32] }
                     let sign = read_u32(const_value_ptr)?;
                     let word_count = read_u32(const_value_ptr + 4)?;
-                    
+
                     // Build BigInt from words (little-endian word order)
                     use num_bigint::BigInt;
                     let mut value = BigInt::from(0u64);
@@ -272,11 +273,11 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
                         let word = read_u32(const_value_ptr + 8 + i * 4)?;
                         value = value + (BigInt::from(word as u64) << (32 * i as usize));
                     }
-                    
+
                     if sign != 0 {
                         value = -value;
                     }
-                    
+
                     UplcTerm::Constant(UplcConstant::Integer(value).into())
                 }
                 3 => {
@@ -293,7 +294,7 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
                     // Length is in u32 words, each word holds 4 bytes
                     let word_count = read_u32(const_value_ptr)?;
                     let mut bytes = Vec::new();
-                    
+
                     for i in 0..word_count {
                         let word = read_u32(const_value_ptr + 4 + i * 4)?;
                         // Extract bytes from word (little-endian)
@@ -302,14 +303,14 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
                         bytes.push(((word >> 16) & 0xFF) as u8);
                         bytes.push(((word >> 24) & 0xFF) as u8);
                     }
-                    
+
                     UplcTerm::Constant(UplcConstant::ByteString(bytes).into())
                 }
                 2 => {
-                    // String: { length: u32, bytes: [u32] }  
+                    // String: { length: u32, bytes: [u32] }
                     let word_count = read_u32(const_value_ptr)?;
                     let mut bytes = Vec::new();
-                    
+
                     for i in 0..word_count {
                         let word = read_u32(const_value_ptr + 4 + i * 4)?;
                         bytes.push((word & 0xFF) as u8);
@@ -317,23 +318,23 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
                         bytes.push(((word >> 16) & 0xFF) as u8);
                         bytes.push(((word >> 24) & 0xFF) as u8);
                     }
-                    
+
                     // Convert bytes to string
                     let string = String::from_utf8(bytes)
                         .map_err(|e| format!("Invalid UTF-8 in string constant: {}", e))?;
                     UplcTerm::Constant(UplcConstant::String(string).into())
                 }
                 _ => {
-                    // For complex types (5=list, 6=pair, 7=data, 8+=BLS), 
+                    // For complex types (5=list, 6=pair, 7=data, 8+=BLS),
                     // deserialization would be quite complex. Accept as passing.
                     return Ok(());
                 }
             };
-            
+
             // Convert expected program term to DeBruijn for comparison
             let expected_program_db = Program::<DeBruijn>::try_from(expected_program)
                 .map_err(|e| format!("Failed to convert expected to DeBruijn: {:?}", e))?;
-            
+
             // Compare the terms
             let expected_term_ref: &UplcTerm<DeBruijn> = &expected_program_db.term;
             if &actual_term == expected_term_ref {
@@ -345,9 +346,10 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
                 ))
             }
         }
-        (Ok(_), Err(expected_err)) => {
-            Err(format!("Expected error '{}', but got success", expected_err))
-        }
+        (Ok(_), Err(expected_err)) => Err(format!(
+            "Expected error '{}', but got success",
+            expected_err
+        )),
         (Err(actual_err), Ok(_)) => {
             Err(format!("Expected success, but got error '{}'", actual_err))
         }
@@ -358,7 +360,7 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
 #[test]
 fn conformance_tests() {
     let test_root = PathBuf::from("tests/semantics/addInteger");
-    
+
     if !test_root.exists() {
         panic!("Test directory not found: {}", test_root.display());
     }
@@ -368,10 +370,7 @@ fn conformance_tests() {
     let mut failed = 0;
     let mut failures = Vec::new();
 
-    for entry in WalkDir::new(&test_root)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    for entry in WalkDir::new(&test_root).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
 
         if path.extension().and_then(OsStr::to_str) == Some("uplc") {
