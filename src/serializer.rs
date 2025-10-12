@@ -347,7 +347,7 @@ fn serialize_bytestring_constant(preceeding_byte_size: u32, bytes: &[u8]) -> Res
     let word_count: u32 = if bytes.is_empty() {
         0
     } else {
-        ((bytes.len() + 3) / 4) as u32
+        bytes.len().div_ceil(4) as u32
     };
 
     x.write_u32::<LittleEndian>(word_count)?;
@@ -388,7 +388,7 @@ fn serialize_string_constant(preceeding_byte_size: u32, s: &str) -> Result<Vec<u
     let word_count: u32 = if bytes.is_empty() {
         0
     } else {
-        ((bytes.len() + 3) / 4) as u32
+        bytes.len().div_ceil(4) as u32
     };
 
     x.write_u32::<LittleEndian>(word_count)?;
