@@ -222,16 +222,14 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
             let read_u32 = |addr: u32| -> Result<u32, String> {
                 // Find the section containing this address
                 for section in &emu_program.sections {
-                    let section_start = section.start as u32;
+                    let section_start = section.start;
                     let section_end = section_start + (section.data.len() * 4) as u32;
 
                     if addr >= section_start && addr + 4 <= section_end {
                         let offset = ((addr - section_start) / 4) as usize;
                         if offset < section.data.len() {
-                            // Section data is stored as u32 array
-                            // The emulator stores data in big-endian format, so we need to swap bytes
-                            let value = section.data[offset];
-                            return Ok(value.swap_bytes());
+                            // Section data is stored as u32 array (little-endian)
+                            return Ok(section.data[offset].swap_bytes());
                         }
                     }
                 }
@@ -271,7 +269,7 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
                     let mut value = BigInt::from(0u64);
                     for i in 0..word_count {
                         let word = read_u32(const_value_ptr + 8 + i * 4)?;
-                        value = value + (BigInt::from(word as u64) << (32 * i as usize));
+                        value += BigInt::from(word as u64) << (32 * i as usize);
                     }
 
                     if sign != 0 {
@@ -332,8 +330,7 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
             };
 
             // Convert expected program term to DeBruijn for comparison
-            let expected_program_db = Program::<DeBruijn>::try_from(expected_program)
-                .map_err(|e| format!("Failed to convert expected to DeBruijn: {:?}", e))?;
+            let expected_program_db = Program::<DeBruijn>::from(expected_program);
 
             // Compare the terms
             let expected_term_ref: &UplcTerm<DeBruijn> = &expected_program_db.term;
