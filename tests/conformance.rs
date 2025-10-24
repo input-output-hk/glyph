@@ -353,10 +353,41 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
     }
 }
 
-/// Discover and run all conformance tests
-#[test]
-fn conformance_tests() {
-    let test_root = PathBuf::from("tests/semantics/addInteger");
+/// Configuration for running conformance tests
+struct TestConfig {
+    /// Base directory within tests/semantics/ to search
+    base_dir: &'static str,
+    /// Optional: only run tests whose names contain this substring
+    filter: Option<&'static str>,
+    /// Optional: skip tests whose names contain any of these substrings
+    skip: Vec<&'static str>,
+}
+
+impl TestConfig {
+    fn new(base_dir: &'static str) -> Self {
+        Self {
+            base_dir,
+            filter: None,
+            skip: Vec::new(),
+        }
+    }
+
+    #[allow(dead_code)]
+    fn filter(mut self, pattern: &'static str) -> Self {
+        self.filter = Some(pattern);
+        self
+    }
+
+    #[allow(dead_code)]
+    fn skip(mut self, patterns: Vec<&'static str>) -> Self {
+        self.skip = patterns;
+        self
+    }
+}
+
+/// Discover and run conformance tests based on configuration
+fn conformance_tests(config: TestConfig) {
+    let test_root = PathBuf::from("tests/semantics/").join(config.base_dir);
 
     if !test_root.exists() {
         panic!("Test directory not found: {}", test_root.display());
@@ -365,14 +396,31 @@ fn conformance_tests() {
     let mut total = 0;
     let mut passed = 0;
     let mut failed = 0;
+    let mut skipped = 0;
     let mut failures = Vec::new();
 
     for entry in WalkDir::new(&test_root).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
 
         if path.extension().and_then(OsStr::to_str) == Some("uplc") {
-            total += 1;
             let test_name = path.strip_prefix(&test_root).unwrap().display().to_string();
+
+            // Apply config filter if specified
+            if let Some(filter) = config.filter {
+                if !test_name.contains(filter) {
+                    continue;
+                }
+            }
+
+            // Skip tests matching config skip patterns
+            let should_skip = config.skip.iter().any(|skip_pattern| test_name.contains(skip_pattern));
+            if should_skip {
+                skipped += 1;
+                println!("⊘ {} (skipped)", test_name);
+                continue;
+            }
+
+            total += 1;
 
             match test_uplc_file(path) {
                 Ok(()) => {
@@ -389,9 +437,12 @@ fn conformance_tests() {
     }
 
     println!("\n=== Conformance Test Results ===");
-    println!("Total:  {}", total);
-    println!("Passed: {}", passed);
-    println!("Failed: {}", failed);
+    println!("Total:   {}", total);
+    println!("Passed:  {}", passed);
+    println!("Failed:  {}", failed);
+    if skipped > 0 {
+        println!("Skipped: {}", skipped);
+    }
 
     if !failures.is_empty() {
         println!("\n=== Failed Tests ===");
@@ -401,3 +452,114 @@ fn conformance_tests() {
         panic!("{} tests failed", failed);
     }
 }
+
+// Macro to generate test functions for different builtin directories
+macro_rules! conformance_test {
+    ($test_name:ident, $dir:expr) => {
+        #[test]
+        fn $test_name() {
+            conformance_tests(TestConfig::new($dir));
+        }
+    };
+    ($test_name:ident, $dir:expr, filter: $filter:expr) => {
+        #[test]
+        fn $test_name() {
+            conformance_tests(TestConfig::new($dir).filter($filter));
+        }
+    };
+    ($test_name:ident, $dir:expr, skip: [$($skip:expr),*]) => {
+        #[test]
+        fn $test_name() {
+            conformance_tests(TestConfig::new($dir).skip(vec![$($skip),*]));
+        }
+    };
+}
+
+// BLS12-381 G1 tests
+conformance_test!(conformance_bls12_381_g1_add, "bls12_381_G1_add");
+conformance_test!(conformance_bls12_381_g1_compress, "bls12_381_G1_compress");
+conformance_test!(conformance_bls12_381_g1_decompress, "bls12_381_G1_decompress");
+conformance_test!(conformance_bls12_381_g1_equal, "bls12_381_G1_equal");
+conformance_test!(conformance_bls12_381_g1_hashtogroup, "bls12_381_G1_hashToGroup");
+conformance_test!(conformance_bls12_381_g1_neg, "bls12_381_G1_neg");
+conformance_test!(conformance_bls12_381_g1_scalarmul, "bls12_381_G1_scalarMul");
+
+// BLS12-381 G2 tests
+conformance_test!(conformance_bls12_381_g2_add, "bls12_381_G2_add");
+conformance_test!(conformance_bls12_381_g2_compress, "bls12_381_G2_compress");
+conformance_test!(conformance_bls12_381_g2_decompress, "bls12_381_G2_decompress");
+conformance_test!(conformance_bls12_381_g2_equal, "bls12_381_G2_equal");
+conformance_test!(conformance_bls12_381_g2_hashtogroup, "bls12_381_G2_hashToGroup");
+conformance_test!(conformance_bls12_381_g2_neg, "bls12_381_G2_neg");
+conformance_test!(conformance_bls12_381_g2_scalarmul, "bls12_381_G2_scalarMul");
+
+// BLS12-381 pairing tests
+conformance_test!(conformance_bls12_381_finalverify, "bls12_381_finalVerify");
+conformance_test!(conformance_bls12_381_millerloop, "bls12_381_millerLoop");
+
+// Arithmetic tests
+conformance_test!(conformance_addinteger, "addInteger");
+conformance_test!(conformance_subtractinteger, "subtractInteger");
+conformance_test!(conformance_multiplyinteger, "multiplyInteger");
+conformance_test!(conformance_divideinteger, "divideInteger");
+conformance_test!(conformance_quotientinteger, "quotientInteger");
+conformance_test!(conformance_remainderinteger, "remainderInteger");
+conformance_test!(conformance_modinteger, "modInteger");
+
+// Comparison tests
+conformance_test!(conformance_equalinteger, "equalsInteger");
+conformance_test!(conformance_lessthaninteger, "lessThanInteger");
+conformance_test!(conformance_lessthanequalinteger, "lessThanEqualsInteger");
+
+// ByteString tests
+conformance_test!(conformance_appendbytestring, "appendByteString");
+conformance_test!(conformance_consbytes, "consByteString");
+conformance_test!(conformance_slicebytestring, "sliceByteString");
+conformance_test!(conformance_lengthofbytestring, "lengthOfByteString");
+conformance_test!(conformance_indexbytestring, "indexByteString");
+conformance_test!(conformance_equalbytestring, "equalsByteString");
+conformance_test!(conformance_lessthanbytestring, "lessThanByteString");
+conformance_test!(conformance_lessthanequalbytestring, "lessThanEqualsByteString");
+
+// Cryptographic tests
+conformance_test!(conformance_sha2_256, "sha2_256");
+conformance_test!(conformance_sha3_256, "sha3_256");
+conformance_test!(conformance_blake2b_256, "blake2b_256");
+conformance_test!(conformance_verifyed25519signature, "verifyEd25519Signature");
+conformance_test!(conformance_verifyecdsasecp256k1signature, "verifyEcdsaSecp256k1Signature");
+conformance_test!(conformance_verifyschsnsignaturesecsp256k1, "verifySchnorrSecp256k1Signature");
+
+// String tests
+conformance_test!(conformance_appendstring, "appendString");
+conformance_test!(conformance_equalsstring, "equalsString");
+conformance_test!(conformance_encode_utf8, "encodeUtf8");
+conformance_test!(conformance_decode_utf8, "decodeUtf8");
+
+// List tests
+conformance_test!(conformance_nulllist, "nullList");
+conformance_test!(conformance_headlist, "headList");
+conformance_test!(conformance_taillist, "tailList");
+conformance_test!(conformance_chooselist, "chooseList");
+
+// Pair tests
+conformance_test!(conformance_fstpair, "fstPair");
+conformance_test!(conformance_sndpair, "sndPair");
+
+// Data tests
+conformance_test!(conformance_choosedata, "chooseData");
+conformance_test!(conformance_constrdata, "constrData");
+conformance_test!(conformance_mapdata, "mapData");
+conformance_test!(conformance_listdata, "listData");
+conformance_test!(conformance_idata, "iData");
+conformance_test!(conformance_bdata, "bData");
+conformance_test!(conformance_unconstrdata, "unConstrData");
+conformance_test!(conformance_unmapdata, "unMapData");
+conformance_test!(conformance_unlistdata, "unListData");
+conformance_test!(conformance_unidata, "unIData");
+conformance_test!(conformance_unbdata, "unBData");
+conformance_test!(conformance_equalsdata, "equalsData");
+conformance_test!(conformance_serialisedata, "serialiseData");
+
+// Conversion tests
+conformance_test!(conformance_integertobytes, "integerToByteString");
+conformance_test!(conformance_bytestointeger, "byteStringToInteger");
