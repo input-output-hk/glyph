@@ -413,7 +413,10 @@ fn conformance_tests(config: TestConfig) {
             }
 
             // Skip tests matching config skip patterns
-            let should_skip = config.skip.iter().any(|skip_pattern| test_name.contains(skip_pattern));
+            let should_skip = config
+                .skip
+                .iter()
+                .any(|skip_pattern| test_name.contains(skip_pattern));
             if should_skip {
                 skipped += 1;
                 println!("⊘ {} (skipped)", test_name);
@@ -478,18 +481,30 @@ macro_rules! conformance_test {
 // BLS12-381 G1 tests
 conformance_test!(conformance_bls12_381_g1_add, "bls12_381_G1_add");
 conformance_test!(conformance_bls12_381_g1_compress, "bls12_381_G1_compress");
-conformance_test!(conformance_bls12_381_g1_decompress, "bls12_381_G1_decompress");
+conformance_test!(
+    conformance_bls12_381_g1_decompress,
+    "bls12_381_G1_decompress"
+);
 conformance_test!(conformance_bls12_381_g1_equal, "bls12_381_G1_equal");
-conformance_test!(conformance_bls12_381_g1_hashtogroup, "bls12_381_G1_hashToGroup");
+conformance_test!(
+    conformance_bls12_381_g1_hashtogroup,
+    "bls12_381_G1_hashToGroup"
+);
 conformance_test!(conformance_bls12_381_g1_neg, "bls12_381_G1_neg");
 conformance_test!(conformance_bls12_381_g1_scalarmul, "bls12_381_G1_scalarMul");
 
 // BLS12-381 G2 tests
 conformance_test!(conformance_bls12_381_g2_add, "bls12_381_G2_add");
 conformance_test!(conformance_bls12_381_g2_compress, "bls12_381_G2_compress");
-conformance_test!(conformance_bls12_381_g2_decompress, "bls12_381_G2_decompress");
+conformance_test!(
+    conformance_bls12_381_g2_decompress,
+    "bls12_381_G2_decompress"
+);
 conformance_test!(conformance_bls12_381_g2_equal, "bls12_381_G2_equal");
-conformance_test!(conformance_bls12_381_g2_hashtogroup, "bls12_381_G2_hashToGroup");
+conformance_test!(
+    conformance_bls12_381_g2_hashtogroup,
+    "bls12_381_G2_hashToGroup"
+);
 conformance_test!(conformance_bls12_381_g2_neg, "bls12_381_G2_neg");
 conformance_test!(conformance_bls12_381_g2_scalarmul, "bls12_381_G2_scalarMul");
 
@@ -519,15 +534,24 @@ conformance_test!(conformance_lengthofbytestring, "lengthOfByteString");
 conformance_test!(conformance_indexbytestring, "indexByteString");
 conformance_test!(conformance_equalbytestring, "equalsByteString");
 conformance_test!(conformance_lessthanbytestring, "lessThanByteString");
-conformance_test!(conformance_lessthanequalbytestring, "lessThanEqualsByteString");
+conformance_test!(
+    conformance_lessthanequalbytestring,
+    "lessThanEqualsByteString"
+);
 
 // Cryptographic tests
 conformance_test!(conformance_sha2_256, "sha2_256");
 conformance_test!(conformance_sha3_256, "sha3_256");
 conformance_test!(conformance_blake2b_256, "blake2b_256");
 conformance_test!(conformance_verifyed25519signature, "verifyEd25519Signature");
-conformance_test!(conformance_verifyecdsasecp256k1signature, "verifyEcdsaSecp256k1Signature");
-conformance_test!(conformance_verifyschsnsignaturesecsp256k1, "verifySchnorrSecp256k1Signature");
+conformance_test!(
+    conformance_verifyecdsasecp256k1signature,
+    "verifyEcdsaSecp256k1Signature"
+);
+conformance_test!(
+    conformance_verifyschsnsignaturesecsp256k1,
+    "verifySchnorrSecp256k1Signature"
+);
 
 // String tests
 conformance_test!(conformance_appendstring, "appendString");
