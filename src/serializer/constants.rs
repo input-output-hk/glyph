@@ -20,6 +20,9 @@ pub mod const_tag {
     pub const UNIT: u32 = 0x03;
     pub const BOOL: u32 = 0x04;
     pub const DATA: u32 = 0x05;
+    pub const BLS12_381_G1_ELEMENT: u32 = 0x08;
+    pub const BLS12_381_G2_ELEMENT: u32 = 0x09;
+    pub const BLS12_381_MLRESULT: u32 = 0x0A;
 }
 
 /// Data variant tags (1 byte)
