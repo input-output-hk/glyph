@@ -8,6 +8,7 @@ use uplc::BigInt;
 use uplc::PlutusData;
 use uplc::ast::{Constant, DeBruijn, Program, Term};
 use uplc::builtins::DefaultFunction;
+use uplc::machine::runtime::Compressable;
 
 use std::io;
 use thiserror::Error;
@@ -276,6 +277,15 @@ fn serialize_constant(preceeding_byte_size: u32, constant: &Rc<Constant>) -> Res
         Constant::Bool(b) => serialize_bool_constant(preceeding_byte_size + 4, *b)?,
         Constant::Data(data) => serialize_data_constant(preceeding_byte_size + 4, data)?,
         Constant::ProtoList(_, _) => todo!(),
+        Constant::Bls12_381G1Element(point) => {
+            serialize_bls12_381_g1_constant(preceeding_byte_size + 4, point.as_ref())?
+        }
+        Constant::Bls12_381G2Element(point) => {
+            serialize_bls12_381_g2_constant(preceeding_byte_size + 4, point.as_ref())?
+        }
+        Constant::Bls12_381MlResult(fp12) => {
+            serialize_bls12_381_mlresult_constant(preceeding_byte_size + 4, fp12.as_ref())?
+        }
         _ => {
             return Err(SerializationError::InvalidTermType(format!(
                 "Unsupported constant type: {constant:?}",
@@ -370,6 +380,62 @@ fn serialize_bytestring_constant(preceeding_byte_size: u32, bytes: &[u8]) -> Res
     bytes_type.extend(x);
 
     Ok(bytes_type)
+}
+
+fn serialize_bls_bytes(
+    preceeding_byte_size: u32,
+    payload: &[u8],
+    tag: u32,
+) -> Result<Vec<u8>> {
+    let mut x: Vec<u8> = Vec::new();
+    let mut header: Vec<u8> = Vec::new();
+
+    for chunk in payload.chunks(4) {
+        let mut word: u32 = 0;
+        for (i, b) in chunk.iter().enumerate() {
+            word |= (*b as u32) << (8 * i as u32);
+        }
+        x.write_u32::<LittleEndian>(word)?;
+    }
+
+    header.write_u32::<LittleEndian>(1)?;
+    header.write_u32::<LittleEndian>(preceeding_byte_size + x.len() as u32 + 8)?;
+
+    x.write_u32::<LittleEndian>(tag)?;
+    header.extend(x);
+
+    Ok(header)
+}
+
+fn serialize_bls12_381_g1_constant(
+    preceeding_byte_size: u32,
+    point: &blst::blst_p1,
+) -> Result<Vec<u8>> {
+    let bytes = point.compress();
+    serialize_bls_bytes(preceeding_byte_size, &bytes, const_tag::BLS12_381_G1_ELEMENT)
+}
+
+fn serialize_bls12_381_g2_constant(
+    preceeding_byte_size: u32,
+    point: &blst::blst_p2,
+) -> Result<Vec<u8>> {
+    let bytes = point.compress();
+    serialize_bls_bytes(preceeding_byte_size, &bytes, const_tag::BLS12_381_G2_ELEMENT)
+}
+
+fn serialize_bls12_381_mlresult_constant(
+    preceeding_byte_size: u32,
+    fp12: &blst::blst_fp12,
+) -> Result<Vec<u8>> {
+    let mut bytes = [0u8; 576];
+    unsafe {
+        blst::blst_bendian_from_fp12(bytes.as_mut_ptr(), fp12);
+    }
+    serialize_bls_bytes(
+        preceeding_byte_size,
+        &bytes,
+        const_tag::BLS12_381_MLRESULT,
+    )
 }
 
 /// Serialize a string constant (UTF-8), using the same packed-word layout as ByteString

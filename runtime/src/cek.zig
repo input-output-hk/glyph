@@ -1472,24 +1472,41 @@ fn integerToScalarBytes(bi: BigInt) [32]u8 {
     return scalar_bytes;
 }
 
+const bls12_381_fp_modulus_be = [_]u8{
+    0x1a, 0x01, 0x11, 0xea, 0x39, 0x7f, 0xe6, 0x9a,
+    0x4b, 0x1b, 0xa7, 0xb6, 0x43, 0x4b, 0xac, 0xd7,
+    0x64, 0x77, 0x4b, 0x84, 0xf3, 0x85, 0x12, 0xbf,
+    0x67, 0x30, 0xd2, 0xa0, 0xf6, 0xb0, 0xf6, 0x24,
+    0x1e, 0xab, 0xff, 0xfe, 0xb1, 0x53, 0xff, 0xff,
+    0xb9, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xaa, 0xab,
+};
+
+fn decodeFpFromBendian(dst: *blst.blst_fp, chunk: [*]const u8) bool {
+    blst.blst_fp_from_bendian(dst, chunk);
+    // Enforce canonical encoding because blst_fp_from_bendian never fails.
+    return std.mem.lessThan(u8, chunk[0..48], bls12_381_fp_modulus_be[0..]);
+}
+
 fn blst_fp12_from_bendian(ret: *blst.blst_fp12, bytes: [*]const u8) c_int {
-    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[0].fp[0], bytes + 0 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[0].fp[1], bytes + 1 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[1].fp[0], bytes + 2 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[1].fp[1], bytes + 3 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[2].fp[0], bytes + 4 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[0].fp2[2].fp[1], bytes + 5 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[0].fp[0], bytes + 6 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[0].fp[1], bytes + 7 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[1].fp[0], bytes + 8 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[1].fp[1], bytes + 9 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[2].fp[0], bytes + 10 * 48);
-    blst.blst_fp_from_bendian(&ret.fp6[1].fp2[2].fp[1], bytes + 11 * 48);
-    if (blst.blst_fp12_in_group(ret)) {
-        return blst.BLST_SUCCESS;
-    } else {
-        return blst.BLST_BAD_ENCODING;
+    var offset: usize = 0;
+    // Inverse of blst_bendian_from_fp12: iterate fp2 limbs first and interleave fp6 components
+    // so we consume the 12 field elements in the same order they were emitted.
+    var i: usize = 0;
+    while (i < 3) : (i += 1) {
+        var j: usize = 0;
+        while (j < 2) : (j += 1) {
+            if (!decodeFpFromBendian(&ret.fp6[j].fp2[i].fp[0], bytes + offset))
+                return blst.BLST_BAD_ENCODING;
+            offset += 48;
+            if (!decodeFpFromBendian(&ret.fp6[j].fp2[i].fp[1], bytes + offset))
+                return blst.BLST_BAD_ENCODING;
+            offset += 48;
+        }
     }
+
+    // Miller loop outputs are not guaranteed to lie in the final exponent subgroup,
+    // so we only validate per-coordinate decoding here.
+    return blst.BLST_SUCCESS;
 }
 
 pub fn bls12_381_G1_Add(m: *Machine, args: *LinkedValues) *const Value {
@@ -1554,8 +1571,9 @@ pub fn bls12_381_G1_Neg(m: *Machine, args: *LinkedValues) *const Value {
 }
 
 pub fn bls12_381_G1_ScalarMul(m: *Machine, args: *LinkedValues) *const Value {
-    const scalar = args.value.unwrapInteger();
-    const p = args.next.?.value.unwrapG1();
+    // Spec orders arguments as (G1, scalar); the newest (scalar) is in the tail.
+    const p = args.value.unwrapG1();
+    const scalar = args.next.?.value.unwrapInteger();
 
     var p_bytes: [48]u8 = undefined;
     @memcpy(&p_bytes, p.bytes[0..48]);
@@ -1756,8 +1774,9 @@ pub fn bls12_381_G2_Neg(m: *Machine, args: *LinkedValues) *const Value {
 }
 
 pub fn bls12_381_G2_ScalarMul(m: *Machine, args: *LinkedValues) *const Value {
-    const scalar = args.value.unwrapInteger();
-    const p = args.next.?.value.unwrapG2();
+    // Spec orders arguments as (G2, scalar); the newest (scalar) is in the tail.
+    const p = args.value.unwrapG2();
+    const scalar = args.next.?.value.unwrapInteger();
 
     var p_bytes: [96]u8 = undefined;
     @memcpy(&p_bytes, p.bytes[0..96]);
@@ -1896,6 +1915,7 @@ pub fn bls12_381_G2_HashToGroup(m: *Machine, args: *LinkedValues) *const Value {
 }
 
 pub fn bls12_381_MillerLoop(m: *Machine, args: *LinkedValues) *const Value {
+    // Spec orders arguments as (G1, G2); the newest (G2) sits at the list head.
     const g2 = args.value.unwrapG2();
     const g1 = args.next.?.value.unwrapG1();
 
@@ -1909,9 +1929,21 @@ pub fn bls12_381_MillerLoop(m: *Machine, args: *LinkedValues) *const Value {
         utils.printString("Invalid G1 point\n");
         utils.exit(std.math.maxInt(u32));
     }
+    var chk_g1: blst.blst_p1 = undefined;
+    blst.blst_p1_from_affine(&chk_g1, &aff_g1);
+    if (!blst.blst_p1_in_g1(&chk_g1)) {
+        utils.printString("Invalid G1 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
 
     var aff_g2: blst.blst_p2_affine = undefined;
     if (blst.blst_p2_uncompress(&aff_g2, &g2_bytes) != blst.BLST_SUCCESS) {
+        utils.printString("Invalid G2 point\n");
+        utils.exit(std.math.maxInt(u32));
+    }
+    var chk_g2: blst.blst_p2 = undefined;
+    blst.blst_p2_from_affine(&chk_g2, &aff_g2);
+    if (!blst.blst_p2_in_g2(&chk_g2)) {
         utils.printString("Invalid G2 point\n");
         utils.exit(std.math.maxInt(u32));
     }
