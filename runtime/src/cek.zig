@@ -1550,28 +1550,30 @@ pub fn verifySchnorrSecp256k1Signature(_: *Machine, _: *LinkedValues) *const Val
 // BLS Builtins
 
 fn integerToScalarBytes(bi: BigInt) [32]u8 {
-    if (bi.sign != 0) {
-        utils.printString("Negative scalar in BLS mul\n");
-        utils.exit(std.math.maxInt(u32));
-    }
-    if (bi.length > 8) {
-        utils.printString("Scalar too large for BLS mul\n");
-        utils.exit(std.math.maxInt(u32));
+    const scalar = integerToBlstScalar(bi);
+    return scalar.b;
+}
+
+fn integerToBlstScalar(bi: BigInt) blst.blst_scalar {
+    // Reduce the (possibly huge or negative) integer modulo the scalar field
+    // using BLST's wide-input helpers so we match Plutus semantics.
+    var scalar = std.mem.zeroes(blst.blst_scalar);
+
+    const word_len: usize = @intCast(bi.length);
+    if (word_len != 0) {
+        const words = bi.words[0..word_len];
+        const magnitude = std.mem.sliceAsBytes(words);
+        _ = blst.blst_scalar_from_le_bytes(&scalar, magnitude.ptr, magnitude.len);
     }
 
-    var scalar_bytes: [32]u8 = [_]u8{0} ** 32;
-    var offset: usize = 32 - bi.length * 4;
-    var k: usize = 0;
-    while (k < bi.length) : (k += 1) {
-        const j = bi.length - 1 - k;
-        const word = bi.words[j];
-        scalar_bytes[offset] = @truncate(word >> 24);
-        scalar_bytes[offset + 1] = @truncate(word >> 16);
-        scalar_bytes[offset + 2] = @truncate(word >> 8);
-        scalar_bytes[offset + 3] = @truncate(word);
-        offset += 4;
+    if (bi.sign != 0) {
+        var tmp_fr: blst.blst_fr = undefined;
+        blst.blst_fr_from_scalar(&tmp_fr, &scalar);
+        blst.blst_fr_cneg(&tmp_fr, &tmp_fr, true);
+        blst.blst_scalar_from_fr(&scalar, &tmp_fr);
     }
-    return scalar_bytes;
+
+    return scalar;
 }
 
 const bls12_381_fp_modulus_be = [_]u8{
@@ -1688,10 +1690,15 @@ pub fn bls12_381_G1_ScalarMul(m: *Machine, args: *LinkedValues) *const Value {
     var point_p: blst.blst_p1 = undefined;
     blst.blst_p1_from_affine(&point_p, &aff_p);
 
-    var scalar_bytes = integerToScalarBytes(scalar);
+    const scalar_words = integerToBlstScalar(scalar);
 
     var point_r: blst.blst_p1 = undefined;
-    blst.blst_p1_mult(&point_r, &point_p, &scalar_bytes, 256);
+    blst.blst_p1_mult(
+        &point_r,
+        &point_p,
+        &scalar_words.b,
+        @sizeOf(blst.blst_scalar) * 8,
+    );
 
     var result = m.heap.createArray(u32, 15);
     result[0] = 1;
@@ -1920,10 +1927,15 @@ pub fn bls12_381_G2_ScalarMul(m: *Machine, args: *LinkedValues) *const Value {
     var point_p: blst.blst_p2 = undefined;
     blst.blst_p2_from_affine(&point_p, &aff_p);
 
-    var scalar_bytes = integerToScalarBytes(scalar);
+    const scalar_words = integerToBlstScalar(scalar);
 
     var point_r: blst.blst_p2 = undefined;
-    blst.blst_p2_mult(&point_r, &point_p, &scalar_bytes, 256);
+    blst.blst_p2_mult(
+        &point_r,
+        &point_p,
+        &scalar_words.b,
+        @sizeOf(blst.blst_scalar) * 8,
+    );
 
     var result = m.heap.createArray(u32, 27);
     result[0] = 1;
