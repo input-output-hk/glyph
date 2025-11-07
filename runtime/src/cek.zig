@@ -438,6 +438,108 @@ pub const State = union(enum(u32)) {
     done: *const Value,
 };
 
+// The emulator/host expects byte-oriented constants to be word-packed
+// (four bytes per u32). We keep them unpacked internally for simplicity and
+// only convert right before handing the final value back.
+fn prepareValueForHost(value: *const Value) void {
+    switch (value.*) {
+        .constant => |c| packConstantForHost(c),
+        else => {},
+    }
+}
+
+fn packConstantForHost(constant: *const Constant) void {
+    const ty = constant.constType().*;
+    switch (ty) {
+        .bytes, .string => packU8Sequence(constant.rawValue()),
+        else => {},
+    }
+}
+
+fn packU8Sequence(value_ptr: u32) void {
+    // The constant layout is: [length:u32][data...]
+    const len_ptr: *u32 = @ptrFromInt(@as(usize, value_ptr));
+    if (len_ptr.* == 0) return;
+
+    const data_offset: u32 = value_ptr + @as(u32, @sizeOf(u32));
+    const data_ptr: [*]u32 = @ptrFromInt(@as(usize, data_offset));
+    packUnpackedBytes(len_ptr, data_ptr);
+}
+
+fn packUnpackedBytes(len_ptr: *u32, words: [*]u32) void {
+    const original_len = len_ptr.*;
+    // We can only safely repack when the byte length is already word-aligned;
+    // mixed-length sequences stay in the unpacked format.
+    if (original_len == 0 or (original_len & 3) != 0) return;
+
+    // Detect already-packed payloads so we do not mangle them on repeated calls.
+    var i: u32 = 0;
+    while (i < original_len) : (i += 1) {
+        if (words[i] > 0xFF) {
+            return;
+        }
+    }
+
+    const new_len = original_len / 4;
+
+    var group: u32 = 0;
+    while (group < new_len) : (group += 1) {
+        const base = group * 4;
+        var packed_word: u32 = 0;
+        packed_word |= (words[base + 0] & 0xFF);
+        packed_word |= (words[base + 1] & 0xFF) << 8;
+        packed_word |= (words[base + 2] & 0xFF) << 16;
+        packed_word |= (words[base + 3] & 0xFF) << 24;
+        words[group] = packed_word;
+    }
+
+    // Clear the remaining slots so future reads cannot observe stale bytes.
+    var clear_index = new_len;
+    while (clear_index < original_len) : (clear_index += 1) {
+        words[clear_index] = 0;
+    }
+
+    len_ptr.* = new_len;
+}
+
+const empty_bytes = [_]u8{0};
+
+const PackedBytes = struct {
+    ptr: [*]const u8,
+    len: usize,
+};
+
+fn materializeBytes(heap: *Heap, source: Bytes) PackedBytes {
+    if (source.length == 0) {
+        return .{
+            .ptr = empty_bytes[0..].ptr,
+            .len = 0,
+        };
+    }
+
+    const byte_len: usize = @intCast(source.length);
+    const word_len: u32 = @intCast((byte_len + 3) / 4);
+    const buffer_words = heap.createArray(u32, word_len);
+    const buffer_bytes: [*]u8 = @ptrCast(buffer_words);
+
+    var i: usize = 0;
+    while (i < byte_len) : (i += 1) {
+        buffer_bytes[i] = @truncate(source.bytes[i]);
+    }
+
+    // Zero any padding bytes (at most three) so future reads see deterministic data.
+    var pad_index = byte_len;
+    const padded_len = @as(usize, word_len) * @sizeOf(u32);
+    while (pad_index < padded_len) : (pad_index += 1) {
+        buffer_bytes[pad_index] = 0;
+    }
+
+    return .{
+        .ptr = buffer_bytes,
+        .len = byte_len,
+    };
+}
+
 pub const builtinFunctions = [_]*const fn (*Machine, *LinkedValues) *const Value{
     &addInteger,
     &subInteger,
@@ -1721,11 +1823,15 @@ pub fn bls12_381_G1_HashToGroup(m: *Machine, args: *LinkedValues) *const Value {
     const dst = args.value.unwrapBytestring();
     const msg = args.next.?.value.unwrapBytestring();
 
-    const msg_bytes: [*]u8 = @ptrFromInt(@intFromPtr(msg.bytes));
-    const dst_bytes: [*]u8 = @ptrFromInt(@intFromPtr(dst.bytes));
+    const dst_packed = materializeBytes(m.heap, dst);
+    const msg_packed = materializeBytes(m.heap, msg);
+    if (dst_packed.len > 255) {
+        // PLT spec enforces DST <= 255 bytes.
+        builtinEvaluationFailure();
+    }
 
     var point_r: blst.blst_p1 = undefined;
-    blst.blst_hash_to_g1(&point_r, msg_bytes, msg.length * 4, dst_bytes, dst.length * 4, null, 0);
+    blst.blst_hash_to_g1(&point_r, msg_packed.ptr, msg_packed.len, dst_packed.ptr, dst_packed.len, null, 0);
 
     var result = m.heap.createArray(u32, 15);
     result[0] = 1;
@@ -1929,11 +2035,14 @@ pub fn bls12_381_G2_HashToGroup(m: *Machine, args: *LinkedValues) *const Value {
     const dst = args.value.unwrapBytestring();
     const msg = args.next.?.value.unwrapBytestring();
 
-    const msg_bytes: [*]u8 = @ptrFromInt(@intFromPtr(msg.bytes));
-    const dst_bytes: [*]u8 = @ptrFromInt(@intFromPtr(dst.bytes));
+    const dst_packed = materializeBytes(m.heap, dst);
+    const msg_packed = materializeBytes(m.heap, msg);
+    if (dst_packed.len > 255) {
+        builtinEvaluationFailure();
+    }
 
     var point_r: blst.blst_p2 = undefined;
-    blst.blst_hash_to_g2(&point_r, msg_bytes, msg.length * 4, dst_bytes, dst.length * 4, null, 0);
+    blst.blst_hash_to_g2(&point_r, msg_packed.ptr, msg_packed.len, dst_packed.ptr, dst_packed.len, null, 0);
 
     var result = m.heap.createArray(u32, 27);
     result[0] = 1;
@@ -2313,6 +2422,7 @@ pub const Machine = struct {
                     state = self.ret(r.value);
                 },
                 .done => |d| {
+                    prepareValueForHost(d);
                     return d;
                 },
             }
