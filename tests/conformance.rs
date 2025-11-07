@@ -508,8 +508,15 @@ conformance_test!(
 conformance_test!(conformance_bls12_381_g2_neg, "bls12_381_G2_neg");
 conformance_test!(conformance_bls12_381_g2_scalarmul, "bls12_381_G2_scalarMul");
 
-// BLS12-381 pairing tests
-conformance_test!(conformance_bls12_381_finalverify, "bls12_381_finalVerify");
+// BLS12-381 crypto tests
+conformance_test!(conformance_bls12_381_crypto_g1, "bls12_381-cardano-crypto-tests/G1");
+
+conformance_test!(conformance_bls12_381_crypto_g2, "bls12_381-cardano-crypto-tests/G2");
+
+conformance_test!(conformance_bls12_381_crypto_pairing, "bls12_381-cardano-crypto-tests/pairing");
+
+conformance_test!(conformance_bls12_381_crypto_signature, "bls12_381-cardano-crypto-tests/signature");
+
 conformance_test!(conformance_bls12_381_millerloop, "bls12_381_millerLoop");
 
 // Arithmetic tests
