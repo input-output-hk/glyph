@@ -341,34 +341,27 @@ fn serialize_integer_constant(
 }
 
 /// Serialize a bytestring constant
+/// 
+/// ByteStrings are stored in unpacked format: one byte value per u32 word.
+/// This matches the runtime representation used by bytestring operations.
 fn serialize_bytestring_constant(preceeding_byte_size: u32, bytes: &[u8]) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     let mut bytes_type: Vec<u8> = Vec::new();
     // Check size
-    if bytes.len() > (u32::MAX as usize) * 4 {
+    if bytes.len() > (u32::MAX as usize) {
         return Err(SerializationError::ByteStringTooLarge(format!(
             "ByteString too large: {} bytes",
             bytes.len()
         )));
     }
 
-    // We encode as a sequence of u32 words, little-endian packing of up to 4 bytes per word.
-    // Header stores the number of 32-bit words.
-    let word_count: u32 = if bytes.is_empty() {
-        0
-    } else {
-        bytes.len().div_ceil(4) as u32
-    };
+    // Store the byte count
+    let byte_count: u32 = bytes.len() as u32;
+    x.write_u32::<LittleEndian>(byte_count)?;
 
-    x.write_u32::<LittleEndian>(word_count)?;
-
-    // Pack bytes into u32 words (little-endian within the word), zero-padding the final word
-    for chunk in bytes.chunks(4) {
-        let mut word: u32 = 0;
-        for (i, b) in chunk.iter().enumerate() {
-            word |= (*b as u32) << (8 * i as u32);
-        }
-        x.write_u32::<LittleEndian>(word)?;
+    // Write each byte as a separate u32 word (unpacked format)
+    for b in bytes.iter() {
+        x.write_u32::<LittleEndian>(*b as u32)?;
     }
 
     bytes_type.write_u32::<LittleEndian>(1)?;
