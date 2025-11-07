@@ -1663,34 +1663,59 @@ pub fn bls12_381_G1_Compress(m: *Machine, args: *LinkedValues) *const Value {
     return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn bls12_381_G1_Uncompress(m: *Machine, args: *LinkedValues) *const Value {
-    const bs = args.value.unwrapBytestring();
-    if (bs.length != 48) {
-        utils.printString("Invalid compressed G1 length\n");
-        utils.exit(std.math.maxInt(u32));
+inline fn builtinEvaluationFailure() noreturn {
+    utils.exit(std.math.maxInt(u32));
+}
+
+// ByteStrings are stored with one byte value per u32 word (unpacked format).
+// This function extracts them into a continuous byte array for BLST library calls.
+fn unpackWordPackedBytes(comptime expected_len: usize, bs: Bytes, out: *[expected_len]u8) bool {
+    const byte_count: usize = @intCast(bs.length);
+    if (byte_count != expected_len) {
+        return false;
     }
 
+    var i: usize = 0;
+    while (i < byte_count) : (i += 1) {
+        out[i] = @truncate(bs.bytes[i]);
+    }
+    return true;
+}
+
+pub fn bls12_381_G1_Uncompress(m: *Machine, args: *LinkedValues) *const Value {
+    const bs = args.value.unwrapBytestring();
     var in_bytes: [48]u8 = undefined;
-    for (0..48) |i| {
-        in_bytes[i] = @truncate(bs.bytes[i]);
+    if (!unpackWordPackedBytes(48, bs, &in_bytes)) {
+        builtinEvaluationFailure();
     }
 
     var aff_p: blst.blst_p1_affine = undefined;
     if (blst.blst_p1_uncompress(&aff_p, &in_bytes) != blst.BLST_SUCCESS) {
-        utils.printString("Invalid compressed G1\n");
-        utils.exit(std.math.maxInt(u32));
+        builtinEvaluationFailure();
     }
     var point_p: blst.blst_p1 = undefined;
     blst.blst_p1_from_affine(&point_p, &aff_p);
+    if (!blst.blst_p1_in_g1(&point_p)) {
+        builtinEvaluationFailure();
+    }
+
+    var canonical: [48]u8 = undefined;
+    blst.blst_p1_compress(&canonical, &point_p);
+    if (!std.mem.eql(u8, canonical[0..], in_bytes[0..])) {
+        // Input encoding must round-trip through compression.
+        builtinEvaluationFailure();
+    }
 
     var result = m.heap.createArray(u32, 15);
     result[0] = 1;
     result[1] = @intFromPtr(ConstantType.g1ElementType());
     result[2] = @intFromPtr(result + 3);
     const out_bytes: [*]u8 = @ptrCast(result + 3);
-    blst.blst_p1_compress(out_bytes, &point_p);
+    @memcpy(out_bytes[0..48], canonical[0..]);
     return createConst(m.heap, @ptrCast(result));
 }
+// Alias kept so callers using the spec's "decompress" name still resolve.
+pub const bls12_381_G1_Decompress = bls12_381_G1_Uncompress;
 
 pub fn bls12_381_G1_HashToGroup(m: *Machine, args: *LinkedValues) *const Value {
     const dst = args.value.unwrapBytestring();
@@ -1868,32 +1893,37 @@ pub fn bls12_381_G2_Compress(m: *Machine, args: *LinkedValues) *const Value {
 
 pub fn bls12_381_G2_Uncompress(m: *Machine, args: *LinkedValues) *const Value {
     const bs = args.value.unwrapBytestring();
-    if (bs.length != 96) {
-        utils.printString("Invalid compressed G2 length\n");
-        utils.exit(std.math.maxInt(u32));
-    }
-
     var in_bytes: [96]u8 = undefined;
-    for (0..96) |i| {
-        in_bytes[i] = @truncate(bs.bytes[i]);
+    if (!unpackWordPackedBytes(96, bs, &in_bytes)) {
+        builtinEvaluationFailure();
     }
 
     var aff_p: blst.blst_p2_affine = undefined;
     if (blst.blst_p2_uncompress(&aff_p, &in_bytes) != blst.BLST_SUCCESS) {
-        utils.printString("Invalid compressed G2\n");
-        utils.exit(std.math.maxInt(u32));
+        builtinEvaluationFailure();
     }
     var point_p: blst.blst_p2 = undefined;
     blst.blst_p2_from_affine(&point_p, &aff_p);
+    if (!blst.blst_p2_in_g2(&point_p)) {
+        builtinEvaluationFailure();
+    }
+
+    var canonical: [96]u8 = undefined;
+    blst.blst_p2_compress(&canonical, &point_p);
+    if (!std.mem.eql(u8, canonical[0..], in_bytes[0..])) {
+        builtinEvaluationFailure();
+    }
 
     var result = m.heap.createArray(u32, 27);
     result[0] = 1;
     result[1] = @intFromPtr(ConstantType.g2ElementType());
     result[2] = @intFromPtr(result + 3);
     const out_bytes: [*]u8 = @ptrCast(result + 3);
-    blst.blst_p2_compress(out_bytes, &point_p);
+    @memcpy(out_bytes[0..96], canonical[0..]);
     return createConst(m.heap, @ptrCast(result));
 }
+// Alias kept so callers using the spec's "decompress" name still resolve.
+pub const bls12_381_G2_Decompress = bls12_381_G2_Uncompress;
 
 pub fn bls12_381_G2_HashToGroup(m: *Machine, args: *LinkedValues) *const Value {
     const dst = args.value.unwrapBytestring();
