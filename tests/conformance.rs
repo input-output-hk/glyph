@@ -41,6 +41,18 @@ impl UplcCompiler {
         let serialized = glyph::serialize(program, 0x90000000, false)
             .map_err(|e| format!("Serialization failed: {}", e))?;
 
+        if std::env::var("DUMP_SERIALIZED").is_ok() {
+            eprintln!("serialized len: {} bytes", serialized.len());
+            for (idx, chunk) in serialized.chunks(4).enumerate() {
+                let mut buffer = [0u8; 4];
+                for (i, b) in chunk.iter().enumerate() {
+                    buffer[i] = *b;
+                }
+                let value = u32::from_le_bytes(buffer);
+                eprintln!("word {idx:04}: 0x{value:08x}");
+            }
+        }
+
         // Step 2: Generate assembly with the CEK runtime
         let cek = glyph::Cek::default();
         let assembly = cek.cek_assembly(serialized).generate();
@@ -482,8 +494,8 @@ macro_rules! conformance_test {
 conformance_test!(conformance_bls12_381_g1_add, "bls12_381_G1_add");
 conformance_test!(conformance_bls12_381_g1_compress, "bls12_381_G1_compress");
 conformance_test!(
-    conformance_bls12_381_g1_decompress,
-    "bls12_381_G1_decompress"
+    conformance_bls12_381_g1_uncompress,
+    "bls12_381_G1_uncompress"
 );
 conformance_test!(conformance_bls12_381_g1_equal, "bls12_381_G1_equal");
 conformance_test!(
@@ -497,8 +509,8 @@ conformance_test!(conformance_bls12_381_g1_scalarmul, "bls12_381_G1_scalarMul");
 conformance_test!(conformance_bls12_381_g2_add, "bls12_381_G2_add");
 conformance_test!(conformance_bls12_381_g2_compress, "bls12_381_G2_compress");
 conformance_test!(
-    conformance_bls12_381_g2_decompress,
-    "bls12_381_G2_decompress"
+    conformance_bls12_381_g2_uncompress,
+    "bls12_381_G2_uncompress"
 );
 conformance_test!(conformance_bls12_381_g2_equal, "bls12_381_G2_equal");
 conformance_test!(
