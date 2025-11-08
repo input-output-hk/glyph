@@ -682,6 +682,33 @@ pub const MlResult = extern struct {
     }
 };
 
+// Data list node for storing constructor fields and list elements
+pub const DataListNode = extern struct {
+    value: *const Data,
+    next: ?*DataListNode,
+};
+
+// Data pair node for map entries
+pub const DataPairNode = extern struct {
+    key: *const Data,
+    value: *const Data,
+    next: ?*DataPairNode,
+};
+
+// Constr payload
+pub const ConstrData = extern struct {
+    tag: u32,
+    fields: ?*DataListNode,
+};
+
+pub const Data = union(enum(u32)) {
+    constr: ConstrData,
+    map: ?*DataPairNode,
+    list: ?*DataListNode,
+    integer: BigInt,
+    bytes: Bytes,
+};
+
 pub const Constant = extern struct {
     length: u32,
     type_list: [*]const ConstantType,

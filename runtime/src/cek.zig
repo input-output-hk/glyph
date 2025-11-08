@@ -15,7 +15,26 @@ const ListNode = expr.ListNode;
 const G1Element = expr.G1Element;
 const G2Element = expr.G2Element;
 const MlResult = expr.MlResult;
+const Data = expr.Data;
+const DataListNode = expr.DataListNode;
+const DataPairNode = expr.DataPairNode;
+const ConstrData = expr.ConstrData;
 const utils = @import("utils.zig");
+
+const DataTag = std.meta.Tag(Data);
+
+const UplcDataType = [1]u32{
+    @intFromEnum(ConstantType.data),
+};
+
+inline fn dataTypePtr() [*]const ConstantType {
+    return @ptrCast(&UplcDataType);
+}
+
+// Runtime-built Data constants reuse this shared type descriptor.
+inline fn runtimeDataTypeAddr() usize {
+    return @intFromPtr(dataTypePtr());
+}
 
 const blst = @cImport({
     @cInclude("blst.h");
@@ -438,9 +457,9 @@ pub const State = union(enum(u32)) {
     done: *const Value,
 };
 
-// The emulator/host expects byte-oriented constants to be word-packed
-// (four bytes per u32). We keep them unpacked internally for simplicity and
-// only convert right before handing the final value back.
+// The host consumes the same "unpacked" layout that the runtime works with
+// (one byte per u32 word for byte-oriented constants), so no conversion is
+// currently required before handing results back.
 fn prepareValueForHost(value: *const Value) void {
     switch (value.*) {
         .constant => |c| packConstantForHost(c),
@@ -449,57 +468,8 @@ fn prepareValueForHost(value: *const Value) void {
 }
 
 fn packConstantForHost(constant: *const Constant) void {
-    const ty = constant.constType().*;
-    switch (ty) {
-        .bytes, .string => packU8Sequence(constant.rawValue()),
-        else => {},
-    }
-}
-
-fn packU8Sequence(value_ptr: u32) void {
-    // The constant layout is: [length:u32][data...]
-    const len_ptr: *u32 = @ptrFromInt(@as(usize, value_ptr));
-    if (len_ptr.* == 0) return;
-
-    const data_offset: u32 = value_ptr + @as(u32, @sizeOf(u32));
-    const data_ptr: [*]u32 = @ptrFromInt(@as(usize, data_offset));
-    packUnpackedBytes(len_ptr, data_ptr);
-}
-
-fn packUnpackedBytes(len_ptr: *u32, words: [*]u32) void {
-    const original_len = len_ptr.*;
-    // We can only safely repack when the byte length is already word-aligned;
-    // mixed-length sequences stay in the unpacked format.
-    if (original_len == 0 or (original_len & 3) != 0) return;
-
-    // Detect already-packed payloads so we do not mangle them on repeated calls.
-    var i: u32 = 0;
-    while (i < original_len) : (i += 1) {
-        if (words[i] > 0xFF) {
-            return;
-        }
-    }
-
-    const new_len = original_len / 4;
-
-    var group: u32 = 0;
-    while (group < new_len) : (group += 1) {
-        const base = group * 4;
-        var packed_word: u32 = 0;
-        packed_word |= (words[base + 0] & 0xFF);
-        packed_word |= (words[base + 1] & 0xFF) << 8;
-        packed_word |= (words[base + 2] & 0xFF) << 16;
-        packed_word |= (words[base + 3] & 0xFF) << 24;
-        words[group] = packed_word;
-    }
-
-    // Clear the remaining slots so future reads cannot observe stale bytes.
-    var clear_index = new_len;
-    while (clear_index < original_len) : (clear_index += 1) {
-        words[clear_index] = 0;
-    }
-
-    len_ptr.* = new_len;
+    _ = constant;
+    // Left intentionally blank; byte/string constants already match the host layout.
 }
 
 const empty_bytes = [_]u8{0};
@@ -727,13 +697,30 @@ pub fn multiplyInteger(m: *Machine, args: *const LinkedValues) *const Value {
     return createConst(m.heap, @ptrCast(resultPtr));
 }
 
+inline fn bigIntIsZero(n: BigInt) bool {
+    // Some UPLC constants pad zero with extra limbs, so check every limb.
+    var i: u32 = 0;
+    while (i < n.length) : (i += 1) {
+        if (n.words[i] != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
     // 1. Parse inputs and handle special cases
-    const n = args.value.unwrapInteger(); // Numerator BigInt
-    const d = args.next.?.value.unwrapInteger(); // Denominator BigInt
+    // Builtin arguments are stored in reverse application order, so the head is the last argument.
+    const d = args.value.unwrapInteger(); // Denominator (applied last)
+    const n = args.next.?.value.unwrapInteger(); // Numerator
+
+    // Denominator 0 -> evaluation failure (catch before any fast paths).
+    if (bigIntIsZero(d)) {
+        builtinEvaluationFailure();
+    }
 
     // Fast path: 0 ÷ anything = 0
-    if (n.length == 1 and n.words[0] == 0) {
+    if (bigIntIsZero(n)) {
         // Allocate result for integer 0 (sign=0, length=1, word=0)
         const buf = m.heap.createArray(u32, 3);
         buf[0] = 0; // sign = 0 (non-negative)
@@ -746,11 +733,6 @@ pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
         };
         return createConst(m.heap, m.heap.create(Constant, &con));
     }
-    // Denominator 0 -> panic (division by zero)
-    if (d.length == 1 and d.words[0] == 0) {
-        @panic("divideInteger: division by zero");
-    }
-
     // Determine signs and absolute values
     const numer_neg = n.sign == 1;
     const denom_neg = d.sign == 1;
@@ -1071,8 +1053,7 @@ pub fn consByteString(m: *Machine, args: *LinkedValues) *const Value {
     const x = args.next.?.value.unwrapInteger();
 
     if (x.length > 1 or x.words[0] > 255 or x.sign == 1) {
-        utils.printString("Integer larger than byte or negative");
-        utils.exit(std.math.maxInt(u32));
+        builtinEvaluationFailure();
     }
 
     const length = y.length + 1;
@@ -1270,32 +1251,164 @@ pub fn verifyEd25519Signature(_: *Machine, _: *LinkedValues) *const Value {
     @panic("TODO");
 }
 
+const StringBytes = struct {
+    byte_len: u32,
+    is_packed: bool,
+};
+
+fn analyzeString(str: String) StringBytes {
+    var is_packed = false;
+    var probe: u32 = 0;
+    while (probe < str.length) : (probe += 1) {
+        if (str.bytes[probe] > 0xFF) {
+            is_packed = true;
+            break;
+        }
+    }
+
+    return .{
+        .byte_len = if (is_packed) packedLength(str) else unpackedLength(str),
+        .is_packed = is_packed,
+    };
+}
+
+fn unpackedLength(str: String) u32 {
+    var len = str.length;
+    while (len > 0 and (str.bytes[len - 1] & 0xFF) == 0) {
+        len -= 1;
+    }
+    return len;
+}
+
+fn packedLength(str: String) u32 {
+    var total: u32 = str.length * 4;
+    if (total == 0) return 0;
+
+    var idx = str.length;
+    while (idx > 0) : (idx -= 1) {
+        const word = str.bytes[idx - 1];
+        var shift: u5 = 24;
+        while (true) {
+            const byte_val = (word >> shift) & 0xFF;
+            if (byte_val == 0) {
+                total -= 1;
+                if (total == 0) return 0;
+            } else {
+                return total;
+            }
+
+            if (shift == 0) break;
+            shift -= 8;
+        }
+    }
+
+    return 0;
+}
+
+const ByteWriter = struct {
+    dst: [*]u32, // dest words, one byte per word (unpacked form)
+    index: u32 = 0,
+
+    fn init(dst: [*]u32) ByteWriter {
+        return .{ .dst = dst };
+    }
+
+    fn write(self: *ByteWriter, value: u8) void {
+        self.dst[self.index] = value;
+        self.index += 1;
+    }
+};
+
+fn appendStringBytes(writer: *ByteWriter, str: String, view: StringBytes) void {
+    if (view.byte_len == 0) return;
+
+    if (!view.is_packed) {
+        var i: u32 = 0;
+        while (i < view.byte_len) : (i += 1) {
+            writer.write(@truncate(str.bytes[i]));
+        }
+        return;
+    }
+
+    var remaining = view.byte_len;
+    var word_idx: u32 = 0;
+    var byte_idx: u2 = 0;
+
+    while (remaining > 0 and word_idx < str.length) {
+        const word = str.bytes[word_idx];
+        const shift: u5 = @intCast(@as(u32, byte_idx) * 8);
+        const byte_val = @as(u8, @truncate((word >> shift) & 0xFF));
+        writer.write(byte_val);
+
+        remaining -= 1;
+        byte_idx += 1;
+        if (byte_idx == 4) {
+            byte_idx = 0;
+            word_idx += 1;
+        }
+    }
+}
+
+fn extractStringByte(str: String, view: StringBytes, byte_index: u32) u8 {
+    if (byte_index >= view.byte_len) return 0;
+
+    if (!view.is_packed) {
+        // Unpacked: one byte per word
+        return @truncate(str.bytes[byte_index]);
+    } else {
+        // Packed: 4 bytes per word in little-endian
+        const word_idx = byte_index / 4;
+        const byte_in_word = byte_index % 4;
+        const word = str.bytes[word_idx];
+        const shift: u5 = @intCast(byte_in_word * 8);
+        return @as(u8, @truncate((word >> shift) & 0xFF));
+    }
+}
+
 // String functions
 pub fn appendString(m: *Machine, args: *LinkedValues) *const Value {
     const y = args.value.unwrapString();
     const x = args.next.?.value.unwrapString();
 
-    const length = x.length + y.length;
+    const x_view = analyzeString(x);
+    const y_view = analyzeString(y);
+    const total_bytes = x_view.byte_len + y_view.byte_len;
 
-    // type_length 4 bytes, integer 4 bytes,  length 4 bytes, list of words 4 * (x length + y length)
-    var result = m.heap.createArray(u32, length + 4);
+    // Calculate word count for packed format (4 bytes per word)
+    const word_count: u32 = if (total_bytes == 0) 0 else (total_bytes + 3) / 4;
+
+    // type_length 4 bytes, type pointer 4 bytes, value pointer 4 bytes, length 4 bytes, then packed words
+    var result = m.heap.createArray(u32, word_count + 4);
 
     result[0] = 1;
     result[1] = @intFromPtr(ConstantType.stringType());
     result[2] = @intFromPtr(result + 3);
-    result[3] = length;
+    result[3] = word_count;
 
-    var resultPtr = result + 4;
-
-    var i: u32 = 0;
-    while (i < x.length) : (i += 1) {
-        resultPtr[0] = x.bytes[i];
-        resultPtr += 1;
+    var data = result + 4;
+    // Zero out all words (including padding bytes)
+    var zero_index: u32 = 0;
+    while (zero_index < word_count) : (zero_index += 1) {
+        data[zero_index] = 0;
     }
 
-    i = 0;
-    while (i < y.length) : (i += 1) {
-        resultPtr[i] = y.bytes[i];
+    // Pack the bytes from x into words
+    var i: u32 = 0;
+    while (i < x_view.byte_len) : (i += 1) {
+        const byte = extractStringByte(x, x_view, i);
+        const word_idx = i / 4;
+        const byte_pos = i % 4;
+        data[word_idx] |= @as(u32, byte) << @intCast(byte_pos * 8);
+    }
+
+    // Pack the bytes from y into words, continuing from where x left off
+    var j: u32 = 0;
+    while (j < y_view.byte_len) : (j += 1) {
+        const byte = extractStringByte(y, y_view, j);
+        const total_byte_idx = x_view.byte_len + j;
+        const word_idx = total_byte_idx / 4;
+        const byte_pos = total_byte_idx % 4;
+        data[word_idx] |= @as(u32, byte) << @intCast(byte_pos * 8);
     }
 
     return createConst(m.heap, @ptrCast(result));
@@ -1474,8 +1587,75 @@ pub fn nullList(_: *Machine, _: *LinkedValues) *const Value {
 }
 
 // Data functions
-pub fn chooseData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn chooseData(_: *Machine, args: *LinkedValues) *const Value {
+    const bytes_branch = args.value;
+    const int_branch = args.next.?.value;
+    const list_branch = args.next.?.next.?.value;
+    const map_branch = args.next.?.next.?.next.?.value;
+    const constr_branch = args.next.?.next.?.next.?.next.?.value;
+    const data_value = args.next.?.next.?.next.?.next.?.next.?.value.unwrapConstant();
+
+    const variant = decodeDataVariant(data_value);
+
+    return switch (variant) {
+        .constr => constr_branch,
+        .map => map_branch,
+        .list => list_branch,
+        .integer => int_branch,
+        .bytes => bytes_branch,
+    };
+}
+
+fn decodeDataVariant(con: *const Constant) DataTag {
+    const raw_ptr = con.rawValue();
+    if (raw_ptr == 0) {
+        utils.printlnString("null Data pointer");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    const uses_runtime_layout = @intFromPtr(con.type_list) == runtimeDataTypeAddr();
+    // Serialized constants keep an embedded payload instead of referencing the shared type.
+    if (!uses_runtime_layout) {
+        // Serialized constants store the Data payload inline after the header.
+        return readSerializedDataTag(raw_ptr);
+    }
+
+    const ty = con.constType().*;
+    if (ty != .data) {
+        utils.printlnString("chooseData expects a Data constant");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    return readHeapDataTag(raw_ptr);
+}
+
+fn readSerializedDataTag(raw_ptr: u32) DataTag {
+    if (raw_ptr == 0) {
+        utils.printlnString("null Data pointer");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    // Serialized constants place the variant tag at the start of the payload the
+    // Constant points to, so we can read it directly.
+    const words: [*]const u32 = @ptrFromInt(raw_ptr);
+    return tagFromWord(words[0]);
+}
+
+fn readHeapDataTag(raw_ptr: u32) DataTag {
+    if (raw_ptr == 0) {
+        utils.printlnString("null Data pointer");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    const heap_data: *const Data = @ptrFromInt(raw_ptr);
+    return std.meta.activeTag(heap_data.*);
+}
+
+fn tagFromWord(raw: u32) DataTag {
+    return std.meta.intToEnum(DataTag, raw) catch {
+        utils.printlnString("invalid Data tag");
+        utils.exit(std.math.maxInt(u32));
+    };
 }
 
 pub fn constrData(_: *Machine, _: *LinkedValues) *const Value {
@@ -1494,8 +1674,20 @@ pub fn iData(_: *Machine, _: *LinkedValues) *const Value {
     @panic("TODO");
 }
 
-pub fn bData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn bData(m: *Machine, args: *LinkedValues) *const Value {
+    const bytes = args.value.unwrapBytestring();
+
+    // ByteStrings are immutable, so it is safe to share their backing buffer with Data.
+    const payload = Data{ .bytes = bytes };
+    const data_ptr = m.heap.create(Data, &payload);
+
+    const con = Constant{
+        .length = 1,
+        .type_list = dataTypePtr(),
+        .value = @intFromPtr(data_ptr),
+    };
+
+    return createConst(m.heap, m.heap.create(Constant, &con));
 }
 
 pub fn unConstrData(_: *Machine, _: *LinkedValues) *const Value {
@@ -2188,8 +2380,88 @@ pub fn integerToByteString(_: *Machine, _: *LinkedValues) *const Value {
     @panic("TODO");
 }
 
-pub fn byteStringToInteger(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn byteStringToInteger(m: *Machine, args: *LinkedValues) *const Value {
+    const bytes = args.value.unwrapBytestring();
+    const big_endian = args.next.?.value.unwrapBool(); // True => big-endian, False => little-endian
+
+    if (bytes.length == 0) {
+        var zero = m.heap.createArray(u32, 6);
+        zero[0] = 1;
+        zero[1] = @intFromPtr(ConstantType.integerType());
+        zero[2] = @intFromPtr(zero + 3);
+        zero[3] = 0;
+        zero[4] = 1;
+        zero[5] = 0;
+        return createConst(m.heap, @ptrCast(zero));
+    }
+
+    const max_words = (bytes.length + 3) / 4;
+    var result = m.heap.createArray(u32, max_words + 5);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.integerType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = 0;
+
+    var words = result + 5;
+    var word_index: u32 = 0;
+    var byte_in_word: u32 = 0;
+    var current_word: u32 = 0;
+
+    if (big_endian) {
+        var remaining = bytes.length;
+        while (remaining > 0) {
+            remaining -= 1;
+            const byte_val: u32 = bytes.bytes[remaining] & 0xFF;
+            const shift: u5 = @intCast(byte_in_word * 8);
+            current_word |= byte_val << shift;
+            byte_in_word += 1;
+
+            if (byte_in_word == 4) {
+                words[word_index] = current_word;
+                word_index += 1;
+                byte_in_word = 0;
+                current_word = 0;
+            }
+        }
+    } else {
+        var idx: u32 = 0;
+        while (idx < bytes.length) : (idx += 1) {
+            const byte_val: u32 = bytes.bytes[idx] & 0xFF;
+            const shift: u5 = @intCast(byte_in_word * 8);
+            current_word |= byte_val << shift;
+            byte_in_word += 1;
+
+            if (byte_in_word == 4) {
+                words[word_index] = current_word;
+                word_index += 1;
+                byte_in_word = 0;
+                current_word = 0;
+            }
+        }
+    }
+
+    if (byte_in_word != 0) {
+        words[word_index] = current_word;
+        word_index += 1;
+    }
+
+    var actual_words = word_index;
+    while (actual_words > 1 and words[actual_words - 1] == 0) {
+        actual_words -= 1;
+    }
+
+    if (actual_words == 0) {
+        words[0] = 0;
+        actual_words = 1;
+    }
+
+    result[4] = actual_words;
+
+    if (actual_words < max_words) {
+        m.heap.reclaimHeap(u32, max_words - actual_words);
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 // Logical
@@ -3493,8 +3765,8 @@ test "divide: numerator == 0 → 0" {
     const n = expr.BigInt{ .sign = 0, .length = 1, .words = &.{0} }; // 0
     const d = expr.BigInt{ .sign = 0, .length = 1, .words = &.{1234} }; // any ≠ 0
 
-    const args = LinkedValues.create(&heap, *const expr.BigInt, &d, ConstantType.integerType())
-        .extend(&heap, *const expr.BigInt, &n, ConstantType.integerType());
+    const args = LinkedValues.create(&heap, *const expr.BigInt, &n, ConstantType.integerType())
+        .extend(&heap, *const expr.BigInt, &d, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -3523,8 +3795,8 @@ test "divide: 1 / 2 floors to 0" {
     const n = expr.BigInt{ .sign = 0, .length = 1, .words = &.{1} }; // 1
     const d = expr.BigInt{ .sign = 0, .length = 1, .words = &.{2} }; // 2
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
-        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
+    const args = LinkedValues.create(&heap, expr.BigInt, n, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, d, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -3564,8 +3836,8 @@ test "divide: (-503) / (-1777777777) = 0" {
         .words = &[_]u32{1_777_777_777},
     };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
-        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
+    const args = LinkedValues.create(&heap, expr.BigInt, n, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, d, ConstantType.integerType());
 
     //const n = expr.BigInt{ .sign = 1, .length = 1, .words = &a_words }; // −503
     //const d = expr.BigInt{ .sign = 1, .length = 1, .words = &b_words }; // −1777777777
@@ -3609,8 +3881,8 @@ test "divide: (-503) / (+1777777777) floors to −1" {
         .words = &[_]u32{1_777_777_777},
     };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
-        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
+    const args = LinkedValues.create(&heap, expr.BigInt, n, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, d, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -3651,8 +3923,8 @@ test "divide: (+503) / (−1777777777) floors to −1" {
         .words = &[_]u32{1_777_777_777},
     };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
-        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
+    const args = LinkedValues.create(&heap, expr.BigInt, n, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, d, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -3693,8 +3965,8 @@ test "divide: (+503) / (+1777777777) = 0" {
         .words = &[_]u32{1_777_777_777},
     };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
-        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
+    const args = LinkedValues.create(&heap, expr.BigInt, n, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, d, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -3726,8 +3998,8 @@ test "divide: multi-limb exact (positive / positive)" {
     const n = expr.BigInt{ .sign = 0, .length = 3, .words = a_words };
     const d = expr.BigInt{ .sign = 0, .length = 2, .words = b_words };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
-        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
+    const args = LinkedValues.create(&heap, expr.BigInt, n, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, d, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
@@ -3760,8 +4032,8 @@ test "divide: multi-limb with remainder and signs differ (positive / negative)" 
     const n = expr.BigInt{ .sign = 0, .length = 3, .words = a_words };
     const d = expr.BigInt{ .sign = 1, .length = 2, .words = b_words };
 
-    const args = LinkedValues.create(&heap, expr.BigInt, d, ConstantType.integerType())
-        .extend(&heap, expr.BigInt, n, ConstantType.integerType());
+    const args = LinkedValues.create(&heap, expr.BigInt, n, ConstantType.integerType())
+        .extend(&heap, expr.BigInt, d, ConstantType.integerType());
 
     const res_val = divideInteger(&mach, args);
 
