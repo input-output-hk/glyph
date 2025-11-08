@@ -1,3 +1,4 @@
+use std::convert::TryFrom;
 use std::io::{Cursor, Write};
 use std::ops::Deref;
 use std::rc::Rc;
@@ -6,7 +7,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use constants::{bool_val, const_tag, data_tag, term_tag};
 use uplc::BigInt;
 use uplc::PlutusData;
-use uplc::ast::{Constant, DeBruijn, Program, Term};
+use uplc::ast::{Constant, DeBruijn, Program, Term, Type};
 use uplc::builtins::DefaultFunction;
 use uplc::machine::runtime::Compressable;
 
@@ -14,6 +15,18 @@ use std::io;
 use thiserror::Error;
 
 pub mod constants;
+
+const CONST_TYPE_INTEGER: u32 = 0;
+const CONST_TYPE_BYTESTRING: u32 = 1;
+const CONST_TYPE_STRING: u32 = 2;
+const CONST_TYPE_UNIT: u32 = 3;
+const CONST_TYPE_BOOL: u32 = 4;
+const CONST_TYPE_LIST: u32 = 5;
+const CONST_TYPE_PAIR: u32 = 6;
+const CONST_TYPE_DATA: u32 = 7;
+const CONST_TYPE_BLS12_381_G1_ELEMENT: u32 = 8;
+const CONST_TYPE_BLS12_381_G2_ELEMENT: u32 = 9;
+const CONST_TYPE_BLS12_381_MLRESULT: u32 = 10;
 
 /// Error type for serialization failures
 #[derive(Error, Debug)]
@@ -267,36 +280,38 @@ fn serialize_constant(preceeding_byte_size: u32, constant: &Rc<Constant>) -> Res
     x.write_u32::<LittleEndian>(term_tag::CONSTANT)?;
 
     // Serialize the constant based on its type
-    let serialized_data = match &**constant {
-        Constant::Integer(int) => serialize_integer_constant(preceeding_byte_size + 4, int)?,
-        Constant::ByteString(bytes) => {
-            serialize_bytestring_constant(preceeding_byte_size + 4, bytes)?
-        }
-        Constant::String(s) => serialize_string_constant(preceeding_byte_size + 4, s.as_str())?,
-        Constant::Unit => serialize_unit_constant(preceeding_byte_size + 4)?,
-        Constant::Bool(b) => serialize_bool_constant(preceeding_byte_size + 4, *b)?,
-        Constant::Data(data) => serialize_data_constant(preceeding_byte_size + 4, data)?,
-        Constant::ProtoList(_, _) => todo!(),
-        Constant::Bls12_381G1Element(point) => {
-            serialize_bls12_381_g1_constant(preceeding_byte_size + 4, point.as_ref())?
-        }
-        Constant::Bls12_381G2Element(point) => {
-            serialize_bls12_381_g2_constant(preceeding_byte_size + 4, point.as_ref())?
-        }
-        Constant::Bls12_381MlResult(fp12) => {
-            serialize_bls12_381_mlresult_constant(preceeding_byte_size + 4, fp12.as_ref())?
-        }
-        _ => {
-            return Err(SerializationError::InvalidTermType(format!(
-                "Unsupported constant type: {constant:?}",
-            )));
-        }
-    };
+    let serialized_data = serialize_constant_body(preceeding_byte_size + 4, constant.deref())?;
 
     // Write serialized data to our buffer
     x.write_all(&serialized_data)?;
 
     Ok(x)
+}
+
+fn serialize_constant_body(preceeding_byte_size: u32, constant: &Constant) -> Result<Vec<u8>> {
+    match constant {
+        Constant::Integer(int) => serialize_integer_constant(preceeding_byte_size, int),
+        Constant::ByteString(bytes) => serialize_bytestring_constant(preceeding_byte_size, bytes),
+        Constant::String(s) => serialize_string_constant(preceeding_byte_size, s.as_str()),
+        Constant::Unit => serialize_unit_constant(preceeding_byte_size),
+        Constant::Bool(b) => serialize_bool_constant(preceeding_byte_size, *b),
+        Constant::Data(data) => serialize_data_constant(preceeding_byte_size, data),
+        Constant::ProtoList(ty, elements) => {
+            serialize_protolist_constant(preceeding_byte_size, ty, elements)
+        }
+        Constant::Bls12_381G1Element(point) => {
+            serialize_bls12_381_g1_constant(preceeding_byte_size, point.as_ref())
+        }
+        Constant::Bls12_381G2Element(point) => {
+            serialize_bls12_381_g2_constant(preceeding_byte_size, point.as_ref())
+        }
+        Constant::Bls12_381MlResult(fp12) => {
+            serialize_bls12_381_mlresult_constant(preceeding_byte_size, fp12.as_ref())
+        }
+        other => Err(SerializationError::InvalidTermType(format!(
+            "Unsupported constant type: {other:?}",
+        ))),
+    }
 }
 
 /// Serialize an integer constant
@@ -341,7 +356,7 @@ fn serialize_integer_constant(
 }
 
 /// Serialize a bytestring constant
-/// 
+///
 /// ByteStrings are stored in unpacked format: one byte value per u32 word.
 /// This matches the runtime representation used by bytestring operations.
 fn serialize_bytestring_constant(preceeding_byte_size: u32, bytes: &[u8]) -> Result<Vec<u8>> {
@@ -375,11 +390,7 @@ fn serialize_bytestring_constant(preceeding_byte_size: u32, bytes: &[u8]) -> Res
     Ok(bytes_type)
 }
 
-fn serialize_bls_bytes(
-    preceeding_byte_size: u32,
-    payload: &[u8],
-    tag: u32,
-) -> Result<Vec<u8>> {
+fn serialize_bls_bytes(preceeding_byte_size: u32, payload: &[u8], tag: u32) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     let mut header: Vec<u8> = Vec::new();
 
@@ -405,7 +416,11 @@ fn serialize_bls12_381_g1_constant(
     point: &blst::blst_p1,
 ) -> Result<Vec<u8>> {
     let bytes = point.compress();
-    serialize_bls_bytes(preceeding_byte_size, &bytes, const_tag::BLS12_381_G1_ELEMENT)
+    serialize_bls_bytes(
+        preceeding_byte_size,
+        &bytes,
+        const_tag::BLS12_381_G1_ELEMENT,
+    )
 }
 
 fn serialize_bls12_381_g2_constant(
@@ -413,7 +428,11 @@ fn serialize_bls12_381_g2_constant(
     point: &blst::blst_p2,
 ) -> Result<Vec<u8>> {
     let bytes = point.compress();
-    serialize_bls_bytes(preceeding_byte_size, &bytes, const_tag::BLS12_381_G2_ELEMENT)
+    serialize_bls_bytes(
+        preceeding_byte_size,
+        &bytes,
+        const_tag::BLS12_381_G2_ELEMENT,
+    )
 }
 
 fn serialize_bls12_381_mlresult_constant(
@@ -424,11 +443,7 @@ fn serialize_bls12_381_mlresult_constant(
     unsafe {
         blst::blst_bendian_from_fp12(bytes.as_mut_ptr(), fp12);
     }
-    serialize_bls_bytes(
-        preceeding_byte_size,
-        &bytes,
-        const_tag::BLS12_381_MLRESULT,
-    )
+    serialize_bls_bytes(preceeding_byte_size, &bytes, const_tag::BLS12_381_MLRESULT)
 }
 
 /// Serialize a string constant (UTF-8), using the same packed-word layout as ByteString
@@ -507,6 +522,120 @@ fn serialize_bool_constant(preceeding_byte_size: u32, value: bool) -> Result<Vec
     x.write_u32::<LittleEndian>(const_tag::BOOL)?;
 
     Ok(x)
+}
+
+fn serialize_protolist_constant(
+    preceeding_byte_size: u32,
+    element_type: &Type,
+    elements: &[Constant],
+) -> Result<Vec<u8>> {
+    let mut payload: Vec<u8> = Vec::new();
+    payload.write_u32::<LittleEndian>(usize_to_u32(elements.len())?)?;
+
+    let head_ptr_offset = payload.len();
+    payload.write_u32::<LittleEndian>(0)?;
+
+    let mut current_payload_len = payload.len();
+    let mut element_value_ptrs = Vec::with_capacity(elements.len());
+
+    for element in elements {
+        let element_offset = current_payload_len + 8;
+        let element_base = add_bytes(preceeding_byte_size, element_offset)?;
+        let element_bytes = serialize_constant_body(element_base, element)?;
+        let element_value_ptr = add_bytes(element_base, 8)?;
+
+        element_value_ptrs.push(element_value_ptr);
+        payload.extend_from_slice(&element_bytes);
+        current_payload_len += element_bytes.len();
+    }
+
+    let node_section_offset = current_payload_len;
+    let mut head_ptr_value = 0;
+
+    for (idx, value_ptr) in element_value_ptrs.iter().enumerate() {
+        let node_offset = node_section_offset + idx * 8;
+        let node_addr = add_bytes(preceeding_byte_size, 8 + node_offset)?;
+        if idx == 0 {
+            head_ptr_value = node_addr;
+        }
+
+        payload.write_u32::<LittleEndian>(*value_ptr)?;
+
+        let next_ptr = if idx + 1 < element_value_ptrs.len() {
+            add_bytes(
+                preceeding_byte_size,
+                8 + node_section_offset + (idx + 1) * 8,
+            )?
+        } else {
+            0
+        };
+
+        payload.write_u32::<LittleEndian>(next_ptr)?;
+        current_payload_len += 8;
+    }
+
+    if !element_value_ptrs.is_empty() {
+        payload[head_ptr_offset..head_ptr_offset + 4]
+            .copy_from_slice(&head_ptr_value.to_le_bytes());
+    }
+
+    let payload_len = payload.len();
+    let mut type_entries = Vec::new();
+    type_entries.push(CONST_TYPE_LIST);
+    encode_type_descriptor(element_type, &mut type_entries)?;
+
+    let mut body: Vec<u8> = Vec::new();
+    body.write_u32::<LittleEndian>(usize_to_u32(type_entries.len())?)?;
+    let type_ptr = add_bytes(preceeding_byte_size, 8 + payload_len)?;
+    body.write_u32::<LittleEndian>(type_ptr)?;
+    body.extend_from_slice(&payload);
+    for entry in type_entries {
+        body.write_u32::<LittleEndian>(entry)?;
+    }
+
+    Ok(body)
+}
+
+fn encode_type_descriptor(ty: &Type, out: &mut Vec<u32>) -> Result<()> {
+    match ty {
+        Type::Bool => out.push(CONST_TYPE_BOOL),
+        Type::Integer => out.push(CONST_TYPE_INTEGER),
+        Type::String => out.push(CONST_TYPE_STRING),
+        Type::ByteString => out.push(CONST_TYPE_BYTESTRING),
+        Type::Unit => out.push(CONST_TYPE_UNIT),
+        Type::Data => out.push(CONST_TYPE_DATA),
+        Type::Bls12_381G1Element => out.push(CONST_TYPE_BLS12_381_G1_ELEMENT),
+        Type::Bls12_381G2Element => out.push(CONST_TYPE_BLS12_381_G2_ELEMENT),
+        Type::Bls12_381MlResult => out.push(CONST_TYPE_BLS12_381_MLRESULT),
+        Type::List(inner) => {
+            out.push(CONST_TYPE_LIST);
+            encode_type_descriptor(inner.as_ref(), out)?;
+        }
+        Type::Pair(fst, snd) => {
+            out.push(CONST_TYPE_PAIR);
+            encode_type_descriptor(fst.as_ref(), out)?;
+            encode_type_descriptor(snd.as_ref(), out)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn add_bytes(base: u32, extra: usize) -> Result<u32> {
+    let extra = usize_to_u32(extra)?;
+    base.checked_add(extra).ok_or_else(|| {
+        SerializationError::MemoryLayoutError(
+            "Address space overflow while serializing list constant".to_string(),
+        )
+    })
+}
+
+fn usize_to_u32(value: usize) -> Result<u32> {
+    u32::try_from(value).map_err(|_| {
+        SerializationError::MemoryLayoutError(format!(
+            "Value {value} does not fit in 32-bit address space"
+        ))
+    })
 }
 
 /// Serialize a Plutus Data constant
