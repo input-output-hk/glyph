@@ -549,6 +549,7 @@ conformance_test!(conformance_lessthanequalinteger, "lessThanEqualsInteger");
 
 // ByteString tests
 conformance_test!(conformance_appendbytestring, "appendByteString");
+conformance_test!(conformance_andbytestring, "andByteString");
 conformance_test!(conformance_consbytes, "consByteString");
 conformance_test!(conformance_slicebytestring, "sliceByteString");
 conformance_test!(conformance_lengthofbytestring, "lengthOfByteString");

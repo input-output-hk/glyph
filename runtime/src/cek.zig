@@ -2465,8 +2465,31 @@ pub fn byteStringToInteger(m: *Machine, args: *LinkedValues) *const Value {
 }
 
 // Logical
-pub fn andByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn andByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const rhs = args.value.unwrapBytestring();
+    const lhs = args.next.?.value.unwrapBytestring();
+    const pad_to_max = args.next.?.next.?.value.unwrapBool();
+
+    const min_len = @min(lhs.length, rhs.length);
+    const max_len = @max(lhs.length, rhs.length);
+    const result_len = if (pad_to_max) max_len else min_len;
+
+    // When padding to the longer length we conceptually extend the shorter input with 0xFF bytes.
+    var result = m.heap.createArray(u32, result_len + 4);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.bytesType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = result_len;
+
+    var out_bytes = result + 4;
+    var i: u32 = 0;
+    while (i < result_len) : (i += 1) {
+        const lhs_byte: u32 = if (i < lhs.length) lhs.bytes[i] & 0xFF else 0xFF;
+        const rhs_byte: u32 = if (i < rhs.length) rhs.bytes[i] & 0xFF else 0xFF;
+        out_bytes[i] = lhs_byte & rhs_byte;
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn orByteString(_: *Machine, _: *LinkedValues) *const Value {
