@@ -82,16 +82,22 @@ pub const Frames = struct {
         @memcpy(ptr_bytes, std.mem.asBytes(frame));
 
         self.frame_ptr = @ptrFromInt(@intFromPtr(self.frame_ptr) + @sizeOf(Frame));
+        frame_debug = @intFromPtr(self.frame_ptr);
     }
 
     pub fn popFrame(self: *Self) Frame {
         self.frame_ptr = @ptrFromInt(@intFromPtr(self.frame_ptr) - @sizeOf(Frame));
+        frame_debug = @intFromPtr(self.frame_ptr);
 
         const frame = std.mem.bytesToValue(Frame, self.frame_ptr);
 
         return frame;
     }
 };
+
+pub export var frame_debug: u32 = 0;
+pub export var numer_len_debug: u32 = 0;
+pub export var denom_len_debug: u32 = 0;
 
 const ValueList = struct { length: u32, list: [*]*const Value };
 
@@ -708,234 +714,220 @@ inline fn bigIntIsZero(n: BigInt) bool {
     return true;
 }
 
-pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
-    // 1. Parse inputs and handle special cases
-    // Builtin arguments are stored in reverse application order, so the head is the last argument.
-    const d = args.value.unwrapInteger(); // Denominator (applied last)
-    const n = args.next.?.value.unwrapInteger(); // Numerator
+const DivisionMode = enum {
+    trunc,
+    floor,
+};
 
-    // Denominator 0 -> evaluation failure (catch before any fast paths).
-    if (bigIntIsZero(d)) {
-        builtinEvaluationFailure();
+fn computeQuotient(
+    m: *Machine,
+    numer: BigInt,
+    denom: BigInt,
+    mode: DivisionMode,
+) *const Value {
+    if (quotientBySingleLimb(m, numer, denom, mode)) |value| {
+        return value;
     }
+    return divideMultiLimb(m, numer, denom, mode);
+}
 
-    // Fast path: 0 ÷ anything = 0
-    if (bigIntIsZero(n)) {
-        // Allocate result for integer 0 (sign=0, length=1, word=0)
-        const buf = m.heap.createArray(u32, 3);
-        buf[0] = 0; // sign = 0 (non-negative)
-        buf[1] = 1; // length = 1
-        buf[2] = 0; // limb value = 0
-        const con = Constant{
-            .length = 1,
-            .type_list = @ptrCast(ConstantType.integerType()),
-            .value = @intFromPtr(buf),
-        };
-        return createConst(m.heap, m.heap.create(Constant, &con));
+inline fn effectiveBigIntLen(n: BigInt) usize {
+    var len: usize = n.length;
+    while (len > 0 and n.words[len - 1] == 0) {
+        len -= 1;
     }
-    // Determine signs and absolute values
-    const numer_neg = n.sign == 1;
-    const denom_neg = d.sign == 1;
-    const numer_abs = BigInt{ .sign = 0, .length = n.length, .words = n.words };
-    const denom_abs = BigInt{ .sign = 0, .length = d.length, .words = d.words };
+    return len;
+}
 
-    // Compare magnitudes to see if |n| < |d|
-    const cmp = numer_abs.compareMagnitude(&denom_abs);
-    const numerLess = cmp[2] == &numer_abs;
-    if (numerLess) {
-        const needMinusOne = (numer_neg != denom_neg);
-        if (!needMinusOne) {
-            // If signs are same, floor division yields 0
-            const buf = m.heap.createArray(u32, 3);
-            buf[0] = 0; // sign = 0
-            buf[1] = 1; // length = 1
-            buf[2] = 0; // word = 0
-            const con = Constant{
-                .length = 1,
-                .type_list = @ptrCast(ConstantType.integerType()),
-                .value = @intFromPtr(buf),
-            };
-            return createConst(m.heap, m.heap.create(Constant, &con));
+fn normalizeLimbsInPlace(buf: []u32) usize {
+    var len = buf.len;
+    while (len > 1 and buf[len - 1] == 0) {
+        len -= 1;
+    }
+    return len;
+}
+
+fn incrementMagnitude(buf: []u32) void {
+    var idx: usize = 0;
+    while (idx < buf.len) : (idx += 1) {
+        const sum = @as(u64, buf[idx]) + 1;
+        buf[idx] = @intCast(sum & 0xFFFF_FFFF);
+        if (sum <= std.math.maxInt(u32)) {
+            return;
+        }
+    }
+}
+
+fn normalizeInto(dst: []u32, src: []const u32, shift: u6) u32 {
+    var carry: u64 = 0;
+    var i: usize = 0;
+    while (i < src.len) : (i += 1) {
+        const combined = (@as(u64, src[i]) << shift) | carry;
+        dst[i] = @intCast(combined & 0xFFFF_FFFF);
+        carry = combined >> 32;
+    }
+    return @intCast(carry);
+}
+
+fn hasNonZero(slice: []const u32) bool {
+    for (slice) |word| {
+        if (word != 0) return true;
+    }
+    return false;
+}
+
+fn subtractMulAt(accum: []u32, sub: []const u32, factor: u64, offset: usize) bool {
+    const base: u64 = 0x1_0000_0000;
+    const factor32: u64 = factor & 0xFFFF_FFFF;
+    var borrow: u64 = 0;
+    var carry: u64 = 0;
+    var i: usize = 0;
+    while (i < sub.len) : (i += 1) {
+        const product = @as(u64, sub[i]) * factor32 + carry;
+        const prod_low = product & 0xFFFF_FFFF;
+        carry = product >> 32;
+
+        const idx = offset + i;
+        const lhs = @as(u64, accum[idx]);
+        const subtrahend = prod_low + borrow;
+        if (lhs >= subtrahend) {
+            accum[idx] = @intCast(lhs - subtrahend);
+            borrow = 0;
         } else {
-            // Signs differ and |n|<|d|, result is -1
-            const buf = m.heap.createArray(u32, 3);
-            buf[0] = 1; // sign = 1 (negative)
-            buf[1] = 1; // length = 1
-            buf[2] = 1; // magnitude = 1
-            const con = Constant{
-                .length = 1,
-                .type_list = @ptrCast(ConstantType.integerType()),
-                .value = @intFromPtr(buf),
-            };
-            return createConst(m.heap, m.heap.create(Constant, &con));
+            accum[idx] = @intCast((lhs + base) - subtrahend);
+            borrow = 1;
         }
     }
-
-    // 2. Unsigned magnitude division. Allocate quotient buffer.
-    const q_buf_len: u32 = numer_abs.length - denom_abs.length + 1;
-    var q_buf = m.heap.createArray(u32, q_buf_len);
-    var rem_zero: bool = true; // will set to false if remainder is non-zero
-
-    if (denom_abs.length == 1) {
-        // Single-limb divisor fast path
-        const dv: u32 = denom_abs.words[0];
-        var carry: u64 = 0;
-        // iterate from most significant limb to least
-        var ii: u32 = numer_abs.length;
-        while (ii > 0) : (ii -= 1) {
-            const i = ii - 1;
-            const cur: u64 = (carry << 32) | @as(u64, numer_abs.words[i]);
-            const q_digit: u64 = cur / dv;
-            carry = cur % dv;
-            q_buf[i] = @truncate(q_digit);
-        }
-        rem_zero = (carry == 0);
+    const idx = offset + sub.len;
+    const lhs_tail = @as(u64, accum[idx]);
+    const tail_sub = carry + borrow;
+    if (lhs_tail >= tail_sub) {
+        accum[idx] = @intCast(lhs_tail - tail_sub);
+        return false;
     } else {
-        // Multi-limb divisor: Knuth's Algorithm D
-        const beta: u64 = 0x1_0000_0000; // β = 2^32
-        const n_u = numer_abs.length;
-        const m_d = denom_abs.length;
+        accum[idx] = @intCast((lhs_tail + base) - tail_sub);
+        return true;
+    }
+}
 
-        // D1: normalization (shift left so v_norm[m_d-1] >= β/2)
-        const vTop: u32 = denom_abs.words[m_d - 1];
-        // Compute shift count s as u5
-        const s_full = @clz(vTop);
-        const s: u5 = if (s_full == 32) 0 else @truncate(s_full);
-        const oneMinusS: u5 = if (s == 0) @as(u5, 0) else (@as(u5, 31) - (s - 1));
-        // oneMinusS is effectively (32 - s) but expressed in u5 without overflow
+fn addAtOffset(accum: []u32, addend: []const u32, offset: usize) void {
+    var carry: u64 = 0;
+    var i: usize = 0;
+    while (i < addend.len) : (i += 1) {
+        const idx = offset + i;
+        const sum = @as(u64, accum[idx]) + @as(u64, addend[i]) + carry;
+        accum[idx] = @intCast(sum & 0xFFFF_FFFF);
+        carry = sum >> 32;
+    }
+    const idx = offset + addend.len;
+    const sum_tail = @as(u64, accum[idx]) + carry;
+    accum[idx] = @intCast(sum_tail & 0xFFFF_FFFF);
+}
 
-        // Allocate and build u_norm (length = n_u + 1)
-        var u_norm = m.heap.createArray(u32, n_u + 1);
-        var carry_u: u32 = 0;
-        var ui: u32 = 0;
-        while (ui < n_u) : (ui += 1) {
-            const w = numer_abs.words[ui];
-            u_norm[ui] = @as(u32, (w << s) | carry_u);
-            carry_u = if (s == 0) 0 else w >> oneMinusS;
-        }
-        u_norm[n_u] = carry_u;
+fn handleSmallerMagnitude(
+    m: *Machine,
+    numer: BigInt,
+    numer_positive: bool,
+    denom_positive: bool,
+    mode: DivisionMode,
+) *const Value {
+    const remainder_nonzero = !bigIntIsZero(numer);
+    var magnitude = m.heap.createArray(u32, 1);
+    magnitude[0] = 0;
+    var result_positive = true;
+    if (mode == .floor and remainder_nonzero and (numer_positive != denom_positive)) {
+        magnitude[0] = 1;
+        result_positive = false;
+    }
+    return createIntegerValueFromLimbs(m, magnitude[0..1], result_positive);
+}
 
-        // Allocate and build v_norm (length = m_d)
-        var v_norm = m.heap.createArray(u32, m_d);
-        var carry_v: u32 = 0;
-        var vi: u32 = 0;
-        while (vi < m_d) : (vi += 1) {
-            const w = denom_abs.words[vi];
-            v_norm[vi] = @as(u32, (w << s) | carry_v);
-            carry_v = if (s == 0) 0 else w >> oneMinusS;
-        }
-
-        // D2: initialize quotient loop (j from n_u - m_d down to 0)
-        var jj: u32 = n_u - m_d + 1;
-        var j_usize: u32 = n_u - m_d;
-        while (jj > 0) : (jj -= 1) {
-
-            // D3: Compute trial qhat and rhat
-            const u_hi: u32 = u_norm[j_usize + m_d];
-            const u_lo: u32 = u_norm[j_usize + m_d - 1];
-            const num64: u64 = (@as(u64, u_hi) << 32) | @as(u64, u_lo);
-            var qhat: u64 = num64 / @as(u64, v_norm[m_d - 1]);
-            var rhat: u64 = num64 % @as(u64, v_norm[m_d - 1]);
-            if (qhat == beta) {
-                qhat -= 1;
-                rhat += @as(u64, v_norm[m_d - 1]);
-            }
-            // Adjust qhat downward if necessary
-            const v2: u32 = if (m_d > 1) v_norm[m_d - 2] else 0;
-            const uv2: u32 = u_norm[j_usize + m_d - 2];
-            while (qhat != 0) {
-                if (qhat * @as(u64, v2) <= (rhat << 32) + @as(u64, uv2)) {
-                    break;
-                }
-                qhat -= 1;
-                rhat += @as(u64, v_norm[m_d - 1]);
-                if (rhat >= beta) {
-                    break;
-                }
-            }
-
-            // D4: Multiply v_norm by qhat and subtract from u_norm segment
-            var borrow: u64 = 0;
-            var carry_mul: u64 = 0;
-            var k: usize = 0;
-            while (k < m_d) : (k += 1) {
-                const p = qhat * @as(u64, v_norm[k]) + carry_mul;
-                carry_mul = p >> 32;
-                const sub_val = u_norm[j_usize + k];
-                const diff = @as(u64, sub_val) - (p & 0xFFFF_FFFF) - borrow;
-                u_norm[j_usize + k] = @truncate(diff);
-                borrow = (diff >> 63) & 1;
-            }
-            const sub_hi = u_norm[j_usize + m_d];
-            const diff_hi = @as(u64, sub_hi) - carry_mul - borrow;
-            u_norm[j_usize + m_d] = @truncate(diff_hi);
-
-            // D5: Check if we subtracted "too much" (negative remainder)
-            var q_digit: u32 = @truncate(qhat);
-            if ((diff_hi >> 63) & 1 != 0) {
-                // If underflow, add v_norm back and decrement q_digit
-                q_digit -= 1;
-                var carry_back: u64 = 0;
-                var t: usize = 0;
-                while (t < m_d) : (t += 1) {
-                    const sum = @as(u64, u_norm[j_usize + t]) + @as(u64, v_norm[t]) + carry_back;
-                    u_norm[j_usize + t] = @truncate(sum);
-                    carry_back = sum >> 32;
-                }
-                u_norm[j_usize + m_d] = @truncate(@as(u64, u_norm[j_usize + m_d]) + carry_back);
-            }
-            // Store quotient digit
-            q_buf[j_usize] = q_digit;
-
-            if (jj > 1) {
-                j_usize -= 1;
-            }
-        }
-
-        // Determine if remainder is zero (all lower m_d limbs are 0)
-        rem_zero = true;
-        var r_index: u32 = 0;
-        while (r_index < m_d) : (r_index += 1) {
-            if (u_norm[r_index] != 0) {
-                rem_zero = false;
-                break;
-            }
-        }
+fn divideMultiLimb(
+    m: *Machine,
+    numer: BigInt,
+    denom: BigInt,
+    mode: DivisionMode,
+) *const Value {
+    const numer_len = effectiveBigIntLen(numer);
+    const denom_len = effectiveBigIntLen(denom);
+    const numer_positive = numer.sign == 0;
+    const denom_positive = denom.sign == 0;
+    if (numer_len < denom_len) {
+        return handleSmallerMagnitude(m, numer, numer_positive, denom_positive, mode);
     }
 
-    // Trim leading zero limbs from quotient buffer
-    var q_len: u32 = q_buf_len;
-    while (q_len > 1 and q_buf[q_len - 1] == 0) {
-        q_len -= 1;
+    var result_positive = numer_positive == denom_positive;
+    const v_high = denom.words[denom_len - 1];
+    const shift: u6 = @intCast(@clz(v_high));
+
+    const u_storage = m.heap.createArray(u32, @intCast(numer_len + 1));
+    const v_storage = m.heap.createArray(u32, @intCast(denom_len));
+    const q_capacity = numer_len - denom_len + 1;
+    const quotient_storage = m.heap.createArray(u32, @intCast(q_capacity + 1));
+    @memset(quotient_storage[0..q_capacity + 1], 0);
+
+    const numer_slice = numer.words[0..numer_len];
+    const denom_slice = denom.words[0..denom_len];
+    const carry = normalizeInto(u_storage[0..numer_len], numer_slice, shift);
+    u_storage[numer_len] = carry;
+    _ = normalizeInto(v_storage[0..denom_len], denom_slice, shift);
+
+    var idx: usize = q_capacity;
+    while (idx > 0) : (idx -= 1) {
+        const pos = idx - 1;
+        const u_high = u_storage[pos + denom_len];
+        const u_next = u_storage[pos + denom_len - 1];
+        const numerator64 = (@as(u64, u_high) << 32) | @as(u64, u_next);
+        var q_hat: u64 = if (u_high == v_storage[denom_len - 1])
+            std.math.maxInt(u32)
+        else
+            numerator64 / @as(u64, v_storage[denom_len - 1]);
+        var r_hat = numerator64 - q_hat * @as(u64, v_storage[denom_len - 1]);
+        if (denom_len > 1) {
+            const base: u64 = 0x1_0000_0000;
+            while (q_hat == base or q_hat * @as(u64, v_storage[denom_len - 2]) >
+                (r_hat << 32) + @as(u64, u_storage[pos + denom_len - 2]))
+            {
+                q_hat -= 1;
+                r_hat += @as(u64, v_storage[denom_len - 1]);
+                if (r_hat >= base) break;
+            }
+        }
+        if (subtractMulAt(u_storage[0 .. numer_len + 1], v_storage[0..denom_len], q_hat, pos)) {
+            addAtOffset(u_storage[0 .. numer_len + 1], v_storage[0..denom_len], pos);
+            q_hat -= 1;
+        }
+        quotient_storage[pos] = @intCast(q_hat);
     }
 
-    // 3. Post-processing for floor division semantics
-    const signsDiffer = (numer_neg != denom_neg);
-    const res_sign: u32 = if (signsDiffer) 1 else 0;
-    // Allocate buffer for BigInt data (sign, length, words), possibly +1 limb for carry
-    var buf = m.heap.createArray(u32, q_len + 3);
-    buf[0] = res_sign;
-    // Copy quotient magnitude
-    var i_cpy: u32 = 0;
-    while (i_cpy < q_len) : (i_cpy += 1) {
-        buf[2 + i_cpy] = q_buf[i_cpy];
+    const remainder_nonzero = hasNonZero(u_storage[0..denom_len]);
+    if (mode == .floor and remainder_nonzero and (numer_positive != denom_positive)) {
+        incrementMagnitude(quotient_storage[0..q_capacity + 1]);
+        result_positive = false;
     }
 
-    if (signsDiffer and !rem_zero) {
-        // If signs differ and remainder != 0, add 1 to magnitude (floor toward -∞)
-        var carry_neg: u64 = 1;
-        var idx: u32 = 0;
-        while (carry_neg != 0 and idx < q_len) : (idx += 1) {
-            const tmp = @as(u64, buf[2 + idx]) + carry_neg;
-            buf[2 + idx] = @truncate(tmp);
-            carry_neg = tmp >> 32;
-        }
-        if (carry_neg != 0) {
-            buf[2 + q_len] = @truncate(carry_neg);
-            q_len += 1;
-        }
+    const final_len = normalizeLimbsInPlace(quotient_storage[0..q_capacity + 1]);
+    if (final_len == 1 and quotient_storage[0] == 0) {
+        result_positive = true;
     }
-    buf[1] = q_len; // set final length
+
+    return createIntegerValueFromLimbs(m, quotient_storage[0..final_len], result_positive);
+}
+
+fn createIntegerValueFromLimbs(
+    m: *Machine,
+    limbs: []const u32,
+    positive: bool,
+) *const Value {
+    const len_u32: u32 = @intCast(limbs.len);
+    const buf = m.heap.createArray(u32, @intCast(limbs.len + 2));
+    buf[0] = @intFromBool(!positive);
+    buf[1] = len_u32;
+    var i: usize = 0;
+    while (i < limbs.len) : (i += 1) {
+        buf[2 + i] = limbs[i];
+    }
+
     const con = Constant{
         .length = 1,
         .type_list = @ptrCast(ConstantType.integerType()),
@@ -944,8 +936,119 @@ pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
     return createConst(m.heap, m.heap.create(Constant, &con));
 }
 
-pub fn quotientInteger(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+const DivStep = struct { quotient: u32, remainder: u32 };
+
+fn divRemWideStep(remainder: u32, limb: u32, divisor: u32) DivStep {
+    // Bit-by-bit long division so we never emit 64-bit div/mod helpers on RV32.
+    const divisor64 = @as(u64, divisor);
+    var rem = @as(u64, remainder);
+    var q: u32 = 0;
+    var mask: u32 = 0x8000_0000;
+    while (mask != 0) : (mask >>= 1) {
+        rem = (rem << 1) | @as(u64, @intFromBool((limb & mask) != 0));
+        q = (q << 1);
+        if (rem >= divisor64) {
+            rem -= divisor64;
+            q |= 1;
+        }
+    }
+    return .{ .quotient = q, .remainder = @intCast(rem) };
+}
+
+fn quotientBySingleLimb(
+    m: *Machine,
+    numer: BigInt,
+    denom: BigInt,
+    mode: DivisionMode,
+) ?*const Value {
+    const denom_len = effectiveBigIntLen(denom);
+    if (denom_len != 1) return null;
+
+    const denom_abs: u32 = denom.words[0];
+    if (denom_abs == 0) return null;
+
+    var numer_len = effectiveBigIntLen(numer);
+    if (numer_len == 0) numer_len = 1;
+
+    const quotient_storage = m.heap.createArray(u32, @intCast(numer_len + 1));
+    quotient_storage[numer_len] = 0;
+
+    var remainder: u32 = 0;
+    var idx = numer_len;
+    while (idx > 0) : (idx -= 1) {
+        const limb = numer.words[idx - 1];
+        const step = divRemWideStep(remainder, limb, denom_abs);
+        remainder = step.remainder;
+        quotient_storage[idx - 1] = step.quotient;
+    }
+
+    const numer_positive = numer.sign == 0;
+    const denom_positive = denom.sign == 0;
+    var result_positive = numer_positive == denom_positive;
+    const remainder_nonzero = remainder != 0;
+
+    if (mode == .floor and remainder_nonzero and (numer_positive != denom_positive)) {
+        incrementMagnitude(quotient_storage[0..numer_len + 1]);
+        result_positive = false;
+    }
+
+    const q_len = normalizeLimbsInPlace(quotient_storage[0..numer_len + 1]);
+    if (q_len == 1 and quotient_storage[0] == 0) {
+        result_positive = true;
+    }
+
+    return createIntegerValueFromLimbs(m, quotient_storage[0..q_len], result_positive);
+}
+
+pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
+    const d = args.value.unwrapInteger();
+    const n = args.next.?.value.unwrapInteger();
+
+    if (bigIntIsZero(d)) {
+        builtinEvaluationFailure();
+    }
+
+    if (bigIntIsZero(n)) {
+        const buf = m.heap.createArray(u32, 3);
+        buf[0] = 0;
+        buf[1] = 1;
+        buf[2] = 0;
+        const con = Constant{
+            .length = 1,
+            .type_list = @ptrCast(ConstantType.integerType()),
+            .value = @intFromPtr(buf),
+        };
+        return createConst(m.heap, m.heap.create(Constant, &con));
+    }
+
+    return computeQuotient(m, n, d, .floor);
+}
+
+pub fn quotientInteger(m: *Machine, args: *LinkedValues) *const Value {
+    const d = args.value.unwrapInteger();
+    const n = args.next.?.value.unwrapInteger();
+
+    numer_len_debug = n.length;
+    denom_len_debug = d.length;
+
+    if (bigIntIsZero(d)) {
+        builtinEvaluationFailure();
+    }
+
+    if (bigIntIsZero(n)) {
+        const buf = m.heap.createArray(u32, 3);
+        buf[0] = 0;
+        buf[1] = 1;
+        buf[2] = 0;
+        const con = Constant{
+            .length = 1,
+            .type_list = @ptrCast(ConstantType.integerType()),
+            .value = @intFromPtr(buf),
+        };
+        return createConst(m.heap, m.heap.create(Constant, &con));
+    }
+
+    return computeQuotient(m, n, d, .trunc);
 }
 
 pub fn remainderInteger(_: *Machine, _: *LinkedValues) *const Value {
