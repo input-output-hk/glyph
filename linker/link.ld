@@ -57,7 +57,7 @@ SECTIONS
   {
     __stack_bottom = .;
     *(.stack*)
-    . = . + 0x100000;  /* Allocate 1MB of stack space */
+    . = . + 0x400000;  /* Allocate 4MB of stack space */
     __stack_top = .;
   } > STACK
 }

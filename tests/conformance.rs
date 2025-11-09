@@ -162,7 +162,7 @@ fn run_uplc_program(
     let elf_path = compiler.compile(program)?;
 
     // Run in emulator
-    let (result, _trace, emu_program) =
+    let (result, trace, emu_program) =
         glyph::cek::run_file(elf_path.to_str().unwrap(), Vec::new())
             .map_err(|e| format!("Emulator execution failed: {:?}", e))?;
 
@@ -177,8 +177,51 @@ fn run_uplc_program(
                 Ok((result_ptr, emu_program))
             }
         }
-        other => Err(format!("Unexpected execution result: {:?}", other)),
+        other => {
+            for (idx, (trace_step, _hash)) in trace.iter().rev().take(3).enumerate() {
+                let pc = trace_step.trace_step.get_pc().get_address();
+                let write = trace_step.trace_step.get_write();
+                eprintln!(
+                    "TRACE[{}]: step={} pc=0x{:08x} write_addr=0x{:08x} write_val=0x{:08x}",
+                    idx, trace_step.step_number, pc, write.address, write.value
+                );
+                eprintln!(
+                    "TRACE[{}] reads: r1=0x{:08x} r2=0x{:08x} rpc=0x{:08x}",
+                    idx,
+                    trace_step.read_1.address,
+                    trace_step.read_2.address,
+                    trace_step.read_pc.pc.get_address(),
+                );
+            }
+            if let Ok(ptr_val) = read_u32_from_program(&emu_program, 0xA0000000) {
+                eprintln!("FRAME_DEBUG=0x{:08x}", ptr_val);
+            }
+            if let Ok(n_len) = read_u32_from_program(&emu_program, 0xA0000004) {
+                eprintln!("NUM_LEN_DEBUG={}", n_len);
+            }
+            if let Ok(d_len) = read_u32_from_program(&emu_program, 0xA0000008) {
+                eprintln!("DEN_LEN_DEBUG={}", d_len);
+            }
+            Err(format!("Unexpected execution result: {:?}", other))
+        },
     }
+}
+
+fn read_u32_from_program(
+    emu_program: &emulator::loader::program::Program,
+    addr: u32,
+) -> Result<u32, String> {
+    for section in &emu_program.sections {
+        let start = section.start;
+        let end = start + (section.data.len() * 4) as u32;
+        if addr >= start && addr + 4 <= end {
+            let offset = ((addr - start) / 4) as usize;
+            if offset < section.data.len() {
+                return Ok(section.data[offset].swap_bytes());
+            }
+        }
+    }
+    Err(format!("Address {:#x} not found in any section", addr))
 }
 
 /// Test a single UPLC file against its expected result
