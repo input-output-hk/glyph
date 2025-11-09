@@ -1875,20 +1875,20 @@ pub fn headList(m: *Machine, args: *LinkedValues) *const Value {
 
     const list = y.unwrapList();
 
-    if (list.length > 0) {
-        const c = Constant{
-            .length = list.type_length,
-            .type_list = list.inner_type,
-            .value = list.items.?.value,
-        };
-
-        const con = m.heap.create(Constant, &c);
-
-        return createConst(m.heap, con);
-    } else {
-        utils.printlnString("called headList on an empty list");
-        utils.exit(std.math.maxInt(u32));
+    if (list.length == 0) {
+        // Per the spec, headList is partial and must signal an evaluation failure on empty lists.
+        builtinEvaluationFailure();
     }
+
+    const c = Constant{
+        .length = list.type_length,
+        .type_list = list.inner_type,
+        .value = list.items.?.value,
+    };
+
+    const con = m.heap.create(Constant, &c);
+
+    return createConst(m.heap, con);
 }
 
 pub fn tailList(m: *Machine, args: *LinkedValues) *const Value {
@@ -2053,8 +2053,23 @@ pub fn mkPairData(_: *Machine, _: *LinkedValues) *const Value {
     @panic("TODO");
 }
 
-pub fn mkNilData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn mkNilData(m: *Machine, args: *LinkedValues) *const Value {
+    const unit_arg = args.value;
+
+    // mkNilData takes a unit argument to fix its polymorphic type.
+    if (!unit_arg.isUnit()) {
+        utils.printlnString("mkNilData expects a unit argument");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    var result = m.heap.createArray(u32, 5);
+    result[0] = 2;
+    result[1] = @intFromPtr(ConstantType.listDataType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = 0;
+    result[4] = 0;
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn mkNilPairData(_: *Machine, _: *LinkedValues) *const Value {
