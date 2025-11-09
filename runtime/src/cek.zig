@@ -933,7 +933,7 @@ fn divideMultiLimb(
     const v_storage = m.heap.createArray(u32, @intCast(denom_len));
     const q_capacity = numer_len - denom_len + 1;
     const quotient_storage = m.heap.createArray(u32, @intCast(q_capacity + 1));
-    @memset(quotient_storage[0..q_capacity + 1], 0);
+    @memset(quotient_storage[0 .. q_capacity + 1], 0);
 
     const numer_slice = numer.words[0..numer_len];
     const denom_slice = denom.words[0..denom_len];
@@ -971,11 +971,11 @@ fn divideMultiLimb(
 
     const remainder_nonzero = hasNonZero(u_storage[0..denom_len]);
     if (mode == .floor and remainder_nonzero and (numer_positive != denom_positive)) {
-        incrementMagnitude(quotient_storage[0..q_capacity + 1]);
+        incrementMagnitude(quotient_storage[0 .. q_capacity + 1]);
         result_positive = false;
     }
 
-    const final_len = normalizeLimbsInPlace(quotient_storage[0..q_capacity + 1]);
+    const final_len = normalizeLimbsInPlace(quotient_storage[0 .. q_capacity + 1]);
     if (final_len == 1 and quotient_storage[0] == 0) {
         result_positive = true;
     }
@@ -1149,11 +1149,11 @@ fn quotientBySingleLimb(
     const remainder_nonzero = remainder != 0;
 
     if (mode == .floor and remainder_nonzero and (numer_positive != denom_positive)) {
-        incrementMagnitude(quotient_storage[0..numer_len + 1]);
+        incrementMagnitude(quotient_storage[0 .. numer_len + 1]);
         result_positive = false;
     }
 
-    const q_len = normalizeLimbsInPlace(quotient_storage[0..numer_len + 1]);
+    const q_len = normalizeLimbsInPlace(quotient_storage[0 .. numer_len + 1]);
     if (q_len == 1 and quotient_storage[0] == 0) {
         result_positive = true;
     }
@@ -2734,8 +2734,94 @@ pub fn blake2b_224(_: *Machine, _: *LinkedValues) *const Value {
 }
 
 // Conversions
-pub fn integerToByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn integerToByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const input = args.value.unwrapInteger();
+    const width = args.next.?.value.unwrapInteger();
+    const big_endian = args.next.?.next.?.value.unwrapBool();
+
+    // Negative input is not allowed
+    if (input.sign == 1) {
+        builtinEvaluationFailure();
+    }
+
+    // Negative width is not allowed
+    if (width.sign == 1) {
+        builtinEvaluationFailure();
+    }
+
+    // Width must fit in a u32
+    if (width.length > 1) {
+        builtinEvaluationFailure();
+    }
+
+    const width_val: u32 = if (width.length == 0) 0 else width.words[0];
+
+    // Check if width is too large (max 8192 bytes)
+    if (width_val > 8192) {
+        builtinEvaluationFailure();
+    }
+
+    // Reinterpret limbs as a little-endian byte slice so we can trim and pad
+    // at byte granularity, matching how the host sees results.
+    const word_len: usize = @intCast(input.length);
+    const raw_bytes_all: []const u8 = std.mem.sliceAsBytes(input.words[0..word_len]);
+
+    var mag_len: usize = raw_bytes_all.len;
+    while (mag_len > 0 and raw_bytes_all[mag_len - 1] == 0) {
+        mag_len -= 1;
+    }
+    const magnitude = raw_bytes_all[0..mag_len];
+
+    if (mag_len > 8192) {
+        builtinEvaluationFailure();
+    }
+
+    const mag_len_u32: u32 = @intCast(mag_len);
+    const width_len: usize = @intCast(width_val);
+    const output_len: u32 = if (width_val == 0) mag_len_u32 else blk: {
+        if (mag_len > width_len) {
+            builtinEvaluationFailure();
+        }
+        break :blk width_val;
+    };
+
+    // Allocate and initialize result
+    var result = m.heap.createArray(u32, output_len + 4);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.bytesType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = output_len;
+
+    var out_bytes = result + 4;
+    const out_len: usize = @intCast(output_len);
+
+    if (big_endian) {
+        // Big-endian: place least-significant bytes at the tail.
+        var dst: usize = out_len;
+        var src: usize = 0;
+        while (src < magnitude.len) : (src += 1) {
+            dst -= 1;
+            out_bytes[dst] = magnitude[src];
+        }
+
+        while (dst > 0) {
+            dst -= 1;
+            out_bytes[dst] = 0;
+        }
+    } else {
+        // Little-endian: copy magnitude directly and pad the tail.
+        var src: usize = 0;
+        while (src < magnitude.len) : (src += 1) {
+            out_bytes[src] = magnitude[src];
+        }
+
+        var pad_idx = magnitude.len;
+        while (pad_idx < out_len) : (pad_idx += 1) {
+            out_bytes[pad_idx] = 0;
+        }
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn byteStringToInteger(m: *Machine, args: *LinkedValues) *const Value {
