@@ -731,6 +731,59 @@ fn computeQuotient(
     return divideMultiLimb(m, numer, denom, mode);
 }
 
+fn computeRemainder(
+    m: *Machine,
+    numer: BigInt,
+    denom: BigInt,
+    mode: DivisionMode,
+) *const Value {
+    if (remainderBySingleLimb(m, numer, denom, mode)) |value| {
+        return value;
+    }
+    return remainderMultiLimb(m, numer, denom, mode);
+}
+
+fn finalizeRemainderValue(
+    m: *Machine,
+    remainder_limbs: []const u32,
+    remainder_nonzero: bool,
+    numer_positive: bool,
+    denom_positive: bool,
+    mode: DivisionMode,
+    denom: BigInt,
+    denom_len: usize,
+) *const Value {
+    if (!remainder_nonzero) {
+        const zero_limbs = [_]u32{0};
+        return createIntegerValueFromLimbs(m, zero_limbs[0..1], true);
+    }
+
+    if (mode == .floor and (numer_positive != denom_positive)) {
+        // Adjust by |denom| - remainder so the result shares the denominator's sign.
+        return subtractMagnitudeForMod(m, denom, denom_len, remainder_limbs);
+    }
+
+    return createIntegerValueFromLimbs(m, remainder_limbs, numer_positive);
+}
+
+fn subtractMagnitudeForMod(
+    m: *Machine,
+    denom: BigInt,
+    denom_len: usize,
+    remainder_limbs: []const u32,
+) *const Value {
+    var denom_view = denom;
+    denom_view.length = @intCast(denom_len);
+
+    const remainder_big = BigInt{
+        .sign = 0,
+        .length = @intCast(remainder_limbs.len),
+        .words = remainder_limbs.ptr,
+    };
+
+    return subSignedIntegers(m, denom_view, remainder_big);
+}
+
 inline fn effectiveBigIntLen(n: BigInt) usize {
     var len: usize = n.length;
     while (len > 0 and n.words[len - 1] == 0) {
@@ -767,6 +820,22 @@ fn normalizeInto(dst: []u32, src: []const u32, shift: u6) u32 {
         carry = combined >> 32;
     }
     return @intCast(carry);
+}
+
+fn denormalizeInPlace(buf: []u32, shift: u6) void {
+    // Undo the normalization shift applied before division.
+    if (shift == 0) return;
+    const shift_amt: u5 = @intCast(shift);
+    const inverse_shift: u5 = @intCast(@as(u6, 32) - shift);
+    const mask: u32 = (@as(u32, 1) << shift_amt) - 1;
+    var carry: u32 = 0;
+    var idx: usize = buf.len;
+    while (idx > 0) {
+        idx -= 1;
+        const word = buf[idx];
+        buf[idx] = (word >> shift_amt) | (carry << inverse_shift);
+        carry = word & mask;
+    }
 }
 
 fn hasNonZero(slice: []const u32) bool {
@@ -914,6 +983,98 @@ fn divideMultiLimb(
     return createIntegerValueFromLimbs(m, quotient_storage[0..final_len], result_positive);
 }
 
+fn remainderMultiLimb(
+    m: *Machine,
+    numer: BigInt,
+    denom: BigInt,
+    mode: DivisionMode,
+) *const Value {
+    const numer_len = effectiveBigIntLen(numer);
+    const denom_len = effectiveBigIntLen(denom);
+    const numer_positive = numer.sign == 0;
+    const denom_positive = denom.sign == 0;
+
+    if (numer_len == 0) {
+        const zero_limbs = [_]u32{0};
+        return createIntegerValueFromLimbs(m, zero_limbs[0..1], true);
+    }
+
+    if (denom_len == 0) {
+        builtinEvaluationFailure();
+    }
+
+    if (numer_len < denom_len) {
+        const remainder_slice = numer.words[0..numer_len];
+        const remainder_nonzero = hasNonZero(remainder_slice);
+        return finalizeRemainderValue(
+            m,
+            remainder_slice,
+            remainder_nonzero,
+            numer_positive,
+            denom_positive,
+            mode,
+            denom,
+            denom_len,
+        );
+    }
+
+    const v_high = denom.words[denom_len - 1];
+    const shift: u6 = @intCast(@clz(v_high));
+
+    const u_storage = m.heap.createArray(u32, @intCast(numer_len + 1));
+    const v_storage = m.heap.createArray(u32, @intCast(denom_len));
+
+    const numer_slice = numer.words[0..numer_len];
+    const denom_slice = denom.words[0..denom_len];
+    const carry = normalizeInto(u_storage[0..numer_len], numer_slice, shift);
+    u_storage[numer_len] = carry;
+    _ = normalizeInto(v_storage[0..denom_len], denom_slice, shift);
+
+    const q_capacity = numer_len - denom_len + 1;
+    var idx: usize = q_capacity;
+    while (idx > 0) : (idx -= 1) {
+        const pos = idx - 1;
+        const u_high = u_storage[pos + denom_len];
+        const u_next = u_storage[pos + denom_len - 1];
+        const numerator64 = (@as(u64, u_high) << 32) | @as(u64, u_next);
+        var q_hat: u64 = if (u_high == v_storage[denom_len - 1])
+            std.math.maxInt(u32)
+        else
+            numerator64 / @as(u64, v_storage[denom_len - 1]);
+        var r_hat = numerator64 - q_hat * @as(u64, v_storage[denom_len - 1]);
+        if (denom_len > 1) {
+            const base: u64 = 0x1_0000_0000;
+            while (q_hat == base or q_hat * @as(u64, v_storage[denom_len - 2]) >
+                (r_hat << 32) + @as(u64, u_storage[pos + denom_len - 2]))
+            {
+                q_hat -= 1;
+                r_hat += @as(u64, v_storage[denom_len - 1]);
+                if (r_hat >= base) break;
+            }
+        }
+        if (subtractMulAt(u_storage[0 .. numer_len + 1], v_storage[0..denom_len], q_hat, pos)) {
+            addAtOffset(u_storage[0 .. numer_len + 1], v_storage[0..denom_len], pos);
+        }
+    }
+
+    var remainder_slice = u_storage[0..denom_len];
+    denormalizeInPlace(remainder_slice, shift);
+    const rem_len = normalizeLimbsInPlace(remainder_slice);
+    remainder_slice = remainder_slice[0..rem_len];
+    const remainder_nonzero = hasNonZero(remainder_slice);
+
+    return finalizeRemainderValue(
+        m,
+        remainder_slice,
+        remainder_nonzero,
+        numer_positive,
+        denom_positive,
+        mode,
+        denom,
+        denom_len,
+    );
+}
+
 fn createIntegerValueFromLimbs(
     m: *Machine,
     limbs: []const u32,
@@ -1000,6 +1161,46 @@ fn quotientBySingleLimb(
     return createIntegerValueFromLimbs(m, quotient_storage[0..q_len], result_positive);
 }
 
+fn remainderBySingleLimb(
+    m: *Machine,
+    numer: BigInt,
+    denom: BigInt,
+    mode: DivisionMode,
+) ?*const Value {
+    const denom_len = effectiveBigIntLen(denom);
+    if (denom_len != 1) return null;
+
+    const denom_abs: u32 = denom.words[0];
+    if (denom_abs == 0) return null;
+
+    var numer_len = effectiveBigIntLen(numer);
+    if (numer_len == 0) numer_len = 1;
+
+    var remainder: u32 = 0;
+    var idx = numer_len;
+    while (idx > 0) : (idx -= 1) {
+        const limb = numer.words[idx - 1];
+        const step = divRemWideStep(remainder, limb, denom_abs);
+        remainder = step.remainder;
+    }
+
+    var remainder_word = [_]u32{remainder};
+    const numer_positive = numer.sign == 0;
+    const denom_positive = denom.sign == 0;
+    const remainder_nonzero = remainder != 0;
+
+    return finalizeRemainderValue(
+        m,
+        remainder_word[0..1],
+        remainder_nonzero,
+        numer_positive,
+        denom_positive,
+        mode,
+        denom,
+        denom_len,
+    );
+}
+
 pub fn divideInteger(m: *Machine, args: *LinkedValues) *const Value {
     const d = args.value.unwrapInteger();
     const n = args.next.?.value.unwrapInteger();
@@ -1051,12 +1252,42 @@ pub fn quotientInteger(m: *Machine, args: *LinkedValues) *const Value {
     return computeQuotient(m, n, d, .trunc);
 }
 
-pub fn remainderInteger(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn remainderInteger(m: *Machine, args: *LinkedValues) *const Value {
+    const d = args.value.unwrapInteger();
+    const n = args.next.?.value.unwrapInteger();
+
+    numer_len_debug = n.length;
+    denom_len_debug = d.length;
+
+    if (bigIntIsZero(d)) {
+        builtinEvaluationFailure();
+    }
+
+    if (bigIntIsZero(n)) {
+        const zero_limbs = [_]u32{0};
+        return createIntegerValueFromLimbs(m, zero_limbs[0..1], true);
+    }
+
+    return computeRemainder(m, n, d, .trunc);
 }
 
-pub fn modInteger(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn modInteger(m: *Machine, args: *LinkedValues) *const Value {
+    const d = args.value.unwrapInteger();
+    const n = args.next.?.value.unwrapInteger();
+
+    numer_len_debug = n.length;
+    denom_len_debug = d.length;
+
+    if (bigIntIsZero(d)) {
+        builtinEvaluationFailure();
+    }
+
+    if (bigIntIsZero(n)) {
+        const zero_limbs = [_]u32{0};
+        return createIntegerValueFromLimbs(m, zero_limbs[0..1], true);
+    }
+
+    return computeRemainder(m, n, d, .floor);
 }
 
 pub fn equalsInteger(m: *Machine, args: *LinkedValues) *const Value {
