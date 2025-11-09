@@ -70,10 +70,10 @@ impl UplcCompiler {
         // assembly.push_str("    .space 0x100000\n");
 
         // Debug: print first few lines of assembly
-        eprintln!("Generated assembly (first 20 lines):");
-        for (i, line) in assembly.lines().take(20).enumerate() {
-            eprintln!("{}: {}", i + 1, line);
-        }
+        // eprintln!("Generated assembly (first 20 lines):");
+        // for (i, line) in assembly.lines().take(20).enumerate() {
+            // eprintln!("{}: {}", i + 1, line);
+        // }
 
         // Step 3: Write assembly to file
         let asm_path = self.temp_dir.path().join("program.s");
