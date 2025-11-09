@@ -1916,8 +1916,17 @@ pub fn tailList(m: *Machine, args: *LinkedValues) *const Value {
     }
 }
 
-pub fn nullList(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn nullList(m: *Machine, args: *LinkedValues) *const Value {
+    const list = args.value.unwrapList();
+
+    var result = m.heap.createArray(u32, 4);
+
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.booleanType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = @intFromBool(list.length == 0);
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 // Data functions
