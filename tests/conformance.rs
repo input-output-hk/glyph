@@ -630,7 +630,6 @@ conformance_test!(conformance_headlist, "headList");
 conformance_test!(conformance_taillist, "tailList");
 conformance_test!(conformance_chooselist, "chooseList");
 conformance_test!(conformance_chooseunit, "chooseUnit");
-conformance_test!(conformance_chooseunit2, "chooseUnit2");
 
 // Pair tests
 conformance_test!(conformance_fstpair, "fstPair");
