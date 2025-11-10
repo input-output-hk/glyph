@@ -1574,25 +1574,28 @@ pub fn lengthOfByteString(m: *Machine, args: *LinkedValues) *const Value {
 }
 
 pub fn indexByteString(m: *Machine, args: *LinkedValues) *const Value {
-    const y = args.value.unwrapInteger();
+    const index = args.value.unwrapInteger();
+    const bytes = args.next.?.value.unwrapBytestring();
 
-    const x = args.next.?.value.unwrapBytestring();
+    if (index.sign == 1 or index.length > 1) {
+        builtinEvaluationFailure();
+    }
+
+    // Zero is encoded with zero words, so guard before touching `words[0]`.
+    const idx: u32 = if (index.length == 0) 0 else index.words[0];
+
+    if (idx >= bytes.length) {
+        builtinEvaluationFailure();
+    }
 
     var result = m.heap.createArray(u32, 6);
-
-    // Must be at least 1 byte, y < max(u32), y >= 0, y < x.length
-    if (x.length == 0 or y.length > 1 or y.sign == 1 or y.words[0] > x.length - 1) {
-        utils.printString("Integer larger than bytestring length or negative");
-        utils.exit(std.math.maxInt(u32));
-    }
 
     result[0] = 1;
     result[1] = @intFromPtr(ConstantType.integerType());
     result[2] = @intFromPtr(result + 3);
     result[3] = 0;
     result[4] = 1;
-    // This will work due to above check
-    result[5] = x.bytes[y.words[0]];
+    result[5] = bytes.bytes[idx];
 
     return createConst(m.heap, @ptrCast(result));
 }
