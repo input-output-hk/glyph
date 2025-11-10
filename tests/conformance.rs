@@ -203,7 +203,7 @@ fn run_uplc_program(
                 eprintln!("DEN_LEN_DEBUG={}", d_len);
             }
             Err(format!("Unexpected execution result: {:?}", other))
-        },
+        }
     }
 }
 

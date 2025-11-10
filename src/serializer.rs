@@ -1,10 +1,11 @@
 use std::convert::TryFrom;
-use std::io::{Cursor, Write};
+use std::io::Write;
 use std::ops::Deref;
 use std::rc::Rc;
 
 use byteorder::{LittleEndian, WriteBytesExt};
 use constants::{bool_val, const_tag, data_tag, term_tag};
+use num_bigint::{BigInt as NumBigInt, BigUint, Sign};
 use uplc::BigInt;
 use uplc::PlutusData;
 use uplc::ast::{Constant, DeBruijn, Program, Term, Type};
@@ -641,127 +642,148 @@ fn usize_to_u32(value: usize) -> Result<u32> {
 /// Serialize a Plutus Data constant
 fn serialize_data_constant(_: u32, data: &PlutusData) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
-    // Constant type tag
     x.write_u32::<LittleEndian>(const_tag::DATA)?;
-
-    // For this implementation, we'll treat all Data as "black-box" with a simple representation
-    // A full implementation would serialize the structure recursively
-
-    // Create a temporary buffer for the serialized data
-    let mut data_buffer = Cursor::new(Vec::new());
-
-    // Serialize the data based on its variant
-    match data {
-        PlutusData::Constr(constr_data) => {
-            // Write the tag
-            data_buffer.write_u32::<LittleEndian>(data_tag::CONSTR)?;
-
-            // Serialize constructor tag - in PlutusData, the tag is a usize
-            data_buffer.write_u32::<LittleEndian>(constr_data.tag as u32)?;
-
-            // Write a simple placeholder for fields
-            // In a real implementation, you'd recursively serialize each field
-            data_buffer.write_u32::<LittleEndian>(constr_data.fields.len() as u32)?;
-        }
-        PlutusData::Map(map_data) => {
-            // Write the map tag
-            data_buffer.write_u32::<LittleEndian>(data_tag::MAP)?;
-
-            // Write map size
-            data_buffer.write_u32::<LittleEndian>(map_data.len() as u32)?;
-
-            // A simplified representation - in reality you'd serialize each key-value pair
-            // This is just a placeholder
-        }
-        PlutusData::Array(array_data) => {
-            // Write the list tag
-            data_buffer.write_u32::<LittleEndian>(data_tag::LIST)?;
-
-            // Write list size
-            data_buffer.write_u32::<LittleEndian>(array_data.len() as u32)?;
-
-            // A simplified representation - in reality you'd serialize each list element
-            // This is just a placeholder
-        }
-        PlutusData::BigInt(int_data) => {
-            // Write the integer tag
-            data_buffer.write_u32::<LittleEndian>(data_tag::INTEGER)?;
-
-            match int_data {
-                BigInt::Int(int_val) => {
-                    // Since we don't have access to details about the Int type's internals,
-                    // we'll convert it to a string and use the first character to check sign
-                    let int_str = format!("{int_val:?}");
-                    let is_negative = int_str.starts_with('-');
-
-                    // Write sign (0 for positive, 1 for negative)
-                    data_buffer.write_u8(if is_negative { 1u8 } else { 0u8 })?;
-
-                    // For simplicity, we'll use a basic byte representation
-                    // In a production system, you'd want to extract proper bytes from Int
-                    let bytes = [0, 0, 0, 1]; // Simple placeholder
-
-                    // Write the length of bytes
-                    data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
-
-                    // Write the actual bytes
-                    data_buffer.write_all(&bytes)?;
-                }
-                BigInt::BigUInt(bytes_val) => {
-                    // Positive big integer
-                    data_buffer.write_u8(0)?; // Sign byte (0 for positive)
-
-                    // Get the bytes from BoundedBytes (which is a wrapper around Vec<u8>)
-                    let bytes = bytes_val.deref();
-
-                    // Write the length of bytes
-                    data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
-
-                    // Write the actual bytes
-                    data_buffer.write_all(bytes)?;
-                }
-                BigInt::BigNInt(bytes_val) => {
-                    // Negative big integer
-                    data_buffer.write_u8(1)?; // Sign byte (1 for negative)
-
-                    // Get the bytes from BoundedBytes
-                    let bytes = bytes_val.deref();
-
-                    // Write the length of bytes
-                    data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
-
-                    // Write the actual bytes
-                    data_buffer.write_all(bytes)?;
-                }
-            }
-        }
-        PlutusData::BoundedBytes(bytes) => {
-            // Write the bytestring tag
-            data_buffer.write_u32::<LittleEndian>(data_tag::BYTESTRING)?;
-
-            // Write length and bytes
-            data_buffer.write_u32::<LittleEndian>(bytes.len() as u32)?;
-            data_buffer.write_all(bytes)?;
-        }
-    }
-
-    // Get the serialized data
-    let data_bytes = data_buffer.into_inner();
-
-    // Calculate content size in words (4 bytes each)
-    let content_size = data_bytes.len().div_ceil(4) as u32; // Round up to nearest word
+    let mut payload = encode_plutus_data(data)?;
+    let content_size = bytes_to_words(payload.len());
     x.write_u32::<LittleEndian>(content_size)?;
+    x.write_all(&payload)?;
 
-    // Write the data
-    x.write_all(&data_bytes)?;
-
-    // Pad to complete the last word if necessary
-    let padding_size = (4 - (data_bytes.len() % 4)) % 4;
+    let padding_size = (4 - (payload.len() % 4)) % 4;
     if padding_size > 0 {
         x.write_all(&vec![0; padding_size])?;
     }
 
     Ok(x)
+}
+
+fn encode_plutus_data(data: &PlutusData) -> Result<Vec<u8>> {
+    let mut buf = Vec::new();
+
+    match data {
+        PlutusData::Constr(constr_data) => {
+            buf.write_u32::<LittleEndian>(data_tag::CONSTR)?;
+            let encoded_tag = if let Some(ix) = constr_data.any_constructor {
+                encode_constr_tag_index(ix)?
+            } else {
+                u32::try_from(constr_data.tag).map_err(|_| {
+                    SerializationError::DataTooComplex(
+                        "constructor tag does not fit in 32 bits".to_string(),
+                    )
+                })?
+            };
+            buf.write_u32::<LittleEndian>(encoded_tag)?;
+
+            let fields: Vec<PlutusData> = constr_data.fields.clone().into();
+            buf.write_u32::<LittleEndian>(u32::try_from(fields.len()).map_err(|_| {
+                SerializationError::DataTooComplex("too many constructor fields".to_string())
+            })?)?;
+
+            for field in &fields {
+                write_nested_data(&mut buf, field)?;
+            }
+        }
+        PlutusData::Map(map_data) => {
+            buf.write_u32::<LittleEndian>(data_tag::MAP)?;
+            let pairs: Vec<(PlutusData, PlutusData)> = map_data.clone().into();
+            buf.write_u32::<LittleEndian>(u32::try_from(pairs.len()).map_err(|_| {
+                SerializationError::DataTooComplex("map contains too many entries".to_string())
+            })?)?;
+
+            for (key, value) in &pairs {
+                write_nested_data(&mut buf, key)?;
+                write_nested_data(&mut buf, value)?;
+            }
+        }
+        PlutusData::Array(array_data) => {
+            buf.write_u32::<LittleEndian>(data_tag::LIST)?;
+            let elements: Vec<PlutusData> = array_data.clone().into();
+            buf.write_u32::<LittleEndian>(u32::try_from(elements.len()).map_err(|_| {
+                SerializationError::DataTooComplex("list contains too many elements".to_string())
+            })?)?;
+
+            for element in &elements {
+                write_nested_data(&mut buf, element)?;
+            }
+        }
+        PlutusData::BigInt(int_data) => {
+            buf.write_u32::<LittleEndian>(data_tag::INTEGER)?;
+            let (sign, words) = plutus_bigint_to_words(int_data)?;
+            buf.write_u8(sign)?;
+            buf.write_u32::<LittleEndian>(u32::try_from(words.len()).map_err(|_| {
+                SerializationError::DataTooComplex(
+                    "integer representation is too large".to_string(),
+                )
+            })?)?;
+            for word in words {
+                buf.write_u32::<LittleEndian>(word)?;
+            }
+        }
+        PlutusData::BoundedBytes(bytes) => {
+            buf.write_u32::<LittleEndian>(data_tag::BYTESTRING)?;
+            let payload: Vec<u8> = bytes.clone().into();
+            buf.write_u32::<LittleEndian>(u32::try_from(payload.len()).map_err(|_| {
+                SerializationError::DataTooComplex("bytestring too large".to_string())
+            })?)?;
+            buf.write_all(&payload)?;
+        }
+    }
+
+    pad_to_word_boundary(&mut buf);
+    Ok(buf)
+}
+
+fn write_nested_data(buf: &mut Vec<u8>, value: &PlutusData) -> Result<()> {
+    let nested = encode_plutus_data(value)?;
+    let word_count = bytes_to_words(nested.len());
+    buf.write_u32::<LittleEndian>(word_count)?;
+    buf.write_all(&nested)?;
+    Ok(())
+}
+
+fn encode_constr_tag_index(ix: u64) -> Result<u32> {
+    if ix < 7 {
+        return Ok(121 + u32::try_from(ix).unwrap());
+    }
+    if ix < 128 {
+        return Ok(1280 + u32::try_from(ix - 7).unwrap());
+    }
+    Err(SerializationError::DataTooComplex(format!(
+        "constructor tag {ix} not supported"
+    )))
+}
+
+fn pad_to_word_boundary(buf: &mut Vec<u8>) {
+    let padding = (4 - (buf.len() % 4)) % 4;
+    for _ in 0..padding {
+        buf.push(0);
+    }
+}
+
+fn bytes_to_words(len: usize) -> u32 {
+    if len == 0 { 0 } else { ((len + 3) / 4) as u32 }
+}
+
+fn plutus_bigint_to_words(int_data: &BigInt) -> Result<(u8, Vec<u32>)> {
+    let numeric = match int_data {
+        BigInt::Int(value) => {
+            let repr: i128 = value.clone().into();
+            NumBigInt::from(repr)
+        }
+        BigInt::BigUInt(bytes) => {
+            let raw: Vec<u8> = bytes.clone().into();
+            NumBigInt::from_biguint(Sign::Plus, BigUint::from_bytes_be(&raw))
+        }
+        BigInt::BigNInt(bytes) => {
+            let raw: Vec<u8> = bytes.clone().into();
+            let mut magnitude = BigUint::from_bytes_be(&raw);
+            magnitude += BigUint::from(1u8);
+            NumBigInt::from_biguint(Sign::Minus, magnitude)
+        }
+    };
+
+    let (sign, words) = numeric.to_u32_digits();
+    let sign_byte = if sign == Sign::Minus { 1 } else { 0 };
+    Ok((sign_byte, words))
 }
 
 /// Serialize a builtin term
