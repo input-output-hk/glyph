@@ -300,6 +300,9 @@ fn serialize_constant_body(preceeding_byte_size: u32, constant: &Constant) -> Re
         Constant::ProtoList(ty, elements) => {
             serialize_protolist_constant(preceeding_byte_size, ty, elements)
         }
+        Constant::ProtoPair(fst_ty, snd_ty, fst_value, snd_value) => {
+            serialize_protopair_constant(preceeding_byte_size, fst_ty, snd_ty, fst_value, snd_value)
+        }
         Constant::Bls12_381G1Element(point) => {
             serialize_bls12_381_g1_constant(preceeding_byte_size, point.as_ref())
         }
@@ -588,6 +591,47 @@ fn serialize_protolist_constant(
     let mut body: Vec<u8> = Vec::new();
     body.write_u32::<LittleEndian>(usize_to_u32(type_entries.len())?)?;
     let type_ptr = add_bytes(preceeding_byte_size, 8 + payload_len)?;
+    body.write_u32::<LittleEndian>(type_ptr)?;
+    body.extend_from_slice(&payload);
+    for entry in type_entries {
+        body.write_u32::<LittleEndian>(entry)?;
+    }
+
+    Ok(body)
+}
+
+fn serialize_protopair_constant(
+    preceeding_byte_size: u32,
+    first_type: &Type,
+    second_type: &Type,
+    first_value: &Constant,
+    second_value: &Constant,
+) -> Result<Vec<u8>> {
+    // Reserve space for the two field pointers; we'll patch them once the
+    // component payload addresses are known.
+    let mut payload: Vec<u8> = vec![0; 8];
+
+    let first_base = add_bytes(preceeding_byte_size, 8 + payload.len())?;
+    let first_bytes = serialize_constant_body(first_base, first_value)?;
+    let first_value_ptr = add_bytes(first_base, 8)?;
+    payload.extend_from_slice(&first_bytes);
+
+    let second_base = add_bytes(preceeding_byte_size, 8 + payload.len())?;
+    let second_bytes = serialize_constant_body(second_base, second_value)?;
+    let second_value_ptr = add_bytes(second_base, 8)?;
+    payload.extend_from_slice(&second_bytes);
+
+    payload[0..4].copy_from_slice(&first_value_ptr.to_le_bytes());
+    payload[4..8].copy_from_slice(&second_value_ptr.to_le_bytes());
+
+    let mut type_entries = Vec::new();
+    type_entries.push(CONST_TYPE_PAIR);
+    encode_type_descriptor(first_type, &mut type_entries)?;
+    encode_type_descriptor(second_type, &mut type_entries)?;
+
+    let mut body: Vec<u8> = Vec::new();
+    body.write_u32::<LittleEndian>(usize_to_u32(type_entries.len())?)?;
+    let type_ptr = add_bytes(preceeding_byte_size, 8 + payload.len())?;
     body.write_u32::<LittleEndian>(type_ptr)?;
     body.extend_from_slice(&payload);
     for entry in type_entries {

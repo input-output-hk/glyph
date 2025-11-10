@@ -124,6 +124,22 @@ const LinkedValues = struct {
     }
 };
 
+// Pair constants carry two payload pointers with their component type descriptors
+// stored sequentially after the leading `.pair` tag. This view reconstructs both.
+const PairConstantView = struct {
+    first_value: u32,
+    second_value: u32,
+    first_type: [*]const ConstantType,
+    second_type: [*]const ConstantType,
+    first_type_len: u32,
+    second_type_len: u32,
+};
+
+const PairPayload = extern struct {
+    first: u32,
+    second: u32,
+};
+
 const Builtin = struct {
     fun: DefaultFunction,
     force_count: u8,
@@ -285,6 +301,24 @@ const Value = union(enum(u32)) {
         }
     }
 
+    pub fn unwrapPair(v: *const Value) PairConstantView {
+        switch (v.*) {
+            .constant => |c| {
+                switch (c.constType().*) {
+                    .pair => return pairConstantView(c),
+                    else => {
+                        utils.printString("Not a pair constant\n");
+                        utils.exit(std.math.maxInt(u32));
+                    },
+                }
+            },
+            else => {
+                utils.printString("Not a constant\n");
+                utils.exit(std.math.maxInt(u32));
+            },
+        }
+    }
+
     pub fn unwrapG1(v: *const Value) G1Element {
         switch (v.*) {
             .constant => |c| {
@@ -345,6 +379,42 @@ const Value = union(enum(u32)) {
         }
     }
 };
+
+fn pairConstantView(constant: *const Constant) PairConstantView {
+    const types: [*]const ConstantType = @ptrCast(constant.constType());
+    const payload: *const PairPayload = @ptrFromInt(constant.value);
+
+    if (payload.first == 0 or payload.second == 0) {
+        utils.printlnString("Pair constant missing component payload");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    const first_type = types + 1;
+    const first_span = typeDescriptorSpan(first_type);
+    const second_type = first_type + first_span;
+    const second_span = typeDescriptorSpan(second_type);
+
+    return PairConstantView{
+        .first_value = payload.first,
+        .second_value = payload.second,
+        .first_type = first_type,
+        .second_type = second_type,
+        .first_type_len = @intCast(first_span),
+        .second_type_len = @intCast(second_span),
+    };
+}
+
+fn typeDescriptorSpan(cursor: [*]const ConstantType) usize {
+    return switch (cursor[0]) {
+        .list => 1 + typeDescriptorSpan(cursor + 1),
+        .pair => blk: {
+            const first_len = typeDescriptorSpan(cursor + 1);
+            const second_len = typeDescriptorSpan(cursor + 1 + first_len);
+            break :blk 1 + first_len + second_len;
+        },
+        else => 1,
+    };
+}
 
 pub const Env = struct {
     value: *const Value,
@@ -1947,12 +2017,26 @@ pub fn trace(_: *Machine, args: *LinkedValues) *const Value {
 }
 
 // Pairs functions
-pub fn fstPair(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn fstPair(m: *Machine, args: *LinkedValues) *const Value {
+    const pair = args.value.unwrapPair();
+    const c = Constant{
+        .length = pair.first_type_len,
+        .type_list = pair.first_type,
+        .value = pair.first_value,
+    };
+    const result = m.heap.create(Constant, &c);
+    return createConst(m.heap, result);
 }
 
-pub fn sndPair(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn sndPair(m: *Machine, args: *LinkedValues) *const Value {
+    const pair = args.value.unwrapPair();
+    const c = Constant{
+        .length = pair.second_type_len,
+        .type_list = pair.second_type,
+        .value = pair.second_value,
+    };
+    const result = m.heap.create(Constant, &c);
+    return createConst(m.heap, result);
 }
 
 // List functions
