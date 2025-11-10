@@ -36,6 +36,27 @@ inline fn runtimeDataTypeAddr() usize {
     return @intFromPtr(dataTypePtr());
 }
 
+const UnConstrReturnTypeDescriptor = [4]u32{
+    @intFromEnum(ConstantType.pair),
+    @intFromEnum(ConstantType.integer),
+    @intFromEnum(ConstantType.list),
+    @intFromEnum(ConstantType.data),
+};
+
+// Reusable descriptors for [(Data, Data)] results (unMapData et al.).
+const DataPairTypeDescriptor = [3]u32{
+    @intFromEnum(ConstantType.pair),
+    @intFromEnum(ConstantType.data),
+    @intFromEnum(ConstantType.data),
+};
+
+const DataPairListTypeDescriptor = [4]u32{
+    @intFromEnum(ConstantType.list),
+    @intFromEnum(ConstantType.pair),
+    @intFromEnum(ConstantType.data),
+    @intFromEnum(ConstantType.data),
+};
+
 const blst = @cImport({
     @cInclude("blst.h");
     @cInclude("blst_aux.h");
@@ -2174,6 +2195,29 @@ pub fn chooseData(_: *Machine, args: *LinkedValues) *const Value {
 }
 
 const serialized_data_const_tag: u32 = 0x05; // Mirrors serializer/constants.rs::const_tag::DATA
+const large_constr_tag_flag: u32 = 0x80000000; // Mirrors serializer LARGE_CONSTR_TAG_FLAG
+
+// Data constants are either runtime pointers (type list matches `dataTypePtr`) or
+// serialized payloads tagged with `serialized_data_const_tag`. Reject everything else
+// so callers can safely materialize the payload.
+fn ensureDataConstant(con: *const Constant, comptime type_error_msg: []const u8) void {
+    const uses_runtime_layout = @intFromPtr(con.type_list) == runtimeDataTypeAddr();
+    if (uses_runtime_layout) {
+        if (con.constType().* == .data) {
+            return;
+        }
+
+        utils.printlnString(type_error_msg);
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    if (con.length == serialized_data_const_tag) {
+        return;
+    }
+
+    utils.printlnString(type_error_msg);
+    utils.exit(std.math.maxInt(u32));
+}
 
 fn decodeDataVariant(con: *const Constant) DataTag {
     const raw_ptr = con.rawValue();
@@ -2636,6 +2680,10 @@ fn decodeSerializedBytes(heap: *Heap, reader: *SerializedDataReader) *const Data
 }
 
 fn decodeConstrTag(encoded: u32) u32 {
+    if ((encoded & large_constr_tag_flag) != 0) {
+        return encoded & ~large_constr_tag_flag;
+    }
+
     if (encoded >= 1280) {
         return (encoded - 1280) + 7;
     }
@@ -2759,25 +2807,215 @@ pub fn bData(m: *Machine, args: *LinkedValues) *const Value {
     return createConst(m.heap, m.heap.create(Constant, &con));
 }
 
-pub fn unConstrData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn unConstrData(m: *Machine, args: *LinkedValues) *const Value {
+    const data_const = args.value.unwrapConstant();
+    ensureDataConstant(data_const, "unConstrData expects a Data constant");
+
+    const data_ptr = materializeDataElement(
+        m,
+        data_const.rawValue(),
+        "unConstrData: null Data constant payload",
+    );
+
+    switch (data_ptr.*) {
+        .constr => |constr_payload| {
+            const tag_limb_count: u32 = if (constr_payload.tag == 0) 0 else 1;
+            const tag_payload = m.heap.createArray(u32, tag_limb_count + 2);
+            tag_payload[0] = 0; // positive sign
+            tag_payload[1] = tag_limb_count;
+            if (tag_limb_count == 1) {
+                tag_payload[2] = constr_payload.tag;
+            }
+
+            var list_head: ?*ListNode = null;
+            var list_tail: ?*ListNode = null;
+            var list_len: u32 = 0;
+            var cursor = constr_payload.fields;
+
+            // Rebuild a UPLC list of Data constants pointing at the decoded fields.
+            while (cursor) |field| {
+                const node = m.heap.create(ListNode, &ListNode{
+                    .value = @intFromPtr(field.value),
+                    .next = null,
+                });
+
+                if (list_tail) |tail| {
+                    tail.next = node;
+                } else {
+                    list_head = node;
+                }
+                list_tail = node;
+                list_len += 1;
+                cursor = field.next;
+            }
+
+            const list_payload = m.heap.createArray(u32, 2);
+            list_payload[0] = list_len;
+            list_payload[1] = if (list_head) |head| @intFromPtr(head) else 0;
+
+            const pair_payload = m.heap.create(PairPayload, &PairPayload{
+                .first = @intFromPtr(tag_payload),
+                .second = @intFromPtr(list_payload),
+            });
+
+            const pair_type: [*]const ConstantType = @ptrCast(&UnConstrReturnTypeDescriptor);
+            const pair_const = Constant{
+                .length = @intCast(UnConstrReturnTypeDescriptor.len),
+                .type_list = pair_type,
+                .value = @intFromPtr(pair_payload),
+            };
+
+            return createConst(m.heap, m.heap.create(Constant, &pair_const));
+        },
+        else => builtinEvaluationFailure(),
+    }
 }
 
-pub fn unMapData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn unMapData(m: *Machine, args: *LinkedValues) *const Value {
+    const data_const = args.value.unwrapConstant();
+    ensureDataConstant(data_const, "unMapData expects a Data constant");
+
+    const data_ptr = materializeDataElement(
+        m,
+        data_const.rawValue(),
+        "unMapData: null Data constant payload",
+    );
+
+    switch (data_ptr.*) {
+        .map => |pairs_head| {
+            var uplc_head: ?*ListNode = null;
+            var uplc_tail: ?*ListNode = null;
+            var length: u32 = 0;
+            var cursor = pairs_head;
+
+            while (cursor) |pair_node| {
+                // Rebuild a `(Data, Data)` payload whose components point at the decoded entries.
+                const pair_payload = m.heap.create(PairPayload, &PairPayload{
+                    .first = @intFromPtr(pair_node.key),
+                    .second = @intFromPtr(pair_node.value),
+                });
+
+                const node = m.heap.create(ListNode, &ListNode{
+                    .value = @intFromPtr(pair_payload),
+                    .next = null,
+                });
+
+                if (uplc_tail) |tail| {
+                    tail.next = node;
+                } else {
+                    uplc_head = node;
+                }
+                uplc_tail = node;
+                length += 1;
+                cursor = pair_node.next;
+            }
+
+            const list_payload = m.heap.createArray(u32, 2);
+            list_payload[0] = length;
+            list_payload[1] = if (uplc_head) |head| @intFromPtr(head) else 0;
+
+            const list_const = Constant{
+                .length = @intCast(DataPairListTypeDescriptor.len),
+                .type_list = @ptrCast(&DataPairListTypeDescriptor),
+                .value = @intFromPtr(list_payload),
+            };
+
+            return createConst(m.heap, m.heap.create(Constant, &list_const));
+        },
+        else => builtinEvaluationFailure(),
+    }
 }
 
-pub fn unListData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn unListData(m: *Machine, args: *LinkedValues) *const Value {
+    const data_const = args.value.unwrapConstant();
+    ensureDataConstant(data_const, "unListData expects a Data constant");
+
+    const data_ptr = materializeDataElement(
+        m,
+        data_const.rawValue(),
+        "unListData: null Data constant payload",
+    );
+
+    switch (data_ptr.*) {
+        .list => |list_head| {
+            var uplc_head: ?*ListNode = null;
+            var uplc_tail: ?*ListNode = null;
+            var length: u32 = 0;
+            var cursor = list_head;
+
+            // Rebuild a UPLC list whose nodes reference the decoded Data elements.
+            while (cursor) |elem| {
+                const node = m.heap.create(ListNode, &ListNode{
+                    .value = @intFromPtr(elem.value),
+                    .next = null,
+                });
+
+                if (uplc_tail) |tail| {
+                    tail.next = node;
+                } else {
+                    uplc_head = node;
+                }
+                uplc_tail = node;
+                length += 1;
+                cursor = elem.next;
+            }
+
+            const list_payload = m.heap.createArray(u32, 2);
+            list_payload[0] = length;
+            list_payload[1] = if (uplc_head) |head| @intFromPtr(head) else 0;
+
+            const list_const = Constant{
+                .length = 2,
+                .type_list = @ptrCast(ConstantType.listDataType()),
+                .value = @intFromPtr(list_payload),
+            };
+
+            return createConst(m.heap, m.heap.create(Constant, &list_const));
+        },
+        else => builtinEvaluationFailure(),
+    }
 }
 
-pub fn unIData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn unIData(m: *Machine, args: *LinkedValues) *const Value {
+    const data_const = args.value.unwrapConstant();
+    ensureDataConstant(data_const, "unIData expects a Data constant");
+
+    const data_ptr = materializeDataElement(
+        m,
+        data_const.rawValue(),
+        "unIData: null Data constant payload",
+    );
+
+    switch (data_ptr.*) {
+        .integer => |int_payload| {
+            const int_const = int_payload.createConstant(ConstantType.integerType(), m.heap);
+            return createConst(m.heap, int_const);
+        },
+        else => builtinEvaluationFailure(),
+    }
 }
 
-pub fn unBData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn unBData(m: *Machine, args: *LinkedValues) *const Value {
+    const data_const = args.value.unwrapConstant();
+    ensureDataConstant(data_const, "unBData expects a Data constant");
+
+    // Serialized Data constants embed their payload inline, so materialize them
+    // into the heap to reuse the runtime layout for both representations.
+    const data_ptr = materializeDataElement(
+        m,
+        data_const.rawValue(),
+        "unBData: null Data constant payload",
+    );
+
+    switch (data_ptr.*) {
+        .bytes => |bytes_payload| {
+            const bytes_const = bytes_payload.createConstant(ConstantType.bytesType(), m.heap);
+            return createConst(m.heap, bytes_const);
+        },
+        else => builtinEvaluationFailure(),
+    }
 }
+
 
 const SerializedView = struct {
     words: [*]const u32,
