@@ -2138,27 +2138,27 @@ pub fn headList(m: *Machine, args: *LinkedValues) *const Value {
 
 pub fn tailList(m: *Machine, args: *LinkedValues) *const Value {
     const y = args.value;
+    const list_const = y.unwrapConstant();
+    const list = list_const.list();
 
-    const list = y.unwrapList();
-
-    if (list.length > 0) {
-        const result = m.heap.createArray(u32, 2);
-        result[0] = list.length - 1;
-        result[1] = @intFromPtr(list.items.?.next);
-
-        const c = Constant{
-            .length = list.type_length,
-            .type_list = list.inner_type,
-            .value = @intFromPtr(result),
-        };
-
-        const con = m.heap.create(Constant, &c);
-
-        return createConst(m.heap, con);
-    } else {
-        utils.printlnString("called tailList on an empty list");
-        utils.exit(std.math.maxInt(u32));
+    if (list.length == 0) {
+        // tailList is partial per the spec; empty lists must fail.
+        builtinEvaluationFailure();
     }
+
+    const result = m.heap.createArray(u32, 2);
+    result[0] = list.length - 1;
+    result[1] = @intFromPtr(list.items.?.next);
+
+    const c = Constant{
+        .length = list_const.length,
+        .type_list = list_const.type_list,
+        .value = @intFromPtr(result),
+    };
+
+    const con = m.heap.create(Constant, &c);
+
+    return createConst(m.heap, con);
 }
 
 pub fn nullList(m: *Machine, args: *LinkedValues) *const Value {
