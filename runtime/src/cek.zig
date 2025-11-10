@@ -1681,12 +1681,396 @@ pub fn lessThanEqualsByteString(m: *Machine, args: *LinkedValues) *const Value {
 }
 
 // Cryptography and hash functions
-pub fn sha2_256(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+// Zig's std.crypto version of SHA2 currently produces incorrect digests when
+// cross-compiled for our freestanding riscv32 target, so we ship a compact
+// local implementation that matches the spec and accepts streamed byte input.
+const Sha256Ctx = struct {
+    h: [8]u32 = sha256_initial_state,
+    buf: [64]u8 = undefined,
+    buf_len: usize = 0,
+    total_len: u64 = 0,
+
+    fn init() Sha256Ctx {
+        return Sha256Ctx{};
+    }
+
+    fn updateSlice(self: *Sha256Ctx, data: []const u8) void {
+        var offset: usize = 0;
+        self.total_len += data.len;
+
+        if (self.buf_len != 0) {
+            const space = 64 - self.buf_len;
+            const to_copy = @min(space, data.len);
+            @memcpy(self.buf[self.buf_len .. self.buf_len + to_copy], data[0..to_copy]);
+            self.buf_len += to_copy;
+            offset += to_copy;
+            if (self.buf_len == 64) {
+                self.processBlock(&self.buf);
+                self.buf_len = 0;
+            }
+        }
+
+        while (offset + 64 <= data.len) : (offset += 64) {
+            const block_slice = data[offset..][0..64];
+            const block_ptr: *const [64]u8 = @ptrCast(block_slice.ptr);
+            self.processBlock(block_ptr);
+        }
+
+        const remaining = data.len - offset;
+        if (remaining != 0) {
+            @memcpy(self.buf[0..remaining], data[offset..]);
+            self.buf_len = remaining;
+        }
+    }
+
+    fn finalize(self: *Sha256Ctx, out: *[32]u8) void {
+        // Append the single '1' bit (0x80 byte) then pad with zeros until we have room
+        // for the 64-bit big-endian message length.
+        self.buf[self.buf_len] = 0x80;
+        self.buf_len += 1;
+
+        if (self.buf_len > 56) {
+            while (self.buf_len < 64) : (self.buf_len += 1) {
+                self.buf[self.buf_len] = 0;
+            }
+            self.processBlock(&self.buf);
+            self.buf_len = 0;
+        }
+
+        while (self.buf_len < 56) : (self.buf_len += 1) {
+            self.buf[self.buf_len] = 0;
+        }
+
+        const bit_len: u64 = self.total_len * 8;
+        var shift: usize = 0;
+        while (shift < 8) : (shift += 1) {
+            const idx = 7 - shift;
+            const shift_amt: u6 = @intCast(idx * 8);
+            self.buf[56 + shift] = @as(u8, @intCast((bit_len >> shift_amt) & 0xFF));
+        }
+        self.processBlock(&self.buf);
+        self.buf_len = 0;
+
+        for (self.h, 0..) |word, idx| {
+            const base = idx * 4;
+            out[base + 0] = @as(u8, @intCast(word >> 24));
+            out[base + 1] = @as(u8, @intCast((word >> 16) & 0xFF));
+            out[base + 2] = @as(u8, @intCast((word >> 8) & 0xFF));
+            out[base + 3] = @as(u8, @intCast(word & 0xFF));
+        }
+    }
+
+    inline fn rotr(value: u32, shift: u5) u32 {
+        if (shift == 0) return value;
+        const amt: u32 = shift;
+        return (value >> amt) | (value << @as(u5, @intCast(32 - amt)));
+    }
+
+    fn processBlock(self: *Sha256Ctx, block: *const [64]u8) void {
+        var w: [64]u32 = undefined;
+        const bytes: [*]const u8 = @ptrCast(block);
+
+        var i: usize = 0;
+        while (i < 16) : (i += 1) {
+            const idx = i * 4;
+            w[i] = (@as(u32, bytes[idx]) << 24) |
+                (@as(u32, bytes[idx + 1]) << 16) |
+                (@as(u32, bytes[idx + 2]) << 8) |
+                @as(u32, bytes[idx + 3]);
+        }
+
+        while (i < 64) : (i += 1) {
+            const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
+            const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+        }
+
+        var a = self.h[0];
+        var b = self.h[1];
+        var c = self.h[2];
+        var d = self.h[3];
+        var e = self.h[4];
+        var f = self.h[5];
+        var g = self.h[6];
+        var h = self.h[7];
+
+        i = 0;
+        while (i < 64) : (i += 1) {
+            const s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+            const ch = (e & f) ^ (~e & g);
+            const temp1 = h + s1 + ch + sha256_round_constants[i] + w[i];
+            const s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+            const maj = (a & b) ^ (a & c) ^ (b & c);
+            const temp2 = s0 + maj;
+
+            h = g;
+            g = f;
+            f = e;
+            e = d + temp1;
+            d = c;
+            c = b;
+            b = a;
+            a = temp1 + temp2;
+        }
+
+        self.h[0] += a;
+        self.h[1] += b;
+        self.h[2] += c;
+        self.h[3] += d;
+        self.h[4] += e;
+        self.h[5] += f;
+        self.h[6] += g;
+        self.h[7] += h;
+    }
+};
+
+const sha256_initial_state = [8]u32{
+    0x6A09E667,
+    0xBB67AE85,
+    0x3C6EF372,
+    0xA54FF53A,
+    0x510E527F,
+    0x9B05688C,
+    0x1F83D9AB,
+    0x5BE0CD19,
+};
+
+const sha256_round_constants = [64]u32{
+    0x428A2F98, 0x71374491, 0xB5C0FBCF, 0xE9B5DBA5, 0x3956C25B, 0x59F111F1, 0x923F82A4, 0xAB1C5ED5,
+    0xD807AA98, 0x12835B01, 0x243185BE, 0x550C7DC3, 0x72BE5D74, 0x80DEB1FE, 0x9BDC06A7, 0xC19BF174,
+    0xE49B69C1, 0xEFBE4786, 0x0FC19DC6, 0x240CA1CC, 0x2DE92C6F, 0x4A7484AA, 0x5CB0A9DC, 0x76F988DA,
+    0x983E5152, 0xA831C66D, 0xB00327C8, 0xBF597FC7, 0xC6E00BF3, 0xD5A79147, 0x06CA6351, 0x14292967,
+    0x27B70A85, 0x2E1B2138, 0x4D2C6DFC, 0x53380D13, 0x650A7354, 0x766A0ABB, 0x81C2C92E, 0x92722C85,
+    0xA2BFE8A1, 0xA81A664B, 0xC24B8B70, 0xC76C51A3, 0xD192E819, 0xD6990624, 0xF40E3585, 0x106AA070,
+    0x19A4C116, 0x1E376C08, 0x2748774C, 0x34B0BCB5, 0x391C0CB3, 0x4ED8AA4A, 0x5B9CCA4F, 0x682E6FF3,
+    0x748F82EE, 0x78A5636F, 0x84C87814, 0x8CC70208, 0x90BEFFFA, 0xA4506CEB, 0xBEF9A3F7, 0xC67178F2,
+};
+
+const sha3_rate_bytes: usize = 136;
+
+const keccak_rho_offsets = [25]u8{
+     0,  1, 62, 28, 27,
+    36, 44,  6, 55, 20,
+     3, 10, 43, 25, 39,
+    41, 45, 15, 21,  8,
+    18,  2, 61, 56, 14,
+};
+
+const keccak_round_constants = [24]u64{
+    0x0000000000000001,
+    0x0000000000008082,
+    0x800000000000808A,
+    0x8000000080008000,
+    0x000000000000808B,
+    0x0000000080000001,
+    0x8000000080008081,
+    0x8000000000008009,
+    0x000000000000008A,
+    0x0000000000000088,
+    0x0000000080008009,
+    0x000000008000000A,
+    0x000000008000808B,
+    0x800000000000008B,
+    0x8000000000008089,
+    0x8000000000008003,
+    0x8000000000008002,
+    0x8000000000000080,
+    0x000000000000800A,
+    0x800000008000000A,
+    0x8000000080008081,
+    0x8000000000008080,
+    0x0000000080000001,
+    0x8000000080008008,
+};
+
+inline fn rotl64(val: u64, shift: u6) u64 {
+    if (shift == 0) return val; // avoid undefined >> 64 when rho offset is zero
+    const inv: u6 = @intCast(@as(u7, 64) - @as(u7, shift));
+    return (val << shift) | (val >> inv);
 }
 
-pub fn sha3_256(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+fn keccakF1600(state: *[25]u64) void {
+    var round: usize = 0;
+    while (round < keccak_round_constants.len) : (round += 1) {
+        var c: [5]u64 = undefined;
+        var d: [5]u64 = undefined;
+
+        var x: usize = 0;
+        while (x < 5) : (x += 1) {
+            c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
+        }
+
+        x = 0;
+        while (x < 5) : (x += 1) {
+            d[x] = c[(x + 4) % 5] ^ rotl64(c[(x + 1) % 5], 1);
+        }
+
+        x = 0;
+        while (x < 5) : (x += 1) {
+            var y: usize = 0;
+            while (y < 5) : (y += 1) {
+                state[x + 5 * y] ^= d[x];
+            }
+        }
+
+        var b: [25]u64 = undefined;
+        var y: usize = 0;
+        while (y < 5) : (y += 1) {
+            x = 0;
+            while (x < 5) : (x += 1) {
+                const idx = x + 5 * y;
+                const new_x = y;
+                const new_y = (2 * x + 3 * y) % 5;
+                b[new_x + 5 * new_y] = rotl64(state[idx], @intCast(keccak_rho_offsets[idx]));
+            }
+        }
+
+        y = 0;
+        while (y < 5) : (y += 1) {
+            x = 0;
+            while (x < 5) : (x += 1) {
+                const idx = x + 5 * y;
+                const b1 = b[((x + 1) % 5) + 5 * y];
+                const b2 = b[((x + 2) % 5) + 5 * y];
+                state[idx] = b[idx] ^ ((~b1) & b2);
+            }
+        }
+
+        state[0] ^= keccak_round_constants[round];
+    }
+}
+
+const Sha3_256Ctx = struct {
+    state: [25]u64 = [_]u64{0} ** 25,
+    pos: usize = 0,
+
+    pub fn init() Sha3_256Ctx {
+        return .{};
+    }
+
+    pub fn updateSlice(self: *Sha3_256Ctx, bytes: []const u8) void {
+        for (bytes) |byte| {
+            self.absorbByte(byte);
+        }
+    }
+
+    fn absorbByte(self: *Sha3_256Ctx, byte: u8) void {
+        const lane_index = self.pos / 8;
+        const lane_shift: u6 = @intCast((self.pos % 8) * 8);
+        self.state[lane_index] ^= @as(u64, byte) << lane_shift;
+        self.pos += 1;
+
+        if (self.pos == sha3_rate_bytes) {
+            keccakF1600(&self.state);
+            self.pos = 0;
+        }
+    }
+
+    pub fn finalize(self: *Sha3_256Ctx, out: *[32]u8) void {
+        const lane_index = self.pos / 8;
+        const lane_shift: u6 = @intCast((self.pos % 8) * 8);
+        // SHA3-256 uses the 0x06 domain suffix followed by the mandatory 1-bit trailer.
+        self.state[lane_index] ^= @as(u64, 0x06) << lane_shift;
+
+        const last_index = (sha3_rate_bytes - 1) / 8;
+        const last_shift: u6 = @intCast(((sha3_rate_bytes - 1) % 8) * 8);
+        self.state[last_index] ^= @as(u64, 0x80) << last_shift;
+
+        keccakF1600(&self.state);
+        self.pos = 0;
+        self.squeeze(out[0..]);
+    }
+
+    fn squeeze(self: *Sha3_256Ctx, out: []u8) void {
+        var produced: usize = 0;
+        while (produced < out.len) : (produced += 1) {
+            if (self.pos == sha3_rate_bytes) {
+                keccakF1600(&self.state);
+                self.pos = 0;
+            }
+
+            const lane_index = self.pos / 8;
+            const lane_shift: u6 = @intCast((self.pos % 8) * 8);
+            out[produced] = @truncate(self.state[lane_index] >> lane_shift);
+            self.pos += 1;
+        }
+    }
+};
+
+pub fn sha2_256(m: *Machine, args: *LinkedValues) *const Value {
+    const input = args.value.unwrapBytestring();
+    var hasher = Sha256Ctx.init();
+
+    var chunk: [64]u8 = undefined;
+    var chunk_len: usize = 0;
+    const byte_len: usize = @intCast(input.length);
+
+    var i: usize = 0;
+    while (i < byte_len) : (i += 1) {
+        chunk[chunk_len] = @as(u8, @truncate(input.bytes[i]));
+        chunk_len += 1;
+
+        if (chunk_len == chunk.len) {
+            hasher.updateSlice(chunk[0..]);
+            chunk_len = 0;
+        }
+    }
+
+    if (chunk_len != 0) {
+        hasher.updateSlice(chunk[0..chunk_len]);
+    }
+
+    var digest: [32]u8 = undefined;
+    hasher.finalize(&digest);
+
+    var result = m.heap.createArray(u32, 32 + 4);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.bytesType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = 32;
+    for (digest, 0..) |byte, idx| {
+        result[4 + idx] = byte;
+    }
+
+    return createConst(m.heap, @ptrCast(result));
+}
+
+pub fn sha3_256(m: *Machine, args: *LinkedValues) *const Value {
+    const input = args.value.unwrapBytestring();
+    var hasher = Sha3_256Ctx.init();
+
+    const byte_len: usize = @intCast(input.length);
+    var chunk: [64]u8 = undefined;
+    var chunk_len: usize = 0;
+
+    var i: usize = 0;
+    while (i < byte_len) : (i += 1) {
+        chunk[chunk_len] = @as(u8, @truncate(input.bytes[i]));
+        chunk_len += 1;
+
+        if (chunk_len == chunk.len) {
+            hasher.updateSlice(chunk[0..]);
+            chunk_len = 0;
+        }
+    }
+
+    if (chunk_len != 0) {
+        hasher.updateSlice(chunk[0..chunk_len]);
+    }
+
+    var digest: [32]u8 = undefined;
+    hasher.finalize(&digest);
+
+    var result = m.heap.createArray(u32, 32 + 4);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.bytesType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = 32;
+    for (digest, 0..) |byte, idx| {
+        result[4 + idx] = byte;
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn blake2b_256(_: *Machine, _: *LinkedValues) *const Value {
@@ -6221,6 +6605,97 @@ test "length bytes" {
         else => {
             @panic("TODO");
         },
+    }
+}
+
+test "sha2_256 bytes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    const input_words = [_]u32{
+        0x2e, 0x7e, 0xa8, 0x4d, 0xa4, 0xbc, 0x4d, 0x7c, 0xfb, 0x46, 0x3e, 0x3f, 0x2c,
+        0x86, 0x47, 0x05, 0x7a, 0xff, 0xf3, 0xfb, 0xec, 0xec, 0xa1, 0xd2, 0x00,
+    };
+    const input = expr.Bytes{
+        .length = input_words.len,
+        .bytes = input_words[0..].ptr,
+    };
+
+    const expected_words = [_]u32{
+        0x76, 0xe3, 0xac, 0xbc, 0x71, 0x88, 0x36, 0xf2, 0xdf, 0x8a, 0xd2, 0xd0, 0xd2,
+        0xd7, 0x6f, 0x0c, 0xfa, 0x5f, 0xea, 0x09, 0x86, 0xbe, 0x91, 0x8f, 0x10, 0xbc,
+        0xee, 0x73, 0x0d, 0xf4, 0x41, 0xb9,
+    };
+
+    const args = LinkedValues.create(&heap, *const expr.Bytes, &input, ConstantType.bytesType());
+
+    const result = sha2_256(&machine, args);
+    const digest = result.unwrapBytestring();
+
+    try testing.expectEqual(@as(u32, expected_words.len), digest.length);
+    var i: usize = 0;
+    while (i < expected_words.len) : (i += 1) {
+        try testing.expectEqual(expected_words[i], digest.bytes[i]);
+    }
+}
+
+test "sha3_256 bytes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var heap = try Heap.createTestHeap(&arena);
+    var frames = try Frames.createTestFrames(&arena);
+    var machine = Machine{ .heap = &heap, .frames = &frames };
+
+    var repeated_words: [200]u32 = undefined;
+    var fill_idx: usize = 0;
+    while (fill_idx < repeated_words.len) : (fill_idx += 1) {
+        repeated_words[fill_idx] = 0xA3;
+    }
+
+    const len200_input = expr.Bytes{
+        .length = repeated_words.len,
+        .bytes = repeated_words[0..].ptr,
+    };
+
+    const expected_len200 = [_]u32{
+        0x79, 0xF3, 0x8A, 0xDE, 0xC5, 0xC2, 0x03, 0x07, 0xA9, 0x8E, 0xF7, 0x6E, 0x83,
+        0x24, 0xAF, 0xBF, 0xD4, 0x6C, 0xFD, 0x81, 0xB2, 0x2E, 0x39, 0x73, 0xC6, 0x5F,
+        0xA1, 0xBD, 0x9D, 0xE3, 0x17, 0x87,
+    };
+
+    const len200_args = LinkedValues.create(&heap, *const expr.Bytes, &len200_input, ConstantType.bytesType());
+    const len200_digest = sha3_256(&machine, len200_args).unwrapBytestring();
+
+    try testing.expectEqual(@as(u32, expected_len200.len), len200_digest.length);
+    var idx: usize = 0;
+    while (idx < expected_len200.len) : (idx += 1) {
+        try testing.expectEqual(expected_len200[idx], len200_digest.bytes[idx]);
+    }
+
+    const zero_buf = [_]u32{0};
+    const empty_input = expr.Bytes{
+        .length = 0,
+        .bytes = zero_buf[0..].ptr,
+    };
+
+    const expected_empty = [_]u32{
+        0xA7, 0xFF, 0xC6, 0xF8, 0xBF, 0x1E, 0xD7, 0x66, 0x51, 0xC1, 0x47, 0x56, 0xA0,
+        0x61, 0xD6, 0x62, 0xF5, 0x80, 0xFF, 0x4D, 0xE4, 0x3B, 0x49, 0xFA, 0x82, 0xD8,
+        0x0A, 0x4B, 0x80, 0xF8, 0x43, 0x4A,
+    };
+
+    const empty_args = LinkedValues.create(&heap, *const expr.Bytes, &empty_input, ConstantType.bytesType());
+    const empty_digest = sha3_256(&machine, empty_args).unwrapBytestring();
+
+    try testing.expectEqual(@as(u32, expected_empty.len), empty_digest.length);
+    idx = 0;
+    while (idx < expected_empty.len) : (idx += 1) {
+        try testing.expectEqual(expected_empty[idx], empty_digest.bytes[idx]);
     }
 }
 
