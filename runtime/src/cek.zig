@@ -2229,65 +2229,452 @@ fn tagFromWord(raw: u32) DataTag {
     };
 }
 
+fn buildDataListFromConstantList(
+    m: *Machine,
+    list: List,
+    comptime type_error_msg: []const u8,
+    comptime null_payload_msg: []const u8,
+) ?*DataListNode {
+    ensureListHoldsData(list, type_error_msg);
+
+    var head: ?*DataListNode = null;
+    var tail: ?*DataListNode = null;
+    var cursor = list.items;
+
+    while (cursor) |node| {
+        const data_ptr = materializeDataElement(m, node.value, null_payload_msg);
+        const new_node = m.heap.create(DataListNode, &DataListNode{
+            .value = data_ptr,
+            .next = null,
+        });
+
+        if (tail) |t| {
+            t.next = new_node;
+        } else {
+            head = new_node;
+        }
+        tail = new_node;
+        cursor = node.next;
+    }
+
+    return head;
+}
+
+fn buildDataPairListFromConstantList(
+    m: *Machine,
+    list: List,
+    comptime type_error_msg: []const u8,
+    comptime null_payload_msg: []const u8,
+) ?*DataPairNode {
+    ensureListHoldsDataPairs(list, type_error_msg);
+
+    var head: ?*DataPairNode = null;
+    var tail: ?*DataPairNode = null;
+    var cursor = list.items;
+
+    while (cursor) |node| {
+        if (node.value == 0) {
+            utils.printlnString(null_payload_msg);
+            utils.exit(std.math.maxInt(u32));
+        }
+
+        const pair_payload: *const PairPayload = @ptrFromInt(node.value);
+        const key_data = materializeDataElement(m, pair_payload.first, null_payload_msg);
+        const value_data = materializeDataElement(m, pair_payload.second, null_payload_msg);
+
+        const new_node = m.heap.create(DataPairNode, &DataPairNode{
+            .key = key_data,
+            .value = value_data,
+            .next = null,
+        });
+
+        if (tail) |t| {
+            t.next = new_node;
+        } else {
+            head = new_node;
+        }
+        tail = new_node;
+        cursor = node.next;
+    }
+
+    return head;
+}
+
+fn ensureListHoldsData(list: List, comptime type_error_msg: []const u8) void {
+    if (list.type_length == 0) {
+        utils.printlnString(type_error_msg);
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    const inner = list.inner_type;
+    if (@intFromPtr(inner) == 0) {
+        utils.printlnString(type_error_msg);
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    if (inner[0] != ConstantType.data) {
+        utils.printlnString(type_error_msg);
+        utils.exit(std.math.maxInt(u32));
+    }
+}
+
+fn ensureListHoldsDataPairs(list: List, comptime type_error_msg: []const u8) void {
+    if (list.type_length < 3) {
+        utils.printlnString(type_error_msg);
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    const inner = list.inner_type;
+    if (@intFromPtr(inner) == 0) {
+        utils.printlnString(type_error_msg);
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    if (inner[0] != ConstantType.pair or inner[1] != ConstantType.data or inner[2] != ConstantType.data) {
+        utils.printlnString(type_error_msg);
+        utils.exit(std.math.maxInt(u32));
+    }
+}
+
+fn materializeDataElement(
+    m: *Machine,
+    payload_addr: u32,
+    comptime null_payload_msg: []const u8,
+) *const Data {
+    if (payload_addr == 0) {
+        utils.printlnString(null_payload_msg);
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    if (serializedPayloadWordCount(payload_addr)) |word_count| {
+        const payload_ptr: [*]const u8 = @ptrFromInt(payload_addr);
+        var reader = SerializedDataReader.init(payload_ptr, word_count);
+        const data_ptr = decodeSerializedDataPayload(m.heap, &reader);
+        reader.ensureFullyConsumed();
+        return data_ptr;
+    }
+
+    return @ptrFromInt(payload_addr);
+}
+
+const SerializedDataReader = struct {
+    bytes: [*]const u8,
+    len: u32,
+    offset: u32,
+
+    fn init(ptr: [*]const u8, word_count: u32) SerializedDataReader {
+        const total_bytes = wordCountToByteLen(word_count);
+        return .{ .bytes = ptr, .len = total_bytes, .offset = 0 };
+    }
+
+    fn readU32(self: *SerializedDataReader) u32 {
+        if (self.len - self.offset < 4) {
+            invalidSerializedData();
+        }
+
+        var result: u32 = 0;
+        var i: u32 = 0;
+        while (i < 4) : (i += 1) {
+            const idx = self.offset + i;
+            const shift: u5 = @intCast(i * 8);
+            result |= (@as(u32, self.bytes[@intCast(idx)])) << shift;
+        }
+
+        self.offset += 4;
+        return result;
+    }
+
+    fn readU8(self: *SerializedDataReader) u8 {
+        if (self.offset >= self.len) {
+            invalidSerializedData();
+        }
+
+        const byte = self.bytes[@intCast(self.offset)];
+        self.offset += 1;
+        return byte;
+    }
+
+    fn readBytes(self: *SerializedDataReader, byte_len: u32) [*]const u8 {
+        if (self.len - self.offset < byte_len) {
+            invalidSerializedData();
+        }
+
+        const start = self.offset;
+        self.offset += byte_len;
+
+        const base_addr = @intFromPtr(self.bytes);
+        const start_offset: usize = @intCast(start);
+        return @ptrFromInt(base_addr + start_offset);
+    }
+
+    fn alignToWord(self: *SerializedDataReader) void {
+        const rem = self.offset & 3;
+        if (rem == 0) return;
+
+        const skip = 4 - rem;
+        if (self.len - self.offset < skip) {
+            invalidSerializedData();
+        }
+        self.offset += skip;
+    }
+
+    fn sliceWords(self: *SerializedDataReader, word_count: u32) SerializedDataReader {
+        const byte_len = wordCountToByteLen(word_count);
+        if (self.len - self.offset < byte_len) {
+            invalidSerializedData();
+        }
+
+        const start = self.offset;
+        self.offset += byte_len;
+
+        const base_addr = @intFromPtr(self.bytes);
+        const start_offset: usize = @intCast(start);
+
+        return .{
+            .bytes = @ptrFromInt(base_addr + start_offset),
+            .len = byte_len,
+            .offset = 0,
+        };
+    }
+
+    fn ensureFullyConsumed(self: *SerializedDataReader) void {
+        if (self.offset != self.len) {
+            invalidSerializedData();
+        }
+    }
+};
+
+fn wordCountToByteLen(word_count: u32) u32 {
+    if (word_count == 0) {
+        invalidSerializedData();
+    }
+
+    if (word_count > std.math.maxInt(u32) / 4) {
+        invalidSerializedData();
+    }
+
+    return word_count * 4;
+}
+
+const max_serialized_payload_words: u32 = 0x10000000;
+
+fn serializedPayloadWordCount(payload_addr: u32) ?u32 {
+    const header_size = @as(u32, @sizeOf(u32) * 2);
+    if (payload_addr < header_size) {
+        return null;
+    }
+
+    const header_ptr: [*]const u32 = @ptrFromInt(payload_addr - header_size);
+    const tag = header_ptr[0];
+    const words = header_ptr[1];
+
+    if (tag == serialized_data_const_tag and words > 0 and words < max_serialized_payload_words) {
+        return words;
+    }
+
+    return null;
+}
+
+fn decodeSerializedDataPayload(heap: *Heap, reader: *SerializedDataReader) *const Data {
+    const tag = reader.readU32();
+
+    return switch (tag) {
+        data_tag_constr => decodeSerializedConstr(heap, reader),
+        data_tag_map => decodeSerializedMap(heap, reader),
+        data_tag_list => decodeSerializedList(heap, reader),
+        data_tag_integer => decodeSerializedInteger(heap, reader),
+        data_tag_bytes => decodeSerializedBytes(heap, reader),
+        else => {
+            invalidSerializedData();
+        },
+    };
+}
+
+fn decodeSerializedConstr(heap: *Heap, reader: *SerializedDataReader) *const Data {
+    const encoded_tag = reader.readU32();
+    const field_count = reader.readU32();
+
+    var head: ?*DataListNode = null;
+    var tail: ?*DataListNode = null;
+
+    var i: u32 = 0;
+    while (i < field_count) : (i += 1) {
+        const field_words = reader.readU32();
+        var field_reader = reader.sliceWords(field_words);
+        const field_data = decodeSerializedDataPayload(heap, &field_reader);
+        field_reader.ensureFullyConsumed();
+
+        const node = heap.create(DataListNode, &DataListNode{
+            .value = field_data,
+            .next = null,
+        });
+
+        if (tail) |t| {
+            t.next = node;
+        } else {
+            head = node;
+        }
+        tail = node;
+    }
+
+    const payload = ConstrData{
+        .tag = decodeConstrTag(encoded_tag),
+        .fields = head,
+    };
+
+    return heap.create(Data, &.{ .constr = payload });
+}
+
+fn decodeSerializedList(heap: *Heap, reader: *SerializedDataReader) *const Data {
+    const elem_count = reader.readU32();
+
+    var head: ?*DataListNode = null;
+    var tail: ?*DataListNode = null;
+
+    var i: u32 = 0;
+    while (i < elem_count) : (i += 1) {
+        const elem_words = reader.readU32();
+        var elem_reader = reader.sliceWords(elem_words);
+        const elem_data = decodeSerializedDataPayload(heap, &elem_reader);
+        elem_reader.ensureFullyConsumed();
+
+        const node = heap.create(DataListNode, &DataListNode{
+            .value = elem_data,
+            .next = null,
+        });
+
+        if (tail) |t| {
+            t.next = node;
+        } else {
+            head = node;
+        }
+        tail = node;
+    }
+
+    return heap.create(Data, &.{ .list = head });
+}
+
+fn decodeSerializedMap(heap: *Heap, reader: *SerializedDataReader) *const Data {
+    const pair_count = reader.readU32();
+
+    var head: ?*DataPairNode = null;
+    var tail: ?*DataPairNode = null;
+
+    var i: u32 = 0;
+    while (i < pair_count) : (i += 1) {
+        const key_words = reader.readU32();
+        var key_reader = reader.sliceWords(key_words);
+        const key_data = decodeSerializedDataPayload(heap, &key_reader);
+        key_reader.ensureFullyConsumed();
+
+        const value_words = reader.readU32();
+        var value_reader = reader.sliceWords(value_words);
+        const value_data = decodeSerializedDataPayload(heap, &value_reader);
+        value_reader.ensureFullyConsumed();
+
+        const node = heap.create(DataPairNode, &DataPairNode{
+            .key = key_data,
+            .value = value_data,
+            .next = null,
+        });
+
+        if (tail) |t| {
+            t.next = node;
+        } else {
+            head = node;
+        }
+        tail = node;
+    }
+
+    return heap.create(Data, &.{ .map = head });
+}
+
+fn decodeSerializedInteger(heap: *Heap, reader: *SerializedDataReader) *const Data {
+    const sign = reader.readU8();
+    const word_count = reader.readU32();
+
+    const words_buf = heap.createArray(u32, word_count);
+    var i: u32 = 0;
+    while (i < word_count) : (i += 1) {
+        words_buf[i] = reader.readU32();
+    }
+    reader.alignToWord();
+
+    const words_view: [*]const u32 = words_buf;
+
+    const big = BigInt{
+        .sign = @intCast(sign),
+        .length = word_count,
+        .words = words_view,
+    };
+
+    return heap.create(Data, &.{ .integer = big });
+}
+
+fn decodeSerializedBytes(heap: *Heap, reader: *SerializedDataReader) *const Data {
+    const byte_len = reader.readU32();
+    const src = reader.readBytes(byte_len);
+    reader.alignToWord();
+
+    const words_buf = heap.createArray(u32, byte_len);
+    var i: u32 = 0;
+    while (i < byte_len) : (i += 1) {
+        words_buf[i] = @intCast(src[@intCast(i)]);
+    }
+
+    const bytes_words: [*]const u32 = words_buf;
+
+    const bytes_view = Bytes{
+        .length = byte_len,
+        .bytes = bytes_words,
+    };
+
+    return heap.create(Data, &.{ .bytes = bytes_view });
+}
+
+fn decodeConstrTag(encoded: u32) u32 {
+    if (encoded >= 1280) {
+        return (encoded - 1280) + 7;
+    }
+
+    if (encoded >= 121 and encoded <= 127) {
+        return encoded - 121;
+    }
+
+    return encoded;
+}
+
+fn invalidSerializedData() noreturn {
+    utils.printlnString("invalid serialized Data constant");
+    utils.exit(std.math.maxInt(u32));
+}
+
 pub fn constrData(m: *Machine, args: *LinkedValues) *const Value {
     // First arg: list of Data (fields)
     const fields_list = args.value.unwrapList();
 
-    // Second arg: integer (constructor tag)
     const tag_int = args.next.?.value.unwrapInteger();
 
-    // Convert integer to u32 tag
     if (tag_int.sign == 1 or tag_int.length > 1) {
         utils.printlnString("constrData: tag must be a non-negative integer that fits in u32");
         utils.exit(std.math.maxInt(u32));
     }
     const tag: u32 = tag_int.words[0];
 
-    // Convert List<Data> to DataListNode chain
-    var data_list_head: ?*DataListNode = null;
-    var current_list_node = fields_list.items;
+    const field_nodes = buildDataListFromConstantList(
+        m,
+        fields_list,
+        "constrData expects a list of Data",
+        "constrData: null Data constant payload",
+    );
 
-    // Build the DataListNode chain in reverse by prepending
-    while (current_list_node) |node| {
-        // Each ListNode.value is a u32 pointer to a Constant
-        // The Constant.value is a pointer to the Data
-        const const_ptr: *const Constant = @ptrFromInt(node.value);
-        const data_ptr: *const Data = @ptrFromInt(const_ptr.value);
-
-        // Create new DataListNode
-        const data_node = m.heap.create(DataListNode, &DataListNode{
-            .value = data_ptr,
-            .next = data_list_head,
-        });
-        data_list_head = data_node;
-
-        current_list_node = node.next;
-    }
-
-    // Reverse the list to maintain original order
-    var reversed_head: ?*DataListNode = null;
-    var current = data_list_head;
-    while (current) |node| {
-        const next = node.next;
-        const new_node = m.heap.create(DataListNode, &DataListNode{
-            .value = node.value,
-            .next = reversed_head,
-        });
-        reversed_head = new_node;
-        current = next;
-    }
-
-    // Create ConstrData
     const constr_payload = ConstrData{
         .tag = tag,
-        .fields = reversed_head,
+        .fields = field_nodes,
     };
 
-    // Create Data union with constr variant
-    const data = Data{ .constr = constr_payload };
-    const data_ptr = m.heap.create(Data, &data);
+    const data_ptr = m.heap.create(Data, &.{ .constr = constr_payload });
 
-    // Create Constant wrapping the Data
     const con = Constant{
         .length = 1,
         .type_list = dataTypePtr(),
@@ -2297,16 +2684,60 @@ pub fn constrData(m: *Machine, args: *LinkedValues) *const Value {
     return createConst(m.heap, m.heap.create(Constant, &con));
 }
 
-pub fn mapData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn mapData(m: *Machine, args: *LinkedValues) *const Value {
+    const pairs_list = args.value.unwrapList();
+
+    const pair_nodes = buildDataPairListFromConstantList(
+        m,
+        pairs_list,
+        "mapData expects a list of (Data, Data) pairs",
+        "mapData: null Data constant payload",
+    );
+
+    const data_ptr = m.heap.create(Data, &.{ .map = pair_nodes });
+
+    const con = Constant{
+        .length = 1,
+        .type_list = dataTypePtr(),
+        .value = @intFromPtr(data_ptr),
+    };
+
+    return createConst(m.heap, m.heap.create(Constant, &con));
 }
 
-pub fn listData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn listData(m: *Machine, args: *LinkedValues) *const Value {
+    const elements_list = args.value.unwrapList();
+
+    const data_nodes = buildDataListFromConstantList(
+        m,
+        elements_list,
+        "listData expects a list of Data",
+        "listData: null Data constant payload",
+    );
+
+    const data_ptr = m.heap.create(Data, &.{ .list = data_nodes });
+
+    const con = Constant{
+        .length = 1,
+        .type_list = dataTypePtr(),
+        .value = @intFromPtr(data_ptr),
+    };
+
+    return createConst(m.heap, m.heap.create(Constant, &con));
 }
 
-pub fn iData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn iData(m: *Machine, args: *LinkedValues) *const Value {
+    const int_arg = args.value.unwrapInteger();
+
+    const data_ptr = m.heap.create(Data, &.{ .integer = int_arg });
+
+    const con = Constant{
+        .length = 1,
+        .type_list = dataTypePtr(),
+        .value = @intFromPtr(data_ptr),
+    };
+
+    return createConst(m.heap, m.heap.create(Constant, &con));
 }
 
 pub fn bData(m: *Machine, args: *LinkedValues) *const Value {
