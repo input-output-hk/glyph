@@ -4670,8 +4670,22 @@ pub fn xorByteString(_: *Machine, _: *LinkedValues) *const Value {
     @panic("TODO");
 }
 
-pub fn complementByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn complementByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const input = args.value.unwrapBytestring();
+
+    var result = m.heap.createArray(u32, input.length + 4);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.bytesType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = input.length;
+
+    var i: u32 = 0;
+    while (i < input.length) : (i += 1) {
+        const byte: u8 = @as(u8, @truncate(input.bytes[i]));
+        result[4 + i] = ~byte; // bytes are stored as u32 slots, so truncate before inverting
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn readBit(_: *Machine, _: *LinkedValues) *const Value {
