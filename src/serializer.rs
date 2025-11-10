@@ -28,6 +28,7 @@ const CONST_TYPE_DATA: u32 = 7;
 const CONST_TYPE_BLS12_381_G1_ELEMENT: u32 = 8;
 const CONST_TYPE_BLS12_381_G2_ELEMENT: u32 = 9;
 const CONST_TYPE_BLS12_381_MLRESULT: u32 = 10;
+const LARGE_CONSTR_TAG_FLAG: u32 = 0x8000_0000;
 
 /// Error type for serialization failures
 #[derive(Error, Debug)]
@@ -706,14 +707,13 @@ fn encode_plutus_data(data: &PlutusData) -> Result<Vec<u8>> {
     match data {
         PlutusData::Constr(constr_data) => {
             buf.write_u32::<LittleEndian>(data_tag::CONSTR)?;
-            let encoded_tag = if let Some(ix) = constr_data.any_constructor {
-                encode_constr_tag_index(ix)?
-            } else {
-                u32::try_from(constr_data.tag).map_err(|_| {
+            let encoded_tag = match constr_data.any_constructor {
+                Some(ix) => encode_large_constr_tag(ix)?,
+                None => u32::try_from(constr_data.tag).map_err(|_| {
                     SerializationError::DataTooComplex(
                         "constructor tag does not fit in 32 bits".to_string(),
                     )
-                })?
+                })?,
             };
             buf.write_u32::<LittleEndian>(encoded_tag)?;
 
@@ -784,16 +784,13 @@ fn write_nested_data(buf: &mut Vec<u8>, value: &PlutusData) -> Result<()> {
     Ok(())
 }
 
-fn encode_constr_tag_index(ix: u64) -> Result<u32> {
-    if ix < 7 {
-        return Ok(121 + u32::try_from(ix).unwrap());
-    }
-    if ix < 128 {
-        return Ok(1280 + u32::try_from(ix - 7).unwrap());
-    }
-    Err(SerializationError::DataTooComplex(format!(
-        "constructor tag {ix} not supported"
-    )))
+fn encode_large_constr_tag(ix: u64) -> Result<u32> {
+    let tag = u32::try_from(ix).map_err(|_| {
+        SerializationError::DataTooComplex(format!(
+            "constructor tag {ix} does not fit in 32 bits"
+        ))
+    })?;
+    Ok(LARGE_CONSTR_TAG_FLAG | tag)
 }
 
 fn pad_to_word_boundary(buf: &mut Vec<u8>) {
