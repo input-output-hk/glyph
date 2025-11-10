@@ -1783,12 +1783,122 @@ pub fn equalsString(m: *Machine, args: *LinkedValues) *const Value {
     return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn encodeUtf8(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn encodeUtf8(m: *Machine, args: *LinkedValues) *const Value {
+    const str = args.value.unwrapString();
+    const view = analyzeString(str);
+
+    const byte_len = view.byte_len;
+    var result = m.heap.createArray(u32, byte_len + 4);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.bytesType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = byte_len;
+
+    const data = result + 4;
+    // Strings may be stored packed (four bytes per word) or unpacked; extractStringByte
+    // normalizes each byte so we can lay out a standard bytestring payload.
+    var i: u32 = 0;
+    while (i < byte_len) : (i += 1) {
+        data[i] = extractStringByte(str, view, i);
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn decodeUtf8(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+fn isUtf8Continuation(byte: u8) bool {
+    return (byte & 0xC0) == 0x80;
+}
+
+fn loadUtf8Byte(bytes: Bytes, idx: usize) u8 {
+    return @as(u8, @truncate(bytes.bytes[idx]));
+}
+
+fn validateUtf8(bytes: Bytes) bool {
+    const len: usize = @intCast(bytes.length);
+    var i: usize = 0;
+
+    while (i < len) {
+        const b0 = loadUtf8Byte(bytes, i);
+
+        if (b0 < 0x80) {
+            i += 1;
+            continue;
+        }
+
+        if (b0 < 0xC2) {
+            return false; // Reject overlong forms (0xC0,0xC1) and stray continuations.
+        }
+
+        if (b0 < 0xE0) {
+            if (i + 1 >= len) return false;
+            const b1 = loadUtf8Byte(bytes, i + 1);
+            if (!isUtf8Continuation(b1)) return false;
+            i += 2;
+            continue;
+        }
+
+        if (b0 < 0xF0) {
+            if (i + 2 >= len) return false;
+            const b1 = loadUtf8Byte(bytes, i + 1);
+            const b2 = loadUtf8Byte(bytes, i + 2);
+            if (!isUtf8Continuation(b1) or !isUtf8Continuation(b2)) return false;
+            if (b0 == 0xE0 and b1 < 0xA0) return false; // Overlong encodings.
+            if (b0 == 0xED and b1 >= 0xA0) return false; // UTF-16 surrogate range.
+            i += 3;
+            continue;
+        }
+
+        if (b0 < 0xF5) {
+            if (i + 3 >= len) return false;
+            const b1 = loadUtf8Byte(bytes, i + 1);
+            const b2 = loadUtf8Byte(bytes, i + 2);
+            const b3 = loadUtf8Byte(bytes, i + 3);
+            if (!isUtf8Continuation(b1) or !isUtf8Continuation(b2) or !isUtf8Continuation(b3)) return false;
+            if (b0 == 0xF0 and b1 < 0x90) return false; // Overlong encodings.
+            if (b0 == 0xF4 and b1 >= 0x90) return false; // Beyond U+10FFFF.
+            i += 4;
+            continue;
+        }
+
+        return false; // Reject 5+ byte sequences (> 0xF4 lead byte).
+    }
+
+    return true;
+}
+
+pub fn decodeUtf8(m: *Machine, args: *LinkedValues) *const Value {
+    const bytes = args.value.unwrapBytestring();
+
+    if (!validateUtf8(bytes)) {
+        builtinEvaluationFailure();
+    }
+
+    const byte_len: u32 = bytes.length;
+    const word_count: u32 = if (byte_len == 0) 0 else (byte_len + 3) / 4;
+
+    // Strings store bytes packed little-endian into u32 words (4 bytes per word).
+    // The first four slots mirror Constant header layout (type length, type ptr, etc.).
+    var result = m.heap.createArray(u32, word_count + 4);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.stringType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = word_count;
+
+    const data = result + 4;
+    var zero_idx: u32 = 0;
+    while (zero_idx < word_count) : (zero_idx += 1) {
+        data[zero_idx] = 0;
+    }
+
+    var i: u32 = 0;
+    while (i < byte_len) : (i += 1) {
+        const byte = @as(u8, @truncate(bytes.bytes[i]));
+        const word_idx = i / 4;
+        const byte_pos = i % 4;
+        data[word_idx] |= @as(u32, byte) << @intCast(byte_pos * 8);
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 // Bool function
