@@ -155,6 +155,24 @@ const Value = union(enum(u32)) {
             else => return false,
         }
     }
+
+    pub fn unwrapUnit(v: *const Value) void {
+        switch (v.*) {
+            .constant => |c| {
+                switch (c.constType().*) {
+                    .unit => return,
+                    else => {
+                        utils.printString("Not a unit constant\n");
+                        utils.exit(std.math.maxInt(u32));
+                    },
+                }
+            },
+            else => {
+                utils.printString("Not a constant\n");
+                utils.exit(std.math.maxInt(u32));
+            },
+        }
+    }
     pub fn unwrapConstant(v: *const Value) *const Constant {
         switch (v.*) {
             .constant => |c| {
@@ -1787,14 +1805,20 @@ pub fn ifThenElse(_: *Machine, args: *LinkedValues) *const Value {
 }
 
 // Unit function
+// Our LinkedValues list stores the most-recent argument at the head, so for
+// `chooseUnit` the branch argument sits in `args.value` and the unit value is
+// at `args.next?.value`.
 pub fn chooseUnit(_: *Machine, args: *LinkedValues) *const Value {
     const then = args.value;
-    const unit = args.next.?.value;
-
-    if (!unit.isUnit()) {
-        utils.printString("Passed in non-unit value");
+    const unit_node = args.next orelse {
+        utils.printlnString("chooseUnit expects a unit argument");
         utils.exit(std.math.maxInt(u32));
-    }
+    };
+
+    // The scrutinee must still be an actual unit value, even though the branch
+    // result is returned unchanged.  `unwrapUnit` enforces that without forcing
+    // any structure on the branch argument itself (which may be non-constant).
+    _ = unit_node.value.unwrapUnit();
 
     return then;
 }
@@ -1822,6 +1846,9 @@ pub fn sndPair(_: *Machine, _: *LinkedValues) *const Value {
 }
 
 // List functions
+// In Plutus the builtin receives arguments in the order (list, nil_branch, cons_branch),
+// but our LinkedValues list is reversed (last applied argument first), so `args.value`
+// corresponds to the cons branch and `args.next?.value` to the nil branch.
 pub fn chooseList(_: *Machine, args: *LinkedValues) *const Value {
     const otherwise = args.value;
 
@@ -2137,10 +2164,7 @@ pub fn mkNilData(m: *Machine, args: *LinkedValues) *const Value {
     const unit_arg = args.value;
 
     // mkNilData takes a unit argument to fix its polymorphic type.
-    if (!unit_arg.isUnit()) {
-        utils.printlnString("mkNilData expects a unit argument");
-        utils.exit(std.math.maxInt(u32));
-    }
+    unit_arg.unwrapUnit();
 
     var result = m.heap.createArray(u32, 5);
     result[0] = 2;
