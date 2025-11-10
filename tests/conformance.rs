@@ -412,7 +412,7 @@ fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
 
 /// Configuration for running conformance tests
 struct TestConfig {
-    /// Base directory within tests/semantics/ to search
+    /// Base directory to search (relative to tests/)
     base_dir: &'static str,
     /// Optional: only run tests whose names contain this substring
     filter: Option<&'static str>,
@@ -444,7 +444,7 @@ impl TestConfig {
 
 /// Discover and run conformance tests based on configuration
 fn conformance_tests(config: TestConfig) {
-    let test_root = PathBuf::from("tests/semantics/").join(config.base_dir);
+    let test_root = PathBuf::from("tests/").join(config.base_dir);
 
     if !test_root.exists() {
         panic!("Test directory not found: {}", test_root.display());
@@ -576,84 +576,179 @@ macro_rules! conformance_test {
 
 // conformance_test!(conformance_bls12_381_millerloop, "bls12_381_millerLoop");
 
+// ===========================
+// Tests from tests/semantics/
+// ===========================
+
 // Arithmetic tests
-conformance_test!(conformance_addinteger, "addInteger");
-conformance_test!(conformance_subtractinteger, "subtractInteger");
-conformance_test!(conformance_multiplyinteger, "multiplyInteger");
-conformance_test!(conformance_divideinteger, "divideInteger");
-conformance_test!(conformance_quotientinteger, "quotientInteger");
-conformance_test!(conformance_remainderinteger, "remainderInteger");
-conformance_test!(conformance_modinteger, "modInteger");
+conformance_test!(conformance_addinteger, "semantics/addInteger");
+conformance_test!(conformance_subtractinteger, "semantics/subtractInteger");
+conformance_test!(conformance_multiplyinteger, "semantics/multiplyInteger");
+conformance_test!(conformance_divideinteger, "semantics/divideInteger");
+conformance_test!(conformance_quotientinteger, "semantics/quotientInteger");
+conformance_test!(conformance_remainderinteger, "semantics/remainderInteger");
+conformance_test!(conformance_modinteger, "semantics/modInteger");
 
 // Comparison tests
-conformance_test!(conformance_equalinteger, "equalsInteger");
-conformance_test!(conformance_lessthaninteger, "lessThanInteger");
-conformance_test!(conformance_lessthanequalinteger, "lessThanEqualsInteger");
+conformance_test!(conformance_equalinteger, "semantics/equalsInteger");
+conformance_test!(conformance_lessthaninteger, "semantics/lessThanInteger");
+conformance_test!(conformance_lessthanequalinteger, "semantics/lessThanEqualsInteger");
 
 // ByteString tests
-conformance_test!(conformance_appendbytestring, "appendByteString");
-conformance_test!(conformance_andbytestring, "andByteString");
-conformance_test!(conformance_consbytes, "consByteString");
-conformance_test!(conformance_slicebytestring, "sliceByteString");
-conformance_test!(conformance_lengthofbytestring, "lengthOfByteString");
-conformance_test!(conformance_indexbytestring, "indexByteString");
-conformance_test!(conformance_equalbytestring, "equalsByteString");
-conformance_test!(conformance_lessthanbytestring, "lessThanByteString");
+conformance_test!(conformance_appendbytestring, "semantics/appendByteString");
+conformance_test!(conformance_andbytestring, "semantics/andByteString");
+conformance_test!(conformance_consbytes, "semantics/consByteString");
+conformance_test!(conformance_slicebytestring, "semantics/sliceByteString");
+conformance_test!(conformance_lengthofbytestring, "semantics/lengthOfByteString");
+conformance_test!(conformance_indexbytestring, "semantics/indexByteString");
+conformance_test!(conformance_equalbytestring, "semantics/equalsByteString");
+conformance_test!(conformance_lessthanbytestring, "semantics/lessThanByteString");
 conformance_test!(
     conformance_lessthanequalbytestring,
-    "lessThanEqualsByteString"
+    "semantics/lessThanEqualsByteString"
 );
 
 // Cryptographic tests
-conformance_test!(conformance_sha2_256, "sha2_256");
-conformance_test!(conformance_sha3_256, "sha3_256");
-conformance_test!(conformance_blake2b_256, "blake2b_256");
-conformance_test!(conformance_verifyed25519signature, "verifyEd25519Signature");
+conformance_test!(conformance_sha2_256, "semantics/sha2_256");
+conformance_test!(conformance_sha3_256, "semantics/sha3_256");
+conformance_test!(conformance_blake2b_256, "semantics/blake2b_256");
+conformance_test!(conformance_verifyed25519signature, "semantics/verifyEd25519Signature");
 conformance_test!(
     conformance_verifyecdsasecp256k1signature,
-    "verifyEcdsaSecp256k1Signature"
+    "semantics/verifyEcdsaSecp256k1Signature"
 );
 conformance_test!(
     conformance_verifyschsnsignaturesecsp256k1,
-    "verifySchnorrSecp256k1Signature"
+    "semantics/verifySchnorrSecp256k1Signature"
 );
 
 // String tests
-conformance_test!(conformance_appendstring, "appendString");
-conformance_test!(conformance_equalsstring, "equalsString");
-conformance_test!(conformance_encode_utf8, "encodeUtf8");
-conformance_test!(conformance_decode_utf8, "decodeUtf8");
+conformance_test!(conformance_appendstring, "semantics/appendString");
+conformance_test!(conformance_equalsstring, "semantics/equalsString");
+conformance_test!(conformance_encode_utf8, "semantics/encodeUtf8");
+conformance_test!(conformance_decode_utf8, "semantics/decodeUtf8");
 
 // List tests
-conformance_test!(conformance_nulllist, "nullList");
-conformance_test!(conformance_headlist, "headList");
-conformance_test!(conformance_taillist, "tailList");
-conformance_test!(conformance_chooselist, "chooseList");
-conformance_test!(conformance_chooseunit, "chooseUnit");
+conformance_test!(conformance_nulllist, "semantics/nullList");
+conformance_test!(conformance_headlist, "semantics/headList");
+conformance_test!(conformance_taillist, "semantics/tailList");
+conformance_test!(conformance_chooselist, "semantics/chooseList");
+conformance_test!(conformance_chooseunit, "semantics/chooseUnit");
 
 // Pair tests
-conformance_test!(conformance_fstpair, "fstPair");
-conformance_test!(conformance_sndpair, "sndPair");
+conformance_test!(conformance_fstpair, "semantics/fstPair");
+conformance_test!(conformance_sndpair, "semantics/sndPair");
 
 // Data tests
-conformance_test!(conformance_choosedata, "chooseDataByteString");
-conformance_test!(conformance_choosedata_constr, "chooseDataConstr");
-conformance_test!(conformance_choosedata_integer, "chooseDataInteger");
-conformance_test!(conformance_choosedata_list, "chooseDataList");
-conformance_test!(conformance_choosedata_map, "chooseDataMap");
-conformance_test!(conformance_constrdata, "constrData");
-conformance_test!(conformance_mapdata, "mapData");
-conformance_test!(conformance_listdata, "listData");
-conformance_test!(conformance_idata, "iData");
-conformance_test!(conformance_bdata, "bData");
-conformance_test!(conformance_unconstrdata, "unConstrData");
-conformance_test!(conformance_unmapdata, "unMapData");
-conformance_test!(conformance_unlistdata, "unListData");
-conformance_test!(conformance_unidata, "unIData");
-conformance_test!(conformance_unbdata, "unBData");
-conformance_test!(conformance_equalsdata, "equalsData");
-conformance_test!(conformance_serialisedata, "serialiseData");
+conformance_test!(conformance_choosedata, "semantics/chooseDataByteString");
+conformance_test!(conformance_choosedata_constr, "semantics/chooseDataConstr");
+conformance_test!(conformance_choosedata_integer, "semantics/chooseDataInteger");
+conformance_test!(conformance_choosedata_list, "semantics/chooseDataList");
+conformance_test!(conformance_choosedata_map, "semantics/chooseDataMap");
+conformance_test!(conformance_constrdata, "semantics/constrData");
+conformance_test!(conformance_mapdata, "semantics/mapData");
+conformance_test!(conformance_listdata, "semantics/listData");
+conformance_test!(conformance_idata, "semantics/iData");
+conformance_test!(conformance_bdata, "semantics/bData");
+conformance_test!(conformance_unconstrdata, "semantics/unConstrData");
+conformance_test!(conformance_unmapdata, "semantics/unMapData");
+conformance_test!(conformance_unlistdata, "semantics/unListData");
+conformance_test!(conformance_unidata, "semantics/unIData");
+conformance_test!(conformance_unbdata, "semantics/unBData");
+conformance_test!(conformance_equalsdata, "semantics/equalsData");
+conformance_test!(conformance_serialisedata, "semantics/serialiseData");
 
 // Conversion tests
-conformance_test!(conformance_integertobytes, "integerToByteString");
-conformance_test!(conformance_bytestointeger, "byteStringToInteger");
+conformance_test!(conformance_integertobytes, "semantics/integerToByteString");
+conformance_test!(conformance_bytestointeger, "semantics/byteStringToInteger");
+
+// Bitwise ByteString tests
+conformance_test!(conformance_orbytestring, "semantics/orByteString");
+conformance_test!(conformance_xorbytestring, "semantics/xorByteString");
+conformance_test!(conformance_complementbytestring, "semantics/complementByteString");
+
+// Additional ByteString operations
+conformance_test!(conformance_rotatebytestring, "semantics/rotateByteString");
+conformance_test!(conformance_shiftbytestring, "semantics/shiftByteString");
+conformance_test!(conformance_countsetbits, "semantics/countSetBits");
+conformance_test!(conformance_find_first_set_bit, "semantics/findFirstSetBit");
+conformance_test!(conformance_readbit, "semantics/readBit");
+conformance_test!(conformance_writebits, "semantics/writeBits");
+conformance_test!(conformance_replicatebyte, "semantics/replicateByte");
+
+// Additional cryptographic hashes
+conformance_test!(conformance_blake2b_224, "semantics/blake2b_224");
+conformance_test!(conformance_keccak_256, "semantics/keccak_256");
+conformance_test!(conformance_ripemd_160, "semantics/ripemd_160");
+
+// Advanced integer operations
+conformance_test!(conformance_expmodinteger, "semantics/expModInteger");
+
+// Additional list operations
+conformance_test!(conformance_droplist, "semantics/dropList");
+conformance_test!(conformance_mkcons, "semantics/mkCons");
+conformance_test!(conformance_listoflist, "semantics/listOfList");
+conformance_test!(conformance_listofpair, "semantics/listOfPair");
+
+// Array operations
+conformance_test!(conformance_indexarray, "semantics/indexArray");
+conformance_test!(conformance_lengthofarray, "semantics/lengthOfArray");
+conformance_test!(conformance_listtoarray, "semantics/listToArray");
+
+// Additional Data constructors
+conformance_test!(conformance_mknildata, "semantics/mkNilData");
+conformance_test!(conformance_mknilpairdata, "semantics/mkNilPairData");
+conformance_test!(conformance_mkpairdata, "semantics/mkPairData");
+conformance_test!(conformance_pairofpairandlist, "semantics/pairOfPairAndList");
+
+// Control flow
+conformance_test!(conformance_ifthenelse, "semantics/ifThenElse");
+conformance_test!(conformance_trace, "semantics/trace");
+
+// Value operations (Cardano-specific)
+conformance_test!(conformance_insertcoin, "semantics/insertCoin");
+conformance_test!(conformance_lookupcoin, "semantics/lookupCoin");
+conformance_test!(conformance_scalevalue, "semantics/scaleValue");
+conformance_test!(conformance_unionvalue, "semantics/unionValue");
+conformance_test!(conformance_valuecontains, "semantics/valueContains");
+
+// Additional integer test variations
+conformance_test!(conformance_subtractinteger_non_iter, "semantics/subtractInteger-non-iter");
+
+// =============================
+// Tests from conformance/v2/
+// =============================
+
+// v2 builtin constant tests
+conformance_test!(conformance_v2_builtin_constant, "conformance/v2/builtin/constant");
+
+// v2 builtin interleaving tests
+conformance_test!(conformance_v2_builtin_interleaving, "conformance/v2/builtin/interleaving");
+
+// v2 builtin semantics tests
+conformance_test!(conformance_v2_builtin_semantics, "conformance/v2/builtin/semantics");
+
+// v2 example tests
+conformance_test!(conformance_v2_example, "conformance/v2/example");
+
+// v2 term tests
+conformance_test!(conformance_v2_term, "conformance/v2/term");
+
+// =============================
+// Tests from conformance/v3/
+// =============================
+
+// v3 builtin constant tests
+conformance_test!(conformance_v3_builtin_constant, "conformance/v3/builtin/constant");
+
+// v3 builtin interleaving tests
+conformance_test!(conformance_v3_builtin_interleaving, "conformance/v3/builtin/interleaving");
+
+// v3 builtin semantics tests
+conformance_test!(conformance_v3_builtin_semantics, "conformance/v3/builtin/semantics");
+
+// v3 example tests
+conformance_test!(conformance_v3_example, "conformance/v3/example");
+
+// v3 term tests
+conformance_test!(conformance_v3_term, "conformance/v3/term");
