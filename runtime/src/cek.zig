@@ -2261,8 +2261,389 @@ pub fn unBData(_: *Machine, _: *LinkedValues) *const Value {
     @panic("TODO");
 }
 
-pub fn equalsData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+const SerializedView = struct {
+    words: [*]const u32,
+    len: u32,
+};
+
+const SerializedOwnedView = struct {
+    words: [*]u32,
+    len: u32,
+};
+
+const DataView = union(enum) {
+    runtime: *const Data,
+    serialized: SerializedView,
+};
+
+pub fn equalsData(m: *Machine, args: *LinkedValues) *const Value {
+    const rhs_const = args.value.unwrapConstant();
+    const lhs_const = args.next.?.value.unwrapConstant();
+
+    const result = dataConstantsEqual(m.heap, lhs_const, rhs_const);
+
+    var bool_result = m.heap.createArray(u32, 4);
+    bool_result[0] = 1;
+    bool_result[1] = @intFromPtr(ConstantType.booleanType());
+    bool_result[2] = @intFromPtr(bool_result + 3);
+    bool_result[3] = @intFromBool(result);
+
+    return createConst(m.heap, @ptrCast(bool_result));
+}
+
+fn dataConstantsEqual(heap: *Heap, lhs: *const Constant, rhs: *const Constant) bool {
+    const lhs_view = classifyDataConstant(lhs);
+    const rhs_view = classifyDataConstant(rhs);
+
+    return switch (lhs_view) {
+        .runtime => |lhs_data| switch (rhs_view) {
+            .runtime => |rhs_data| heapDataEqual(lhs_data, rhs_data),
+            .serialized => |rhs_ser| serializedEqualsRuntime(heap, rhs_ser, lhs_data),
+        },
+        .serialized => |lhs_ser| switch (rhs_view) {
+            .runtime => |rhs_data| serializedEqualsRuntime(heap, lhs_ser, rhs_data),
+            .serialized => |rhs_ser| serializedViewsEqual(lhs_ser, rhs_ser),
+        },
+    };
+}
+
+fn classifyDataConstant(con: *const Constant) DataView {
+    const uses_runtime_layout = @intFromPtr(con.type_list) == runtimeDataTypeAddr();
+    if (uses_runtime_layout) {
+        if (con.constType().* != .data) {
+            utils.printlnString("equalsData expects Data constants");
+            utils.exit(std.math.maxInt(u32));
+        }
+
+        const ptr = con.rawValue();
+        if (ptr == 0) {
+            utils.printlnString("equalsData received null Data pointer");
+            utils.exit(std.math.maxInt(u32));
+        }
+        return .{ .runtime = @ptrFromInt(ptr) };
+    }
+
+    if (con.length != serialized_data_const_tag) {
+        utils.printlnString("equalsData expects Data constants");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    const len_words: u32 = @intCast(@intFromPtr(con.type_list));
+    const data_ptr = con.rawValue();
+    if (data_ptr == 0) {
+        utils.printlnString("equalsData received null serialized Data payload");
+        utils.exit(std.math.maxInt(u32));
+    }
+
+    return .{
+        .serialized = .{
+            .words = @ptrFromInt(data_ptr),
+            .len = len_words,
+        },
+    };
+}
+
+fn serializedViewsEqual(a: SerializedView, b: SerializedView) bool {
+    if (a.len != b.len) return false;
+
+    var i: u32 = 0;
+    while (i < a.len) : (i += 1) {
+        if (a.words[i] != b.words[i]) return false;
+    }
+    return true;
+}
+
+fn serializedEqualsRuntime(heap: *Heap, serialized: SerializedView, runtime_data: *const Data) bool {
+    const encoded = serializeRuntimeData(heap, runtime_data);
+    defer heap.reclaimHeap(u32, encoded.len);
+    return serializedViewsEqual(
+        .{ .words = encoded.words, .len = encoded.len },
+        serialized,
+    );
+}
+
+fn serializeRuntimeData(heap: *Heap, data: *const Data) SerializedOwnedView {
+    const word_count = dataSerializedWordCount(data);
+    const buffer = heap.createArray(u32, word_count);
+    var writer = PayloadWriter.init(buffer, word_count);
+
+    writeSerializedData(&writer, data);
+
+    return .{ .words = buffer, .len = word_count };
+}
+
+fn writeSerializedData(writer: *PayloadWriter, data: *const Data) void {
+    switch (data.*) {
+        .constr => |payload| {
+            writer.writeU32(data_tag_constr);
+            writer.writeU32(encodeConstrTag(payload.tag));
+            writer.writeU32(countDataList(payload.fields));
+
+            var node = payload.fields;
+            while (node) |field| {
+                const nested_words = dataSerializedWordCount(field.value);
+                writer.writeU32(nested_words);
+                writeSerializedData(writer, field.value);
+                node = field.next;
+            }
+        },
+        .map => |pairs| {
+            writer.writeU32(data_tag_map);
+            writer.writeU32(countDataPairs(pairs));
+
+            var node = pairs;
+            while (node) |pair| {
+                const key_words = dataSerializedWordCount(pair.key);
+                writer.writeU32(key_words);
+                writeSerializedData(writer, pair.key);
+
+                const value_words = dataSerializedWordCount(pair.value);
+                writer.writeU32(value_words);
+                writeSerializedData(writer, pair.value);
+
+                node = pair.next;
+            }
+        },
+        .list => |list_head| {
+            writer.writeU32(data_tag_list);
+            writer.writeU32(countDataList(list_head));
+
+            var node = list_head;
+            while (node) |elem| {
+                const nested_words = dataSerializedWordCount(elem.value);
+                writer.writeU32(nested_words);
+                writeSerializedData(writer, elem.value);
+                node = elem.next;
+            }
+        },
+        .integer => |int_val| {
+            writer.writeU32(data_tag_integer);
+            encodeBigInt(writer, int_val);
+        },
+        .bytes => |bytes_val| {
+            writer.writeU32(data_tag_bytes);
+            encodeBytes(writer, bytes_val);
+        },
+    }
+}
+
+const data_tag_constr: u32 = 0;
+const data_tag_map: u32 = 1;
+const data_tag_list: u32 = 2;
+const data_tag_integer: u32 = 3;
+const data_tag_bytes: u32 = 4;
+
+fn encodeConstrTag(tag: u32) u32 {
+    if (tag < 7) return 121 + tag;
+    return 1280 + (tag - 7);
+}
+
+fn dataSerializedWordCount(data: *const Data) u32 {
+    return switch (data.*) {
+        .constr => blk: {
+            var total: u32 = 3; // variant tag, encoded tag, field count
+            var node = data.constr.fields;
+            while (node) |field| {
+                total += 1; // field length prefix
+                total += dataSerializedWordCount(field.value);
+                node = field.next;
+            }
+            break :blk total;
+        },
+        .map => blk: {
+            var total: u32 = 2; // variant tag + pair count
+            var node = data.map;
+            while (node) |pair| {
+                total += 1;
+                total += dataSerializedWordCount(pair.key);
+                total += 1;
+                total += dataSerializedWordCount(pair.value);
+                node = pair.next;
+            }
+            break :blk total;
+        },
+        .list => blk: {
+            var total: u32 = 2; // variant tag + element count
+            var node = data.list;
+            while (node) |elem| {
+                total += 1;
+                total += dataSerializedWordCount(elem.value);
+                node = elem.next;
+            }
+            break :blk total;
+        },
+        .integer => blk: {
+            const byte_len: u32 = data.integer.length * 4;
+            const total_bytes = 4 + 1 + 4 + byte_len;
+            break :blk bytesToWords(total_bytes);
+        },
+        .bytes => blk: {
+            const byte_len = data.bytes.length;
+            const total_bytes = 4 + 4 + byte_len;
+            break :blk bytesToWords(total_bytes);
+        },
+    };
+}
+
+fn bytesToWords(byte_len: u32) u32 {
+    if (byte_len == 0) return 0;
+    return (byte_len + 3) / 4;
+}
+
+const PayloadWriter = struct {
+    bytes: [*]u8,
+    total_bytes: u32,
+    offset: u32,
+
+    fn init(dst_words: [*]u32, len_words: u32) PayloadWriter {
+        var i: u32 = 0;
+        while (i < len_words) : (i += 1) {
+            dst_words[i] = 0;
+        }
+        return .{
+            .bytes = @ptrCast(dst_words),
+            .total_bytes = len_words * 4,
+            .offset = 0,
+        };
+    }
+
+    fn writeU32(self: *PayloadWriter, value: u32) void {
+        var buf = value;
+        self.writeBytes(std.mem.asBytes(&buf));
+    }
+
+    fn writeByte(self: *PayloadWriter, value: u8) void {
+        if (self.offset == self.total_bytes) {
+            utils.printlnString("serialized runtime data overflow");
+            utils.exit(std.math.maxInt(u32));
+        }
+        const idx: usize = @intCast(self.offset);
+        self.bytes[idx] = value;
+        self.offset += 1;
+    }
+
+    fn writeBytes(self: *PayloadWriter, data: []const u8) void {
+        if (data.len == 0) return;
+        const seg_len: u32 = @intCast(data.len);
+        if (self.offset + seg_len > self.total_bytes) {
+            utils.printlnString("serialized runtime data overflow");
+            utils.exit(std.math.maxInt(u32));
+        }
+        const start: usize = @intCast(self.offset);
+        const dst = self.bytes[start .. start + data.len];
+        @memcpy(dst, data);
+        self.offset += seg_len;
+    }
+};
+
+fn encodeBigInt(writer: *PayloadWriter, int_val: BigInt) void {
+    writer.writeByte(@intFromBool(int_val.sign != 0));
+    const byte_len: u32 = int_val.length * 4;
+    writer.writeU32(byte_len);
+
+    var i: u32 = 0;
+    while (i < int_val.length) : (i += 1) {
+        writer.writeU32(int_val.words[i]);
+    }
+}
+
+fn encodeBytes(writer: *PayloadWriter, bytes_val: Bytes) void {
+    writer.writeU32(bytes_val.length);
+    var i: u32 = 0;
+    while (i < bytes_val.length) : (i += 1) {
+        writer.writeByte(@truncate(bytes_val.bytes[i]));
+    }
+}
+
+fn heapDataEqual(lhs: *const Data, rhs: *const Data) bool {
+    const tag_lhs = std.meta.activeTag(lhs.*);
+    const tag_rhs = std.meta.activeTag(rhs.*);
+    if (tag_lhs != tag_rhs) return false;
+
+    return switch (tag_lhs) {
+        .constr => lhs.constr.tag == rhs.constr.tag and
+            dataListEqual(lhs.constr.fields, rhs.constr.fields),
+        .map => dataPairEqual(lhs.map, rhs.map),
+        .list => dataListEqual(lhs.list, rhs.list),
+        .integer => bigIntEqual(lhs.integer, rhs.integer),
+        .bytes => bytesEqual(lhs.bytes, rhs.bytes),
+    };
+}
+
+fn dataListEqual(a: ?*DataListNode, b: ?*DataListNode) bool {
+    var left = a;
+    var right = b;
+
+    while (true) {
+        if (left == null and right == null) return true;
+        if (left == null or right == null) return false;
+
+        const lhs_node = left.?;
+        const rhs_node = right.?;
+        if (!heapDataEqual(lhs_node.value, rhs_node.value)) return false;
+
+        left = lhs_node.next;
+        right = rhs_node.next;
+    }
+}
+
+fn dataPairEqual(a: ?*DataPairNode, b: ?*DataPairNode) bool {
+    var left = a;
+    var right = b;
+
+    while (true) {
+        if (left == null and right == null) return true;
+        if (left == null or right == null) return false;
+
+        const lhs_node = left.?;
+        const rhs_node = right.?;
+        if (!heapDataEqual(lhs_node.key, rhs_node.key)) return false;
+        if (!heapDataEqual(lhs_node.value, rhs_node.value)) return false;
+
+        left = lhs_node.next;
+        right = rhs_node.next;
+    }
+}
+
+fn bigIntEqual(a: BigInt, b: BigInt) bool {
+    if (a.sign != b.sign) return false;
+    if (a.length != b.length) return false;
+
+    var i: u32 = 0;
+    while (i < a.length) : (i += 1) {
+        if (a.words[i] != b.words[i]) return false;
+    }
+    return true;
+}
+
+fn bytesEqual(a: Bytes, b: Bytes) bool {
+    if (a.length != b.length) return false;
+
+    var i: u32 = 0;
+    while (i < a.length) : (i += 1) {
+        if (a.bytes[i] != b.bytes[i]) return false;
+    }
+    return true;
+}
+
+fn countDataList(head: ?*DataListNode) u32 {
+    var count: u32 = 0;
+    var cursor = head;
+    while (cursor) |node| {
+        count += 1;
+        cursor = node.next;
+    }
+    return count;
+}
+
+fn countDataPairs(head: ?*DataPairNode) u32 {
+    var count: u32 = 0;
+    var cursor = head;
+    while (cursor) |node| {
+        count += 1;
+        cursor = node.next;
+    }
+    return count;
 }
 
 // Misc constructors
