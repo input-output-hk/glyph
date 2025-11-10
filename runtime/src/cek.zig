@@ -1949,6 +1949,8 @@ pub fn chooseData(_: *Machine, args: *LinkedValues) *const Value {
     };
 }
 
+const serialized_data_const_tag: u32 = 0x05; // Mirrors serializer/constants.rs::const_tag::DATA
+
 fn decodeDataVariant(con: *const Constant) DataTag {
     const raw_ptr = con.rawValue();
     if (raw_ptr == 0) {
@@ -1959,6 +1961,11 @@ fn decodeDataVariant(con: *const Constant) DataTag {
     const uses_runtime_layout = @intFromPtr(con.type_list) == runtimeDataTypeAddr();
     // Serialized constants keep an embedded payload instead of referencing the shared type.
     if (!uses_runtime_layout) {
+        if (con.length != serialized_data_const_tag) {
+            utils.printlnString("chooseData expects a Data constant");
+            utils.exit(std.math.maxInt(u32));
+        }
+
         // Serialized constants store the Data payload inline after the header.
         return readSerializedDataTag(raw_ptr);
     }
@@ -2001,8 +2008,72 @@ fn tagFromWord(raw: u32) DataTag {
     };
 }
 
-pub fn constrData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn constrData(m: *Machine, args: *LinkedValues) *const Value {
+    // First arg: list of Data (fields)
+    const fields_list = args.value.unwrapList();
+
+    // Second arg: integer (constructor tag)
+    const tag_int = args.next.?.value.unwrapInteger();
+
+    // Convert integer to u32 tag
+    if (tag_int.sign == 1 or tag_int.length > 1) {
+        utils.printlnString("constrData: tag must be a non-negative integer that fits in u32");
+        utils.exit(std.math.maxInt(u32));
+    }
+    const tag: u32 = tag_int.words[0];
+
+    // Convert List<Data> to DataListNode chain
+    var data_list_head: ?*DataListNode = null;
+    var current_list_node = fields_list.items;
+
+    // Build the DataListNode chain in reverse by prepending
+    while (current_list_node) |node| {
+        // Each ListNode.value is a u32 pointer to a Constant
+        // The Constant.value is a pointer to the Data
+        const const_ptr: *const Constant = @ptrFromInt(node.value);
+        const data_ptr: *const Data = @ptrFromInt(const_ptr.value);
+
+        // Create new DataListNode
+        const data_node = m.heap.create(DataListNode, &DataListNode{
+            .value = data_ptr,
+            .next = data_list_head,
+        });
+        data_list_head = data_node;
+
+        current_list_node = node.next;
+    }
+
+    // Reverse the list to maintain original order
+    var reversed_head: ?*DataListNode = null;
+    var current = data_list_head;
+    while (current) |node| {
+        const next = node.next;
+        const new_node = m.heap.create(DataListNode, &DataListNode{
+            .value = node.value,
+            .next = reversed_head,
+        });
+        reversed_head = new_node;
+        current = next;
+    }
+
+    // Create ConstrData
+    const constr_payload = ConstrData{
+        .tag = tag,
+        .fields = reversed_head,
+    };
+
+    // Create Data union with constr variant
+    const data = Data{ .constr = constr_payload };
+    const data_ptr = m.heap.create(Data, &data);
+
+    // Create Constant wrapping the Data
+    const con = Constant{
+        .length = 1,
+        .type_list = dataTypePtr(),
+        .value = @intFromPtr(data_ptr),
+    };
+
+    return createConst(m.heap, m.heap.create(Constant, &con));
 }
 
 pub fn mapData(_: *Machine, _: *LinkedValues) *const Value {
