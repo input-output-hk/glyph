@@ -2383,13 +2383,19 @@ pub fn decodeUtf8(m: *Machine, args: *LinkedValues) *const Value {
 pub fn ifThenElse(_: *Machine, args: *LinkedValues) *const Value {
     const otherwise = args.value;
     const then = args.next.?.value;
-    const cond = args.next.?.next.?.value.unwrapBool();
+    const cond_value = args.next.?.next.?.value;
 
-    if (cond) {
-        return then;
-    } else {
-        return otherwise;
-    }
+    // Avoid unwrapBool so invalid inputs trigger a silent evaluation failure
+    // instead of touching the (unimplemented) debug console.
+    const cond = switch (cond_value.*) {
+        .constant => |c| switch (c.constType().*) {
+            .boolean => c.bln(),
+            else => builtinEvaluationFailure(),
+        },
+        else => builtinEvaluationFailure(),
+    };
+
+    return if (cond) then else otherwise;
 }
 
 // Unit function
@@ -2493,10 +2499,10 @@ pub fn mkCons(m: *Machine, args: *LinkedValues) *const Value {
         result[4] = @intFromPtr(node);
 
         return createConst(m.heap, @ptrCast(result));
-    } else {
-        utils.printlnString("item does not match list type");
-        utils.exit(std.math.maxInt(u32));
     }
+
+    // mkCons is partial: mismatched element types must signal an evaluation failure.
+    builtinEvaluationFailure();
 }
 
 pub fn headList(m: *Machine, args: *LinkedValues) *const Value {
@@ -3826,8 +3832,21 @@ pub fn mkNilData(m: *Machine, args: *LinkedValues) *const Value {
     return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn mkNilPairData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn mkNilPairData(m: *Machine, args: *LinkedValues) *const Value {
+    const unit_arg = args.value;
+    unit_arg.unwrapUnit();
+
+    const payload = m.heap.createArray(u32, 2);
+    payload[0] = 0;
+    payload[1] = 0;
+
+    const list_const = Constant{
+        .length = @intCast(DataPairListTypeDescriptor.len),
+        .type_list = @ptrCast(&DataPairListTypeDescriptor),
+        .value = @intFromPtr(payload),
+    };
+
+    return createConst(m.heap, m.heap.create(Constant, &list_const));
 }
 
 pub fn serialiseData(_: *Machine, _: *LinkedValues) *const Value {
@@ -4681,12 +4700,58 @@ pub fn andByteString(m: *Machine, args: *LinkedValues) *const Value {
     return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn orByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn orByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const rhs = args.value.unwrapBytestring();
+    const lhs = args.next.?.value.unwrapBytestring();
+    const pad_to_max = args.next.?.next.?.value.unwrapBool();
+
+    const min_len = @min(lhs.length, rhs.length);
+    const max_len = @max(lhs.length, rhs.length);
+    const result_len = if (pad_to_max) max_len else min_len;
+
+    var result = m.heap.createArray(u32, result_len + 4);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.bytesType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = result_len;
+
+    var out_bytes = result + 4;
+    var i: u32 = 0;
+    while (i < result_len) : (i += 1) {
+        // Padding with zeroes leaves the longer operand unchanged.
+        const lhs_byte: u32 = if (i < lhs.length) lhs.bytes[i] & 0xFF else 0;
+        const rhs_byte: u32 = if (i < rhs.length) rhs.bytes[i] & 0xFF else 0;
+        out_bytes[i] = lhs_byte | rhs_byte;
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn xorByteString(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn xorByteString(m: *Machine, args: *LinkedValues) *const Value {
+    const rhs = args.value.unwrapBytestring();
+    const lhs = args.next.?.value.unwrapBytestring();
+    const pad_to_max = args.next.?.next.?.value.unwrapBool();
+
+    const min_len = @min(lhs.length, rhs.length);
+    const max_len = @max(lhs.length, rhs.length);
+    const result_len = if (pad_to_max) max_len else min_len;
+
+    var result = m.heap.createArray(u32, result_len + 4);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.bytesType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = result_len;
+
+    var out_bytes = result + 4;
+    var i: u32 = 0;
+    while (i < result_len) : (i += 1) {
+        // Zero-extension preserves the longer operand when padding.
+        const lhs_byte: u32 = if (i < lhs.length) lhs.bytes[i] & 0xFF else 0;
+        const rhs_byte: u32 = if (i < rhs.length) rhs.bytes[i] & 0xFF else 0;
+        out_bytes[i] = lhs_byte ^ rhs_byte;
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn complementByteString(m: *Machine, args: *LinkedValues) *const Value {
@@ -4707,16 +4772,75 @@ pub fn complementByteString(m: *Machine, args: *LinkedValues) *const Value {
     return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn readBit(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn readBit(m: *Machine, args: *LinkedValues) *const Value {
+    const index = args.value.unwrapInteger();
+    const bytes = args.next.?.value.unwrapBytestring();
+
+    if (index.sign == 1 or index.length > 1) {
+        builtinEvaluationFailure();
+    }
+
+    const idx: u64 = if (index.length == 0) 0 else index.words[0];
+    const total_bits: u64 = @as(u64, bytes.length) * 8;
+
+    if (idx >= total_bits) {
+        builtinEvaluationFailure();
+    }
+
+    const byte_from_lsb: u32 = @intCast(idx / 8);
+    const bit_offset: u3 = @intCast(idx % 8);
+    const byte_index: u32 = bytes.length - 1 - byte_from_lsb;
+    const byte_value: u8 = @as(u8, @truncate(bytes.bytes[byte_index]));
+    // Bits are numbered from the least-significant end of the byte string.
+    const bit_is_set = ((byte_value >> bit_offset) & 1) == 1;
+
+    var result = m.heap.createArray(u32, 4);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.booleanType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = @intFromBool(bit_is_set);
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 pub fn writeBits(_: *Machine, _: *LinkedValues) *const Value {
     @panic("TODO");
 }
 
-pub fn replicateByte(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn replicateByte(m: *Machine, args: *LinkedValues) *const Value {
+    const byte_val = args.value.unwrapInteger();
+    const count_val = args.next.?.value.unwrapInteger();
+
+    if (count_val.sign == 1 or count_val.length > 1) {
+        builtinEvaluationFailure();
+    }
+    const count: u32 = if (count_val.length == 0) 0 else count_val.words[0];
+    if (count > 8192) {
+        builtinEvaluationFailure();
+    }
+
+    if (byte_val.sign == 1 or byte_val.length > 1) {
+        builtinEvaluationFailure();
+    }
+    const byte_word: u32 = if (byte_val.length == 0) 0 else byte_val.words[0];
+    if (byte_word > 255) {
+        builtinEvaluationFailure();
+    }
+
+    var result = m.heap.createArray(u32, count + 4);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.bytesType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = count;
+
+    // Replication is capped at 8192 bytes by the Plutus spec.
+    var out = result + 4;
+    var i: u32 = 0;
+    while (i < count) : (i += 1) {
+        out[i] = byte_word;
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
 // Bitwise
@@ -4728,12 +4852,82 @@ pub fn rotateByteString(_: *Machine, _: *LinkedValues) *const Value {
     @panic("TODO");
 }
 
-pub fn countSetBits(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn countSetBits(m: *Machine, args: *LinkedValues) *const Value {
+    const bytes = args.value.unwrapBytestring();
+
+    var total: u64 = 0;
+    var i: u32 = 0;
+    while (i < bytes.length) : (i += 1) {
+        var byte = @as(u8, @truncate(bytes.bytes[i]));
+        while (byte != 0) {
+            total += @as(u64, byte & 1);
+            byte >>= 1;
+        }
+    }
+
+    if (total == 0) {
+        const zero = [_]u32{0};
+        return createIntegerValueFromLimbs(m, zero[0..1], true);
+    }
+
+    if (total <= std.math.maxInt(u32)) {
+        const limbs = [_]u32{@intCast(total)};
+        return createIntegerValueFromLimbs(m, limbs[0..1], true);
+    }
+
+    // Result fits in 64 bits (at most 8 * bytes.length), so two limbs are sufficient.
+    const limbs = [_]u32{
+        @intCast(total & 0xFFFF_FFFF),
+        @intCast(total >> 32),
+    };
+    return createIntegerValueFromLimbs(m, limbs[0..2], true);
 }
 
-pub fn findFirstSetBit(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn findFirstSetBit(m: *Machine, args: *LinkedValues) *const Value {
+    const bytes = args.value.unwrapBytestring();
+    const negative_one = [_]u32{1};
+
+    if (bytes.length == 0) {
+        return createIntegerValueFromLimbs(m, negative_one[0..1], false);
+    }
+
+    var idx = bytes.length;
+    while (idx > 0) {
+        idx -= 1;
+        const byte = @as(u8, @truncate(bytes.bytes[idx]));
+        if (byte == 0) continue;
+
+        // ByteStrings are big-endian, so walk from the least-significant byte (end)
+        // towards the start until we see the first set bit.
+        var tz: u32 = 0;
+        var shifted = byte;
+        while ((shifted & 1) == 0) {
+            shifted >>= 1;
+            tz += 1;
+        }
+
+        const trailing_bytes: u64 = @intCast(bytes.length - 1 - idx);
+        const bit_index: u64 = trailing_bytes * 8 + @as(u64, tz);
+
+        if (bit_index == 0) {
+            const zero = [_]u32{0};
+            return createIntegerValueFromLimbs(m, zero[0..1], true);
+        }
+
+        if (bit_index <= std.math.maxInt(u32)) {
+            const limbs = [_]u32{@intCast(bit_index)};
+            return createIntegerValueFromLimbs(m, limbs[0..1], true);
+        }
+
+        // Result fits in 64 bits (at most 8 * bytes.length), so two limbs are sufficient.
+        const limbs = [_]u32{
+            @intCast(bit_index & 0xFFFF_FFFF),
+            @intCast(bit_index >> 32),
+        };
+        return createIntegerValueFromLimbs(m, limbs[0..2], true);
+    }
+
+    return createIntegerValueFromLimbs(m, negative_one[0..1], false);
 }
 
 // Ripemd_160
@@ -4994,8 +5188,7 @@ pub const Machine = struct {
             },
 
             .terror => {
-                utils.printString("Eval Failure\n");
-                utils.exit(std.math.maxInt(u32));
+                builtinEvaluationFailure();
             },
 
             .builtin => return State{
@@ -5181,8 +5374,7 @@ pub const Machine = struct {
 
             .builtin => |b| {
                 if (b.force_count == 0) {
-                    utils.printString("builtin term argument expected");
-                    utils.exit(std.math.maxInt(u32));
+                    builtinEvaluationFailure();
                 }
 
                 return State{
@@ -5192,8 +5384,7 @@ pub const Machine = struct {
                 };
             },
             else => {
-                utils.printString("non-polymorphic instantiation");
-                utils.exit(std.math.maxInt(u32));
+                builtinEvaluationFailure();
             },
         }
     }
@@ -5221,13 +5412,11 @@ pub const Machine = struct {
 
             .builtin => |b| {
                 if (b.force_count != 0) {
-                    utils.printString("unexpected built-in term argument");
-                    utils.exit(std.math.maxInt(u32));
+                    builtinEvaluationFailure();
                 }
 
                 if (b.arity == 0) {
-                    utils.printString("unexpected built-in term argument");
-                    utils.exit(std.math.maxInt(u32));
+                    builtinEvaluationFailure();
                 }
 
                 const nextArity = b.arity - 1;
@@ -5266,8 +5455,7 @@ pub const Machine = struct {
             },
 
             else => {
-                utils.printString("apply on non-callable");
-                utils.exit(std.math.maxInt(u32));
+                builtinEvaluationFailure();
             },
         }
     }
