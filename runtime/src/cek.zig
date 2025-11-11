@@ -3787,8 +3787,27 @@ fn countDataPairs(head: ?*DataPairNode) u32 {
 }
 
 // Misc constructors
-pub fn mkPairData(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn mkPairData(m: *Machine, args: *LinkedValues) *const Value {
+    // LinkedValues stores the most recently applied argument first, so the
+    // first component lives in `args.next`.
+    const second = args.value.unwrapConstant();
+    ensureDataConstant(second, "mkPairData expects Data constants");
+
+    const first = args.next.?.value.unwrapConstant();
+    ensureDataConstant(first, "mkPairData expects Data constants");
+
+    const payload = m.heap.create(PairPayload, &PairPayload{
+        .first = first.rawValue(),
+        .second = second.rawValue(),
+    });
+
+    const con = Constant{
+        .length = @intCast(DataPairTypeDescriptor.len),
+        .type_list = @ptrCast(&DataPairTypeDescriptor),
+        .value = @intFromPtr(payload),
+    };
+
+    return createConst(m.heap, m.heap.create(Constant, &con));
 }
 
 pub fn mkNilData(m: *Machine, args: *LinkedValues) *const Value {
