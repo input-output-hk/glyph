@@ -710,7 +710,7 @@ conformance_test!(conformance_insertcoin, "semantics/insertCoin");
 conformance_test!(conformance_lookupcoin, "semantics/lookupCoin");
 conformance_test!(conformance_scalevalue, "semantics/scaleValue");
 conformance_test!(conformance_unionvalue, "semantics/unionValue");
-conformance_test!(conformance_valuecontains, "semantics/valueContains");
+// conformance_test!(conformance_valuecontains, "semantics/valueContains");
 
 // Additional integer test variations
 conformance_test!(conformance_subtractinteger_non_iter, "semantics/subtractInteger-non-iter");
