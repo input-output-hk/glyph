@@ -1808,11 +1808,11 @@ const sha256_round_constants = [64]u32{
 const sha3_rate_bytes: usize = 136;
 
 const keccak_rho_offsets = [25]u8{
-     0,  1, 62, 28, 27,
-    36, 44,  6, 55, 20,
-     3, 10, 43, 25, 39,
-    41, 45, 15, 21,  8,
-    18,  2, 61, 56, 14,
+    0,  1,  62, 28, 27,
+    36, 44, 6,  55, 20,
+    3,  10, 43, 25, 39,
+    41, 45, 15, 21, 8,
+    18, 2,  61, 56, 14,
 };
 
 const keccak_round_constants = [24]u64{
@@ -1845,6 +1845,12 @@ const keccak_round_constants = [24]u64{
 inline fn rotl64(val: u64, shift: u6) u64 {
     if (shift == 0) return val; // avoid undefined >> 64 when rho offset is zero
     const inv: u6 = @intCast(@as(u7, 64) - @as(u7, shift));
+    return (val << shift) | (val >> inv);
+}
+
+inline fn rotl32(val: u32, shift: u5) u32 {
+    if (shift == 0) return val;
+    const inv: u5 = @intCast(@as(u6, 32) - @as(u6, shift));
     return (val << shift) | (val >> inv);
 }
 
@@ -1926,10 +1932,18 @@ const Sha3_256Ctx = struct {
     }
 
     pub fn finalize(self: *Sha3_256Ctx, out: *[32]u8) void {
+        self.finalizeWithSuffix(out, 0x06);
+    }
+
+    pub fn finalizeKeccak(self: *Sha3_256Ctx, out: *[32]u8) void {
+        // Raw Keccak-256 (as used by Plutus) uses the 0x01 domain suffix.
+        self.finalizeWithSuffix(out, 0x01);
+    }
+
+    fn finalizeWithSuffix(self: *Sha3_256Ctx, out: *[32]u8, suffix: u8) void {
         const lane_index = self.pos / 8;
         const lane_shift: u6 = @intCast((self.pos % 8) * 8);
-        // SHA3-256 uses the 0x06 domain suffix followed by the mandatory 1-bit trailer.
-        self.state[lane_index] ^= @as(u64, 0x06) << lane_shift;
+        self.state[lane_index] ^= @as(u64, suffix) << lane_shift;
 
         const last_index = (sha3_rate_bytes - 1) / 8;
         const last_shift: u6 = @intCast(((sha3_rate_bytes - 1) % 8) * 8);
@@ -2032,8 +2046,196 @@ pub fn sha3_256(m: *Machine, args: *LinkedValues) *const Value {
     return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn blake2b_256(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+const blake2b_iv = [_]u64{
+    0x6a09e667f3bcc908,
+    0xbb67ae8584caa73b,
+    0x3c6ef372fe94f82b,
+    0xa54ff53a5f1d36f1,
+    0x510e527fade682d1,
+    0x9b05688c2b3e6c1f,
+    0x1f83d9abfb41bd6b,
+    0x5be0cd19137e2179,
+};
+
+const blake2b_sigma = [_][16]u8{
+    [_]u8{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 },
+    [_]u8{ 14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3 },
+    [_]u8{ 11, 8, 12, 0, 5, 2, 15, 13, 10, 14, 3, 6, 7, 1, 9, 4 },
+    [_]u8{ 7, 9, 3, 1, 13, 12, 11, 14, 2, 6, 5, 10, 4, 0, 15, 8 },
+    [_]u8{ 9, 0, 5, 7, 2, 4, 10, 15, 14, 1, 11, 12, 6, 8, 3, 13 },
+    [_]u8{ 2, 12, 6, 10, 0, 11, 8, 3, 4, 13, 7, 5, 15, 14, 1, 9 },
+    [_]u8{ 12, 5, 1, 15, 14, 13, 4, 10, 0, 7, 6, 3, 9, 2, 8, 11 },
+    [_]u8{ 13, 11, 7, 14, 12, 1, 3, 9, 5, 0, 15, 4, 8, 6, 2, 10 },
+    [_]u8{ 6, 15, 14, 9, 11, 3, 0, 8, 12, 2, 13, 7, 1, 4, 10, 5 },
+    [_]u8{ 10, 2, 8, 4, 7, 6, 1, 5, 15, 11, 9, 14, 3, 12, 13, 0 },
+    [_]u8{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 },
+    [_]u8{ 14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3 },
+};
+
+const Blake2bCtx = struct {
+    h: [8]u64,
+    t: [2]u64,
+    buf: [128]u8,
+    buf_len: usize,
+    out_len: usize,
+
+    fn init(out_len: usize) Blake2bCtx {
+        var ctx = Blake2bCtx{
+            .h = blake2b_iv,
+            .t = .{ 0, 0 },
+            .buf = [_]u8{0} ** 128,
+            .buf_len = 0,
+            .out_len = out_len,
+        };
+        ctx.h[0] ^= 0x01010000 ^ @as(u64, @intCast(out_len));
+        return ctx;
+    }
+
+    fn update(self: *Blake2bCtx, data: []const u8) void {
+        var offset: usize = 0;
+        while (offset < data.len) {
+            if (self.buf_len == self.buf.len) {
+                self.addCounter(self.buf.len);
+                self.compress(self.buf[0..], false);
+                self.buf_len = 0;
+            }
+
+            const space = self.buf.len - self.buf_len;
+            const take = @min(space, data.len - offset);
+            @memcpy(
+                self.buf[self.buf_len .. self.buf_len + take],
+                data[offset .. offset + take],
+            );
+            self.buf_len += take;
+            offset += take;
+        }
+    }
+
+    fn final(self: *Blake2bCtx, out: []u8) void {
+        @memset(self.buf[self.buf_len..], 0);
+        self.addCounter(self.buf_len);
+        self.compress(self.buf[0..], true);
+
+        var i: usize = 0;
+        while (i < out.len) : (i += 1) {
+            const word = self.h[i / 8];
+            const shift: u6 = @intCast((i % 8) * 8);
+            out[i] = @as(u8, @truncate(word >> shift));
+        }
+    }
+
+    fn addCounter(self: *Blake2bCtx, value: usize) void {
+        const v: u64 = @intCast(value);
+        self.t[0] +%= v;
+        if (self.t[0] < v) {
+            self.t[1] +%= 1;
+        }
+    }
+
+    fn compress(self: *Blake2bCtx, block: []const u8, is_last: bool) void {
+        var m: [16]u64 = undefined;
+        var i: usize = 0;
+        while (i < 16) : (i += 1) {
+            const start = i * 8;
+            m[i] = readLittle64(block, start);
+        }
+
+        var v: [16]u64 = undefined;
+        i = 0;
+        while (i < 8) : (i += 1) {
+            v[i] = self.h[i];
+            v[i + 8] = blake2b_iv[i];
+        }
+
+        v[12] ^= self.t[0];
+        v[13] ^= self.t[1];
+        if (is_last) v[14] = ~v[14];
+
+        var round: usize = 0;
+        while (round < 12) : (round += 1) {
+            const s = blake2b_sigma[round];
+            G(&v, 0, 4, 8, 12, m[s[0]], m[s[1]]);
+            G(&v, 1, 5, 9, 13, m[s[2]], m[s[3]]);
+            G(&v, 2, 6, 10, 14, m[s[4]], m[s[5]]);
+            G(&v, 3, 7, 11, 15, m[s[6]], m[s[7]]);
+            G(&v, 0, 5, 10, 15, m[s[8]], m[s[9]]);
+            G(&v, 1, 6, 11, 12, m[s[10]], m[s[11]]);
+            G(&v, 2, 7, 8, 13, m[s[12]], m[s[13]]);
+            G(&v, 3, 4, 9, 14, m[s[14]], m[s[15]]);
+        }
+
+        i = 0;
+        while (i < 8) : (i += 1) {
+            self.h[i] ^= v[i] ^ v[i + 8];
+        }
+    }
+};
+
+fn G(v: *[16]u64, a: usize, b: usize, c: usize, d: usize, x: u64, y: u64) void {
+    v[a] = v[a] +% v[b] +% x;
+    v[d] = std.math.rotr(u64, v[d] ^ v[a], 32);
+    v[c] = v[c] +% v[d];
+    v[b] = std.math.rotr(u64, v[b] ^ v[c], 24);
+    v[a] = v[a] +% v[b] +% y;
+    v[d] = std.math.rotr(u64, v[d] ^ v[a], 16);
+    v[c] = v[c] +% v[d];
+    v[b] = std.math.rotr(u64, v[b] ^ v[c], 63);
+}
+
+inline fn readLittle64(block: []const u8, start: usize) u64 {
+    var accum: u64 = 0;
+    var idx: usize = 0;
+    while (idx < 8) : (idx += 1) {
+        const shift: u6 = @intCast(idx * 8);
+        accum |= @as(u64, block[start + idx]) << shift;
+    }
+    return accum;
+}
+
+fn blake2bHash(m: *Machine, args: *LinkedValues, comptime digest_bits: usize) *const Value {
+    const input = args.value.unwrapBytestring();
+    if (digest_bits % 8 != 0 or digest_bits == 0 or digest_bits > 512) {
+        builtinEvaluationFailure();
+    }
+
+    const digest_len: usize = digest_bits / 8;
+    var ctx = Blake2bCtx.init(digest_len);
+
+    const byte_len: usize = @intCast(input.length);
+    // ByteStrings store each byte in its own word, so repack into a dense
+    // buffer before streaming into the hash state.
+    var chunk: [128]u8 = undefined;
+    var chunk_len: usize = 0;
+
+    var i: usize = 0;
+    while (i < byte_len) : (i += 1) {
+        chunk[chunk_len] = @as(u8, @truncate(input.bytes[i]));
+        chunk_len += 1;
+
+        if (chunk_len == chunk.len) {
+            ctx.update(chunk[0..]);
+            chunk_len = 0;
+        }
+    }
+
+    if (chunk_len != 0) {
+        ctx.update(chunk[0..chunk_len]);
+    }
+
+    var digest: [64]u8 = undefined;
+    ctx.final(digest[0..digest_len]);
+
+    const digest_words: u32 = @intCast(digest_len);
+    const allocation = initByteStringAllocation(m.heap, digest_words);
+    for (digest[0..digest_len], 0..) |byte, idx| {
+        allocation.data_words[idx] = byte;
+    }
+
+    return createConst(m.heap, @ptrCast(allocation.constant_words));
+}
+
+pub fn blake2b_256(m: *Machine, args: *LinkedValues) *const Value {
+    return blake2bHash(m, args, 256);
 }
 
 pub fn verifyEd25519Signature(_: *Machine, _: *LinkedValues) *const Value {
@@ -3364,7 +3566,6 @@ pub fn unBData(m: *Machine, args: *LinkedValues) *const Value {
         else => builtinEvaluationFailure(),
     }
 }
-
 
 const SerializedView = struct {
     words: [*]const u32,
@@ -5140,12 +5341,46 @@ pub fn bls12_381_FinalVerify(m: *Machine, args: *LinkedValues) *const Value {
     return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn keccak_256(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn keccak_256(m: *Machine, args: *LinkedValues) *const Value {
+    const input = args.value.unwrapBytestring();
+    var hasher = Sha3_256Ctx.init();
+
+    const byte_len: usize = @intCast(input.length);
+    var chunk: [64]u8 = undefined;
+    var chunk_len: usize = 0;
+
+    var i: usize = 0;
+    while (i < byte_len) : (i += 1) {
+        chunk[chunk_len] = @as(u8, @truncate(input.bytes[i]));
+        chunk_len += 1;
+
+        if (chunk_len == chunk.len) {
+            hasher.updateSlice(chunk[0..]);
+            chunk_len = 0;
+        }
+    }
+
+    if (chunk_len != 0) {
+        hasher.updateSlice(chunk[0..chunk_len]);
+    }
+
+    var digest: [32]u8 = undefined;
+    hasher.finalizeKeccak(&digest);
+
+    var result = m.heap.createArray(u32, 32 + 4);
+    result[0] = 1;
+    result[1] = @intFromPtr(ConstantType.bytesType());
+    result[2] = @intFromPtr(result + 3);
+    result[3] = 32;
+    for (digest, 0..) |byte, idx| {
+        result[4 + idx] = byte;
+    }
+
+    return createConst(m.heap, @ptrCast(result));
 }
 
-pub fn blake2b_224(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn blake2b_224(m: *Machine, args: *LinkedValues) *const Value {
+    return blake2bHash(m, args, 224);
 }
 
 // Conversions
@@ -5923,9 +6158,269 @@ pub fn findFirstSetBit(m: *Machine, args: *LinkedValues) *const Value {
     return createIntegerValueFromLimbs(m, negative_one[0..1], false);
 }
 
+// RIPEMD-160 Context and Implementation
+const RipeMd160Ctx = struct {
+    h: [5]u32 = ripemd160_initial_state,
+    buf: [64]u8 = [_]u8{0} ** 64,
+    buf_len: usize = 0,
+    total_len: u64 = 0,
+
+    fn init() RipeMd160Ctx {
+        return RipeMd160Ctx{};
+    }
+
+    fn updateSlice(self: *RipeMd160Ctx, data: []const u8) void {
+        var offset: usize = 0;
+        self.total_len += data.len;
+
+        if (self.buf_len != 0) {
+            const space = 64 - self.buf_len;
+            const to_copy = @min(space, data.len);
+            @memcpy(self.buf[self.buf_len .. self.buf_len + to_copy], data[0..to_copy]);
+            self.buf_len += to_copy;
+            offset += to_copy;
+            if (self.buf_len == 64) {
+                self.processBlock(&self.buf);
+                self.buf_len = 0;
+            }
+        }
+
+        while (offset + 64 <= data.len) : (offset += 64) {
+            const block_slice = data[offset..][0..64];
+            const block_ptr: *const [64]u8 = @ptrCast(block_slice.ptr);
+            self.processBlock(block_ptr);
+        }
+
+        const remaining = data.len - offset;
+        if (remaining != 0) {
+            @memcpy(self.buf[0..remaining], data[offset..]);
+            self.buf_len = remaining;
+        }
+    }
+
+    fn finalize(self: *RipeMd160Ctx, out: *[20]u8) void {
+        // Append the single '1' bit (0x80 byte)
+        self.buf[self.buf_len] = 0x80;
+        self.buf_len += 1;
+
+        // If not enough room for the length, pad and process, then start a new block
+        if (self.buf_len > 56) {
+            while (self.buf_len < 64) : (self.buf_len += 1) {
+                self.buf[self.buf_len] = 0;
+            }
+            self.processBlock(&self.buf);
+            self.buf_len = 0;
+        }
+
+        // Pad with zeros until we have 56 bytes
+        while (self.buf_len < 56) : (self.buf_len += 1) {
+            self.buf[self.buf_len] = 0;
+        }
+
+        // Append the message length in bits as a 64-bit little-endian integer
+        const bit_len: u64 = self.total_len * 8;
+        var shift: usize = 0;
+        while (shift < 8) : (shift += 1) {
+            const shift_amt: u6 = @intCast(shift * 8);
+            self.buf[56 + shift] = @as(u8, @intCast((bit_len >> shift_amt) & 0xFF));
+        }
+        self.processBlock(&self.buf);
+
+        // Output hash in little-endian format
+        for (self.h, 0..) |word, idx| {
+            const base = idx * 4;
+            out[base + 0] = @as(u8, @intCast(word & 0xFF));
+            out[base + 1] = @as(u8, @intCast((word >> 8) & 0xFF));
+            out[base + 2] = @as(u8, @intCast((word >> 16) & 0xFF));
+            out[base + 3] = @as(u8, @intCast(word >> 24));
+        }
+    }
+
+    inline fn rotl(value: u32, shift: u5) u32 {
+        if (shift == 0) return value;
+        const amt: u32 = shift;
+        return (value << shift) | (value >> @as(u5, @intCast(32 - amt)));
+    }
+
+    fn processBlock(self: *RipeMd160Ctx, block: *const [64]u8) void {
+        // Parse block into 16 little-endian 32-bit words
+        var x: [16]u32 = undefined;
+        const bytes: [*]const u8 = @ptrCast(block);
+
+        var i: usize = 0;
+        while (i < 16) : (i += 1) {
+            const idx = i * 4;
+            x[i] = @as(u32, bytes[idx]) |
+                (@as(u32, bytes[idx + 1]) << 8) |
+                (@as(u32, bytes[idx + 2]) << 16) |
+                (@as(u32, bytes[idx + 3]) << 24);
+        }
+
+        // Initialize working variables
+        var al = self.h[0];
+        var bl = self.h[1];
+        var cl = self.h[2];
+        var dl = self.h[3];
+        var el = self.h[4];
+
+        var ar = self.h[0];
+        var br = self.h[1];
+        var cr = self.h[2];
+        var dr = self.h[3];
+        var er = self.h[4];
+
+        // Left rounds
+        i = 0;
+        while (i < 80) : (i += 1) {
+            const f = ripemd160_f(i, bl, cl, dl);
+            const k = ripemd160_k_left(i);
+            const r = ripemd160_r_left[i];
+            const s = ripemd160_s_left[i];
+
+            const temp = al +% f +% x[r] +% k;
+            const rotated = rotl(temp, s);
+            const t = rotated +% el;
+
+            al = el;
+            el = dl;
+            dl = rotl(cl, 10);
+            cl = bl;
+            bl = t;
+        }
+
+        // Right rounds
+        i = 0;
+        while (i < 80) : (i += 1) {
+            const f = ripemd160_f(79 - i, br, cr, dr);
+            const k = ripemd160_k_right(i);
+            const r = ripemd160_r_right[i];
+            const s = ripemd160_s_right[i];
+
+            const temp = ar +% f +% x[r] +% k;
+            const rotated = rotl(temp, s);
+            const t = rotated +% er;
+
+            ar = er;
+            er = dr;
+            dr = rotl(cr, 10);
+            cr = br;
+            br = t;
+        }
+
+        // Update hash state
+        const t = self.h[1] +% cl +% dr;
+        self.h[1] = self.h[2] +% dl +% er;
+        self.h[2] = self.h[3] +% el +% ar;
+        self.h[3] = self.h[4] +% al +% br;
+        self.h[4] = self.h[0] +% bl +% cr;
+        self.h[0] = t;
+    }
+};
+
+const ripemd160_initial_state = [5]u32{
+    0x67452301,
+    0xEFCDAB89,
+    0x98BADCFE,
+    0x10325476,
+    0xC3D2E1F0,
+};
+
+fn ripemd160_f(j: usize, x: u32, y: u32, z: u32) u32 {
+    if (j < 16) {
+        return x ^ y ^ z;
+    } else if (j < 32) {
+        return (x & y) | (~x & z);
+    } else if (j < 48) {
+        return (x | ~y) ^ z;
+    } else if (j < 64) {
+        return (x & z) | (y & ~z);
+    } else {
+        return x ^ (y | ~z);
+    }
+}
+
+fn ripemd160_k_left(j: usize) u32 {
+    if (j < 16) return 0x00000000;
+    if (j < 32) return 0x5A827999;
+    if (j < 48) return 0x6ED9EBA1;
+    if (j < 64) return 0x8F1BBCDC;
+    return 0xA953FD4E;
+}
+
+fn ripemd160_k_right(j: usize) u32 {
+    if (j < 16) return 0x50A28BE6;
+    if (j < 32) return 0x5C4DD124;
+    if (j < 48) return 0x6D703EF3;
+    if (j < 64) return 0x7A6D76E9;
+    return 0x00000000;
+}
+
+const ripemd160_r_left = [80]u8{
+    0, 1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+    7, 4,  13, 1,  10, 6,  15, 3,  12, 0, 9,  5,  2,  14, 11, 8,
+    3, 10, 14, 4,  9,  15, 8,  1,  2,  7, 0,  6,  13, 11, 5,  12,
+    1, 9,  11, 10, 0,  8,  12, 4,  13, 3, 7,  15, 14, 5,  6,  2,
+    4, 0,  5,  9,  7,  12, 2,  10, 14, 1, 3,  8,  11, 6,  15, 13,
+};
+
+const ripemd160_r_right = [80]u8{
+    5,  14, 7,  0, 9, 2,  11, 4,  13, 6,  15, 8,  1,  10, 3,  12,
+    6,  11, 3,  7, 0, 13, 5,  10, 14, 15, 8,  12, 4,  9,  1,  2,
+    15, 5,  1,  3, 7, 14, 6,  9,  11, 8,  12, 2,  10, 0,  4,  13,
+    8,  6,  4,  1, 3, 11, 15, 0,  5,  12, 2,  13, 9,  7,  10, 14,
+    12, 15, 10, 4, 1, 5,  8,  7,  6,  2,  14, 13, 3,  9,  0,  11,
+};
+
+const ripemd160_s_left = [80]u5{
+    11, 14, 15, 12, 5,  8,  7,  9,  11, 13, 14, 15, 6,  7,  9,  8,
+    7,  6,  8,  13, 11, 9,  7,  15, 7,  12, 15, 9,  11, 7,  13, 12,
+    11, 13, 6,  7,  14, 9,  13, 15, 14, 8,  13, 6,  5,  12, 7,  5,
+    11, 12, 14, 15, 14, 15, 9,  8,  9,  14, 5,  6,  8,  6,  5,  12,
+    9,  15, 5,  11, 6,  8,  13, 12, 5,  12, 13, 14, 11, 8,  5,  6,
+};
+
+const ripemd160_s_right = [80]u5{
+    8,  9,  9,  11, 13, 15, 15, 5,  7,  7,  8,  11, 14, 14, 12, 6,
+    9,  13, 15, 7,  12, 8,  9,  11, 7,  7,  12, 7,  6,  15, 13, 11,
+    9,  7,  15, 11, 8,  6,  6,  14, 12, 13, 5,  14, 13, 13, 7,  5,
+    15, 5,  8,  11, 14, 14, 6,  14, 6,  9,  12, 9,  12, 5,  15, 8,
+    8,  5,  12, 9,  12, 5,  14, 6,  8,  13, 6,  5,  15, 13, 11, 11,
+};
+
 // Ripemd_160
-pub fn ripemd_160(_: *Machine, _: *LinkedValues) *const Value {
-    @panic("TODO");
+pub fn ripemd_160(m: *Machine, args: *LinkedValues) *const Value {
+    const input = args.value.unwrapBytestring();
+    var hasher = RipeMd160Ctx.init();
+
+    var chunk: [64]u8 = undefined;
+    var chunk_len: usize = 0;
+    const byte_len: usize = @intCast(input.length);
+
+    var i: usize = 0;
+    while (i < byte_len) : (i += 1) {
+        chunk[chunk_len] = @as(u8, @truncate(input.bytes[i]));
+        chunk_len += 1;
+
+        if (chunk_len == chunk.len) {
+            hasher.updateSlice(chunk[0..]);
+            chunk_len = 0;
+        }
+    }
+
+    if (chunk_len != 0) {
+        hasher.updateSlice(chunk[0..chunk_len]);
+    }
+
+    var digest: [20]u8 = undefined;
+    hasher.finalize(&digest);
+
+    const digest_words: u32 = 20;
+    const allocation = initByteStringAllocation(m.heap, digest_words);
+    for (digest, 0..) |byte, idx| {
+        allocation.data_words[idx] = byte;
+    }
+
+    return createConst(m.heap, @ptrCast(allocation.constant_words));
 }
 
 pub fn addSignedIntegers(
