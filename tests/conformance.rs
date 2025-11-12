@@ -10,10 +10,11 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    rc::Rc,
 };
 use tempfile::TempDir;
 use uplc::{
-    ast::{DeBruijn, NamedDeBruijn, Program},
+    ast::{DeBruijn, Name, NamedDeBruijn, Program, Term},
     parser,
 };
 use walkdir::WalkDir;
@@ -163,6 +164,71 @@ fn parse_expected_program(code: &str) -> Result<Program<NamedDeBruijn>, String> 
         .map_err(|e| format!("Failed to convert to NamedDeBruijn: {:?}", e))
 }
 
+fn convert_program_allowing_free(program: &Program<Name>) -> Result<Program<DeBruijn>, String> {
+    match Program::<DeBruijn>::try_from(program.clone()) {
+        Ok(converted) => Ok(converted),
+        Err(err) => {
+            let msg = err.to_string();
+            if msg.starts_with("Free Unique") {
+                Ok(Program {
+                    version: program.version,
+                    term: convert_term_allowing_free(&program.term, &mut Vec::new()),
+                })
+            } else {
+                Err("Failed to convert to DeBruijn".to_string())
+            }
+        },
+    }
+}
+
+fn convert_term_allowing_free(term: &Term<Name>, env: &mut Vec<Rc<Name>>) -> Term<DeBruijn> {
+    match term {
+        Term::Var(name) => {
+            let idx = resolve_index(env, name);
+            Term::Var(Rc::new(DeBruijn::new(idx)))
+        }
+        Term::Delay(inner) => Term::Delay(Rc::new(convert_term_allowing_free(inner, env))),
+        Term::Lambda { parameter_name, body } => {
+            env.push(parameter_name.clone());
+            let body_term = Rc::new(convert_term_allowing_free(body, env));
+            env.pop();
+            Term::Lambda {
+                parameter_name: Rc::new(DeBruijn::new(1)),
+                body: body_term,
+            }
+        }
+        Term::Apply { function, argument } => Term::Apply {
+            function: Rc::new(convert_term_allowing_free(function, env)),
+            argument: Rc::new(convert_term_allowing_free(argument, env)),
+        },
+        Term::Constant(constant) => Term::Constant(constant.clone()),
+        Term::Force(inner) => Term::Force(Rc::new(convert_term_allowing_free(inner, env))),
+        Term::Error => Term::Error,
+        Term::Builtin(builtin) => Term::Builtin(*builtin),
+        Term::Constr { tag, fields } => Term::Constr {
+            tag: *tag,
+            fields: fields
+                .iter()
+                .map(|field| convert_term_allowing_free(field, env))
+                .collect(),
+        },
+        Term::Case { constr, branches } => Term::Case {
+            constr: Rc::new(convert_term_allowing_free(constr, env)),
+            branches: branches
+                .iter()
+                .map(|branch| convert_term_allowing_free(branch, env))
+                .collect(),
+        },
+    }
+}
+
+fn resolve_index(env: &[Rc<Name>], needle: &Rc<Name>) -> usize {
+    match env.iter().rev().position(|entry| entry.unique == needle.unique) {
+        Some(pos) => pos + 1,
+        None => env.len() + 1,
+    }
+}
+
 /// Run a UPLC program through the Zig CEK and get the result
 fn run_uplc_program(
     program: &Program<DeBruijn>,
@@ -237,18 +303,25 @@ fn read_u32_from_program(
 fn test_uplc_file(uplc_path: &Path) -> Result<(), String> {
     let expected_path = uplc_path.with_extension("uplc.expected");
 
-    // Parse the input program
+    // Get expected result up-front so we can short-circuit tests that intentionally fail to parse.
+    let expected = parse_expected(&expected_path)?;
+
+    // Read the source once whether or not it parses.
     let code =
         fs::read_to_string(uplc_path).map_err(|e| format!("Failed to read UPLC file: {}", e))?;
 
+    if let ExpectedOutcome::Error(err) = &expected {
+        if err == PARSE_ERROR {
+            return match parser::program(&code) {
+                Ok(_) => Err("Expected parse error, but program parsed successfully".to_string()),
+                Err(_) => Ok(()),
+            };
+        }
+    }
+
+    // Parse the input program
     let program = parser::program(&code).map_err(|_| PARSE_ERROR.to_string())?;
-
-    let program: Program<DeBruijn> = program
-        .try_into()
-        .map_err(|_| "Failed to convert to DeBruijn".to_string())?;
-
-    // Get expected result
-    let expected = parse_expected(&expected_path)?;
+    let program = convert_program_allowing_free(&program)?;
 
     // Run the program
     let actual_result = run_uplc_program(&program);
