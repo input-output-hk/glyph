@@ -619,45 +619,45 @@ macro_rules! conformance_test {
 }
 
 // BLS12-381 G1 tests
-// conformance_test!(conformance_bls12_381_g1_add, "bls12_381_G1_add");
-// conformance_test!(conformance_bls12_381_g1_compress, "bls12_381_G1_compress");
-// conformance_test!(
-// conformance_bls12_381_g1_uncompress,
-// "bls12_381_G1_uncompress"
-// );
-// conformance_test!(conformance_bls12_381_g1_equal, "bls12_381_G1_equal");
-// conformance_test!(
-// conformance_bls12_381_g1_hashtogroup,
-// "bls12_381_G1_hashToGroup"
-// );
-// conformance_test!(conformance_bls12_381_g1_neg, "bls12_381_G1_neg");
-// conformance_test!(conformance_bls12_381_g1_scalarmul, "bls12_381_G1_scalarMul");
+conformance_test!(conformance_bls12_381_g1_add, "bls12_381_G1_add");
+conformance_test!(conformance_bls12_381_g1_compress, "bls12_381_G1_compress");
+conformance_test!(
+conformance_bls12_381_g1_uncompress,
+"bls12_381_G1_uncompress"
+);
+conformance_test!(conformance_bls12_381_g1_equal, "bls12_381_G1_equal");
+conformance_test!(
+conformance_bls12_381_g1_hashtogroup,
+"bls12_381_G1_hashToGroup"
+);
+conformance_test!(conformance_bls12_381_g1_neg, "bls12_381_G1_neg");
+conformance_test!(conformance_bls12_381_g1_scalarmul, "bls12_381_G1_scalarMul");
 
-// // BLS12-381 G2 tests
-// conformance_test!(conformance_bls12_381_g2_add, "bls12_381_G2_add");
-// conformance_test!(conformance_bls12_381_g2_compress, "bls12_381_G2_compress");
-// conformance_test!(
-// conformance_bls12_381_g2_uncompress,
-// "bls12_381_G2_uncompress"
-// );
-// conformance_test!(conformance_bls12_381_g2_equal, "bls12_381_G2_equal");
-// conformance_test!(
-// conformance_bls12_381_g2_hashtogroup,
-// "bls12_381_G2_hashToGroup"
-// );
-// conformance_test!(conformance_bls12_381_g2_neg, "bls12_381_G2_neg");
-// conformance_test!(conformance_bls12_381_g2_scalarmul, "bls12_381_G2_scalarMul");
+// BLS12-381 G2 tests
+conformance_test!(conformance_bls12_381_g2_add, "bls12_381_G2_add");
+conformance_test!(conformance_bls12_381_g2_compress, "bls12_381_G2_compress");
+conformance_test!(
+conformance_bls12_381_g2_uncompress,
+"bls12_381_G2_uncompress"
+);
+conformance_test!(conformance_bls12_381_g2_equal, "bls12_381_G2_equal");
+conformance_test!(
+conformance_bls12_381_g2_hashtogroup,
+"bls12_381_G2_hashToGroup"
+);
+conformance_test!(conformance_bls12_381_g2_neg, "bls12_381_G2_neg");
+conformance_test!(conformance_bls12_381_g2_scalarmul, "bls12_381_G2_scalarMul");
 
-// // BLS12-381 crypto tests
-// conformance_test!(conformance_bls12_381_crypto_g1, "bls12_381-cardano-crypto-tests/G1");
+// BLS12-381 crypto tests
+conformance_test!(conformance_bls12_381_crypto_g1, "bls12_381-cardano-crypto-tests/G1");
 
-// conformance_test!(conformance_bls12_381_crypto_g2, "bls12_381-cardano-crypto-tests/G2");
+conformance_test!(conformance_bls12_381_crypto_g2, "bls12_381-cardano-crypto-tests/G2");
 
-// conformance_test!(conformance_bls12_381_crypto_pairing, "bls12_381-cardano-crypto-tests/pairing");
+conformance_test!(conformance_bls12_381_crypto_pairing, "bls12_381-cardano-crypto-tests/pairing");
 
-// conformance_test!(conformance_bls12_381_crypto_signature, "bls12_381-cardano-crypto-tests/signature");
+conformance_test!(conformance_bls12_381_crypto_signature, "bls12_381-cardano-crypto-tests/signature");
 
-// conformance_test!(conformance_bls12_381_millerloop, "bls12_381_millerLoop");
+conformance_test!(conformance_bls12_381_millerloop, "bls12_381_millerLoop");
 
 // ===========================
 // Tests from tests/semantics/
@@ -809,7 +809,7 @@ conformance_test!(conformance_v2_builtin_constant, "conformance/v2/builtin/const
 conformance_test!(conformance_v2_builtin_interleaving, "conformance/v2/builtin/interleaving");
 
 // v2 builtin semantics tests
-// conformance_test!(conformance_v2_builtin_semantics, "conformance/v2/builtin/semantics");
+conformance_test!(conformance_v2_builtin_semantics, "conformance/v2/builtin/semantics");
 
 // v2 example tests
 conformance_test!(conformance_v2_example, "conformance/v2/example");
@@ -828,7 +828,7 @@ conformance_test!(conformance_v3_builtin_constant, "conformance/v3/builtin/const
 conformance_test!(conformance_v3_builtin_interleaving, "conformance/v3/builtin/interleaving");
 
 // v3 builtin semantics tests
-// conformance_test!(conformance_v3_builtin_semantics, "conformance/v3/builtin/semantics");
+conformance_test!(conformance_v3_builtin_semantics, "conformance/v3/builtin/semantics");
 
 // v3 example tests
 conformance_test!(conformance_v3_example, "conformance/v3/example");
