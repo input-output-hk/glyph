@@ -37,7 +37,8 @@
     // internet connectivity.
     .dependencies = .{
         .blst = .{
-            .path = "../vendor/blst",
+            .url = "https://github.com/supranational/blst/archive/refs/tags/v0.3.15.tar.gz",
+            .hash = "N-V-__8AAKDMOgDp0ule4-ieF6xoW2euEGpOwOyBPo-KRj_a",
         },
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
         //.example = .{
