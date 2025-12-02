@@ -9010,8 +9010,8 @@ test "append string" {
     var frames = try Frames.createTestFrames(&arena);
     var machine = Machine{ .heap = &heap, .frames = &frames };
 
-    const aBytes: [*]const u32 = &.{ 255, 254 };
-    const bBytes: [*]const u32 = &.{ 0, 255, 1 };
+    const aBytes: [*]const u32 = &.{ 255, 254, 0, 0 };
+    const bBytes: [*]const u32 = &.{ 0, 255, 1, 0 };
     const resultBytes: [*]const u32 = &.{ 255, 254, 0, 255, 1 };
 
     const a = expr.String{ .length = 2, .bytes = aBytes };
@@ -9030,13 +9030,14 @@ test "append string" {
             switch (con.constType().*) {
                 .string => {
                     const val = con.string();
-                    try testing.expectEqual(val.length, result.length);
+                    const view = analyzeString(val);
+                    try testing.expectEqual(view.byte_len, result.length);
 
-                    try testing.expectEqual(val.bytes[0], 255);
-                    try testing.expectEqual(val.bytes[1], 254);
-                    try testing.expectEqual(val.bytes[2], 0);
-                    try testing.expectEqual(val.bytes[3], 255);
-                    try testing.expectEqual(val.bytes[4], 1);
+                    try testing.expectEqual(extractStringByte(val, view, 0), 255);
+                    try testing.expectEqual(extractStringByte(val, view, 1), 254);
+                    try testing.expectEqual(extractStringByte(val, view, 2), 0);
+                    try testing.expectEqual(extractStringByte(val, view, 3), 255);
+                    try testing.expectEqual(extractStringByte(val, view, 4), 1);
                 },
                 else => {
                     @panic("TODO");
