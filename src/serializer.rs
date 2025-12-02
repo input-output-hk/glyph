@@ -313,9 +313,6 @@ fn serialize_constant_body(preceeding_byte_size: u32, constant: &Constant) -> Re
         Constant::Bls12_381MlResult(fp12) => {
             serialize_bls12_381_mlresult_constant(preceeding_byte_size, fp12.as_ref())
         }
-        other => Err(SerializationError::InvalidTermType(format!(
-            "Unsupported constant type: {other:?}",
-        ))),
     }
 }
 
@@ -688,7 +685,7 @@ fn usize_to_u32(value: usize) -> Result<u32> {
 fn serialize_data_constant(_: u32, data: &PlutusData) -> Result<Vec<u8>> {
     let mut x: Vec<u8> = Vec::new();
     x.write_u32::<LittleEndian>(const_tag::DATA)?;
-    let mut payload = encode_plutus_data(data)?;
+    let payload = encode_plutus_data(data)?;
     let content_size = bytes_to_words(payload.len());
     x.write_u32::<LittleEndian>(content_size)?;
     x.write_all(&payload)?;
@@ -786,9 +783,7 @@ fn write_nested_data(buf: &mut Vec<u8>, value: &PlutusData) -> Result<()> {
 
 fn encode_large_constr_tag(ix: u64) -> Result<u32> {
     let tag = u32::try_from(ix).map_err(|_| {
-        SerializationError::DataTooComplex(format!(
-            "constructor tag {ix} does not fit in 32 bits"
-        ))
+        SerializationError::DataTooComplex(format!("constructor tag {ix} does not fit in 32 bits"))
     })?;
     Ok(LARGE_CONSTR_TAG_FLAG | tag)
 }
@@ -801,13 +796,13 @@ fn pad_to_word_boundary(buf: &mut Vec<u8>) {
 }
 
 fn bytes_to_words(len: usize) -> u32 {
-    if len == 0 { 0 } else { ((len + 3) / 4) as u32 }
+    if len == 0 { 0 } else { len.div_ceil(4) as u32 }
 }
 
 fn plutus_bigint_to_words(int_data: &BigInt) -> Result<(u8, Vec<u32>)> {
     let numeric = match int_data {
         BigInt::Int(value) => {
-            let repr: i128 = value.clone().into();
+            let repr: i128 = (*value).into();
             NumBigInt::from(repr)
         }
         BigInt::BigUInt(bytes) => {

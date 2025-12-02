@@ -73,7 +73,7 @@ impl UplcCompiler {
         // Debug: print first few lines of assembly
         // eprintln!("Generated assembly (first 20 lines):");
         // for (i, line) in assembly.lines().take(20).enumerate() {
-            // eprintln!("{}: {}", i + 1, line);
+        // eprintln!("{}: {}", i + 1, line);
         // }
 
         // Step 3: Write assembly to file
@@ -177,7 +177,7 @@ fn convert_program_allowing_free(program: &Program<Name>) -> Result<Program<DeBr
             } else {
                 Err("Failed to convert to DeBruijn".to_string())
             }
-        },
+        }
     }
 }
 
@@ -188,7 +188,10 @@ fn convert_term_allowing_free(term: &Term<Name>, env: &mut Vec<Rc<Name>>) -> Ter
             Term::Var(Rc::new(DeBruijn::new(idx)))
         }
         Term::Delay(inner) => Term::Delay(Rc::new(convert_term_allowing_free(inner, env))),
-        Term::Lambda { parameter_name, body } => {
+        Term::Lambda {
+            parameter_name,
+            body,
+        } => {
             env.push(parameter_name.clone());
             let body_term = Rc::new(convert_term_allowing_free(body, env));
             env.pop();
@@ -223,7 +226,11 @@ fn convert_term_allowing_free(term: &Term<Name>, env: &mut Vec<Rc<Name>>) -> Ter
 }
 
 fn resolve_index(env: &[Rc<Name>], needle: &Rc<Name>) -> usize {
-    match env.iter().rev().position(|entry| entry.unique == needle.unique) {
+    match env
+        .iter()
+        .rev()
+        .position(|entry| entry.unique == needle.unique)
+    {
         Some(pos) => pos + 1,
         None => env.len() + 1,
     }
@@ -237,9 +244,8 @@ fn run_uplc_program(
     let elf_path = compiler.compile(program)?;
 
     // Run in emulator
-    let (result, trace, emu_program) =
-        glyph::cek::run_file(elf_path.to_str().unwrap(), Vec::new())
-            .map_err(|e| format!("Emulator execution failed: {:?}", e))?;
+    let (result, trace, emu_program) = glyph::cek::run_file(elf_path.to_str().unwrap(), Vec::new())
+        .map_err(|e| format!("Emulator execution failed: {:?}", e))?;
 
     use emulator::ExecutionResult;
     match result {
@@ -619,45 +625,78 @@ macro_rules! conformance_test {
 }
 
 // BLS12-381 G1 tests
-conformance_test!(conformance_bls12_381_g1_add, "bls12_381_G1_add");
-conformance_test!(conformance_bls12_381_g1_compress, "bls12_381_G1_compress");
+conformance_test!(conformance_bls12_381_g1_add, "semantics/bls12_381_G1_add");
 conformance_test!(
-conformance_bls12_381_g1_uncompress,
-"bls12_381_G1_uncompress"
+    conformance_bls12_381_g1_compress,
+    "semantics/bls12_381_G1_compress"
 );
-conformance_test!(conformance_bls12_381_g1_equal, "bls12_381_G1_equal");
 conformance_test!(
-conformance_bls12_381_g1_hashtogroup,
-"bls12_381_G1_hashToGroup"
+    conformance_bls12_381_g1_uncompress,
+    "semantics/bls12_381_G1_uncompress"
 );
-conformance_test!(conformance_bls12_381_g1_neg, "bls12_381_G1_neg");
-conformance_test!(conformance_bls12_381_g1_scalarmul, "bls12_381_G1_scalarMul");
+conformance_test!(
+    conformance_bls12_381_g1_equal,
+    "semantics/bls12_381_G1_equal"
+);
+conformance_test!(
+    conformance_bls12_381_g1_hashtogroup,
+    "semantics/bls12_381_G1_hashToGroup"
+);
+conformance_test!(conformance_bls12_381_g1_neg, "semantics/bls12_381_G1_neg");
+conformance_test!(
+    conformance_bls12_381_g1_scalarmul,
+    "semantics/bls12_381_G1_scalarMul"
+);
 
 // BLS12-381 G2 tests
-conformance_test!(conformance_bls12_381_g2_add, "bls12_381_G2_add");
-conformance_test!(conformance_bls12_381_g2_compress, "bls12_381_G2_compress");
+conformance_test!(conformance_bls12_381_g2_add, "semantics/bls12_381_G2_add");
 conformance_test!(
-conformance_bls12_381_g2_uncompress,
-"bls12_381_G2_uncompress"
+    conformance_bls12_381_g2_compress,
+    "semantics/bls12_381_G2_compress"
 );
-conformance_test!(conformance_bls12_381_g2_equal, "bls12_381_G2_equal");
 conformance_test!(
-conformance_bls12_381_g2_hashtogroup,
-"bls12_381_G2_hashToGroup"
+    conformance_bls12_381_g2_uncompress,
+    "semantics/bls12_381_G2_uncompress"
 );
-conformance_test!(conformance_bls12_381_g2_neg, "bls12_381_G2_neg");
-conformance_test!(conformance_bls12_381_g2_scalarmul, "bls12_381_G2_scalarMul");
+conformance_test!(
+    conformance_bls12_381_g2_equal,
+    "semantics/bls12_381_G2_equal"
+);
+conformance_test!(
+    conformance_bls12_381_g2_hashtogroup,
+    "semantics/bls12_381_G2_hashToGroup"
+);
+conformance_test!(conformance_bls12_381_g2_neg, "semantics/bls12_381_G2_neg");
+conformance_test!(
+    conformance_bls12_381_g2_scalarmul,
+    "semantics/bls12_381_G2_scalarMul"
+);
 
 // BLS12-381 crypto tests
-conformance_test!(conformance_bls12_381_crypto_g1, "bls12_381-cardano-crypto-tests/G1");
+conformance_test!(
+    conformance_bls12_381_crypto_g1,
+    "semantics/bls12_381-cardano-crypto-tests/G1"
+);
 
-conformance_test!(conformance_bls12_381_crypto_g2, "bls12_381-cardano-crypto-tests/G2");
+conformance_test!(
+    conformance_bls12_381_crypto_g2,
+    "semantics/bls12_381-cardano-crypto-tests/G2"
+);
 
-conformance_test!(conformance_bls12_381_crypto_pairing, "bls12_381-cardano-crypto-tests/pairing");
+conformance_test!(
+    conformance_bls12_381_crypto_pairing,
+    "semantics/bls12_381-cardano-crypto-tests/pairing"
+);
 
-conformance_test!(conformance_bls12_381_crypto_signature, "bls12_381-cardano-crypto-tests/signature");
+conformance_test!(
+    conformance_bls12_381_crypto_signature,
+    "semantics/bls12_381-cardano-crypto-tests/signature"
+);
 
-conformance_test!(conformance_bls12_381_millerloop, "bls12_381_millerLoop");
+conformance_test!(
+    conformance_bls12_381_millerloop,
+    "semantics/bls12_381_millerLoop"
+);
 
 // ===========================
 // Tests from tests/semantics/
@@ -675,17 +714,26 @@ conformance_test!(conformance_modinteger, "semantics/modInteger");
 // Comparison tests
 conformance_test!(conformance_equalinteger, "semantics/equalsInteger");
 conformance_test!(conformance_lessthaninteger, "semantics/lessThanInteger");
-conformance_test!(conformance_lessthanequalinteger, "semantics/lessThanEqualsInteger");
+conformance_test!(
+    conformance_lessthanequalinteger,
+    "semantics/lessThanEqualsInteger"
+);
 
 // ByteString tests
 conformance_test!(conformance_appendbytestring, "semantics/appendByteString");
 conformance_test!(conformance_andbytestring, "semantics/andByteString");
 conformance_test!(conformance_consbytes, "semantics/consByteString");
 conformance_test!(conformance_slicebytestring, "semantics/sliceByteString");
-conformance_test!(conformance_lengthofbytestring, "semantics/lengthOfByteString");
+conformance_test!(
+    conformance_lengthofbytestring,
+    "semantics/lengthOfByteString"
+);
 conformance_test!(conformance_indexbytestring, "semantics/indexByteString");
 conformance_test!(conformance_equalbytestring, "semantics/equalsByteString");
-conformance_test!(conformance_lessthanbytestring, "semantics/lessThanByteString");
+conformance_test!(
+    conformance_lessthanbytestring,
+    "semantics/lessThanByteString"
+);
 conformance_test!(
     conformance_lessthanequalbytestring,
     "semantics/lessThanEqualsByteString"
@@ -695,7 +743,10 @@ conformance_test!(
 conformance_test!(conformance_sha2_256, "semantics/sha2_256");
 conformance_test!(conformance_sha3_256, "semantics/sha3_256");
 conformance_test!(conformance_blake2b_256, "semantics/blake2b_256");
-conformance_test!(conformance_verifyed25519signature, "semantics/verifyEd25519Signature");
+conformance_test!(
+    conformance_verifyed25519signature,
+    "semantics/verifyEd25519Signature"
+);
 conformance_test!(
     conformance_verifyecdsasecp256k1signature,
     "semantics/verifyEcdsaSecp256k1Signature"
@@ -725,7 +776,10 @@ conformance_test!(conformance_sndpair, "semantics/sndPair");
 // Data tests
 conformance_test!(conformance_choosedata, "semantics/chooseDataByteString");
 conformance_test!(conformance_choosedata_constr, "semantics/chooseDataConstr");
-conformance_test!(conformance_choosedata_integer, "semantics/chooseDataInteger");
+conformance_test!(
+    conformance_choosedata_integer,
+    "semantics/chooseDataInteger"
+);
 conformance_test!(conformance_choosedata_list, "semantics/chooseDataList");
 conformance_test!(conformance_choosedata_map, "semantics/chooseDataMap");
 conformance_test!(conformance_constrdata, "semantics/constrData");
@@ -748,7 +802,10 @@ conformance_test!(conformance_bytestointeger, "semantics/byteStringToInteger");
 // Bitwise ByteString tests
 conformance_test!(conformance_orbytestring, "semantics/orByteString");
 conformance_test!(conformance_xorbytestring, "semantics/xorByteString");
-conformance_test!(conformance_complementbytestring, "semantics/complementByteString");
+conformance_test!(
+    conformance_complementbytestring,
+    "semantics/complementByteString"
+);
 
 // Additional ByteString operations
 conformance_test!(conformance_rotatebytestring, "semantics/rotateByteString");
@@ -796,20 +853,32 @@ conformance_test!(conformance_trace, "semantics/trace");
 // conformance_test!(conformance_valuecontains, "semantics/valueContains");
 
 // Additional integer test variations
-conformance_test!(conformance_subtractinteger_non_iter, "semantics/subtractInteger-non-iter");
+conformance_test!(
+    conformance_subtractinteger_non_iter,
+    "semantics/subtractInteger-non-iter"
+);
 
 // =============================
 // Tests from conformance/v2/
 // =============================
 
 // v2 builtin constant tests
-conformance_test!(conformance_v2_builtin_constant, "conformance/v2/builtin/constant");
+conformance_test!(
+    conformance_v2_builtin_constant,
+    "conformance/v2/builtin/constant"
+);
 
 // v2 builtin interleaving tests
-conformance_test!(conformance_v2_builtin_interleaving, "conformance/v2/builtin/interleaving");
+conformance_test!(
+    conformance_v2_builtin_interleaving,
+    "conformance/v2/builtin/interleaving"
+);
 
 // v2 builtin semantics tests
-conformance_test!(conformance_v2_builtin_semantics, "conformance/v2/builtin/semantics");
+conformance_test!(
+    conformance_v2_builtin_semantics,
+    "conformance/v2/builtin/semantics"
+);
 
 // v2 example tests
 conformance_test!(conformance_v2_example, "conformance/v2/example");
@@ -822,13 +891,22 @@ conformance_test!(conformance_v2_term, "conformance/v2/term");
 // =============================
 
 // v3 builtin constant tests
-conformance_test!(conformance_v3_builtin_constant, "conformance/v3/builtin/constant");
+conformance_test!(
+    conformance_v3_builtin_constant,
+    "conformance/v3/builtin/constant"
+);
 
 // v3 builtin interleaving tests
-conformance_test!(conformance_v3_builtin_interleaving, "conformance/v3/builtin/interleaving");
+conformance_test!(
+    conformance_v3_builtin_interleaving,
+    "conformance/v3/builtin/interleaving"
+);
 
 // v3 builtin semantics tests
-conformance_test!(conformance_v3_builtin_semantics, "conformance/v3/builtin/semantics");
+conformance_test!(
+    conformance_v3_builtin_semantics,
+    "conformance/v3/builtin/semantics"
+);
 
 // v3 example tests
 conformance_test!(conformance_v3_example, "conformance/v3/example");
