@@ -160,6 +160,7 @@ pub fn run_file(
         None,
         None,
         FailConfiguration::default(),
+        false,
     );
 
     Ok((result, trace, program))
