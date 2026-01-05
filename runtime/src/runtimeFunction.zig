@@ -4,8 +4,9 @@ const expr = @import("expr.zig");
 const Term = expr.Term;
 const Constant = expr.Constant;
 const cek = @import("cek.zig");
+const runtime_value = @import("value.zig");
 const Heap = @import("Heap.zig");
-const Env = cek.Env;
+const Env = runtime_value.Env;
 const Frames = cek.Frames;
 const allocType = cek.allocType;
 const Machine = cek.Machine;
@@ -172,7 +173,7 @@ test "heap functionality" {
     };
 
     const argVar = switch (applyStruct.argument.*) {
-        .delay => cek.createDelay(&heap, env, applyStruct.argument.termBody()),
+        .delay => runtime_value.createDelay(&heap, env, applyStruct.argument.termBody()),
         else => @panic("NOOOO"),
     };
 
