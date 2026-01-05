@@ -1,5 +1,13 @@
 # Changelog
 
+## [next] - YYYY-MM-DD
+
+### Added
+
+### Changed
+
+### Removed
+
 ## [0.1.7] - Initial release
 
 ### Added
