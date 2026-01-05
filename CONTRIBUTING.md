@@ -4,7 +4,7 @@
 
 1. **Feedback**
 
-   Contributions in the form of feedback and issues are very much welcome. Whether it may be a suggestion, a bug report, or maybe some questions that you have. It helps in improving Aiken in over time and these are the best kind of contributions to start with.
+   Contributions in the form of feedback and issues are very much welcome. Whether it may be a suggestion, a bug report, or maybe some questions that you have. It helps in improving Glyph over time and these are the best kind of contributions to start with.
 
    Do not hesitate to add _thumbs up :+1:_ on open issues you support to show your interest.
 
