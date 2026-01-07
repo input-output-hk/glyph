@@ -1,0 +1,23 @@
+{
+  "preamble": {
+    "title": "glyph/example",
+    "description": "Aiken contracts for project 'example/example'",
+    "version": "0.0.0",
+    "plutusVersion": "v3",
+    "compiler": {
+      "name": "Aiken",
+      "version": "v1.1.12+0da4f70"
+    },
+    "license": "Apache-2.0"
+  },
+  "validators": [
+    {
+      "title": "example.main.else",
+      "redeemer": {
+        "schema": {}
+      },
+      "compiledCode": "582b01010029800aba2aba1ab9a48896600266e1ccdc01bad3002004375a60046006008902a452689b2b200201",
+      "hash": "5d687c2cdc0e2b3645eb2aee98970a6becc95885812fb135edc9ea7f"
+    }
+  ]
+}

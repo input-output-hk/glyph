@@ -2,6 +2,7 @@ const std = @import("std");
 const expr = @import("../expr.zig");
 const utils = @import("../utils.zig");
 const runtime_value = @import("../value.zig");
+const builtins_data = @import("data.zig");
 const ConstantType = expr.ConstantType;
 const Constant = expr.Constant;
 const ListNode = expr.ListNode;
@@ -71,10 +72,29 @@ pub fn headList(m: *BuiltinContext, args: *LinkedValues) *const Value {
         builtinEvaluationFailure();
     }
 
+    const payload_addr = list.items.?.value;
+
+    if (list.type_length == 1 and list.inner_type[0] == ConstantType.data) {
+        if (payload_addr >= @sizeOf(u32) * 2) {
+            const header_ptr: [*]const u32 = @ptrFromInt(payload_addr - @sizeOf(u32) * 2);
+            const tag = header_ptr[0];
+            if (tag == builtins_data.serialized_data_const_tag) {
+                const word_count = header_ptr[1];
+                const c = Constant{
+                    .length = tag,
+                    .type_list = @ptrFromInt(word_count),
+                    .value = payload_addr,
+                };
+                const con = m.heap.create(Constant, &c);
+                return createConst(m.heap, con);
+            }
+        }
+    }
+
     const c = Constant{
         .length = list.type_length,
         .type_list = list.inner_type,
-        .value = list.items.?.value,
+        .value = payload_addr,
     };
 
     const con = m.heap.create(Constant, &c);

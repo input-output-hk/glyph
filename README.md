@@ -80,8 +80,13 @@ and omit `--file` when running.
 
 #### Build from `plutus.json`
 
-The `build` subcommand is reserved for compiling validator bundles from `plutus.json`.
-It is not implemented yet.
+The `build` subcommand compiles validator bundles from `plutus.json`.
+
+```bash
+glyph build --file plutus.json --validator example.main.else --output program.elf
+```
+
+When the bundle only has a single validator, `--validator` can be omitted.
 
 ## Features
 
