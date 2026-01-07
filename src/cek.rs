@@ -92,7 +92,16 @@ impl Cek {
         }
     }
 
-    pub fn cek_assembly(mut self, bytes: Vec<u8>) -> CodeGenerator {
+    pub fn cek_assembly(self, bytes: Vec<u8>) -> CodeGenerator {
+        self.cek_assembly_with_entry(bytes, "init", None)
+    }
+
+    pub fn cek_assembly_with_entry(
+        mut self,
+        bytes: Vec<u8>,
+        entrypoint: &str,
+        input_bss_bytes: Option<i32>,
+    ) -> CodeGenerator {
         // Generate the core CEK implementation
         self.generator
             .add_instruction(Instruction::section("text".to_string()));
@@ -106,7 +115,7 @@ impl Cek {
 
         // Call the init function from the runtime
         self.generator
-            .add_instruction(Instruction::Jal(Register::Ra, "init".to_string()));
+            .add_instruction(Instruction::Jal(Register::Ra, entrypoint.to_string()));
 
         // After init returns, halt (this shouldn't be reached as init calls exit)
         self.generator
@@ -117,6 +126,16 @@ impl Cek {
             .add_instruction(Instruction::section("data".to_string()));
 
         self.initial_term(bytes);
+
+        if let Some(size) = input_bss_bytes {
+            self.generator
+                .add_instruction(Instruction::section("bss".to_string()));
+            self.generator
+                .add_instruction(Instruction::align(4));
+            self.generator
+                .add_instruction(Instruction::label("input_buffer".to_string()));
+            self.generator.add_instruction(Instruction::Space(size));
+        }
 
         self.generator
     }

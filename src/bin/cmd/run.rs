@@ -1,10 +1,10 @@
+use super::input::{decode_program, Encoding};
 use emulator::ExecutionResult;
-use miette::IntoDiagnostic;
+use miette::{IntoDiagnostic, miette};
 use tokio::{
     fs,
     io::{self, AsyncReadExt},
 };
-use uplc::ast::{DeBruijn, Program};
 
 /// Compile Untyped Plutus Core into riscv32
 #[derive(clap::Args)]
@@ -26,13 +26,6 @@ pub struct Args {
     program_file: String,
 }
 
-#[derive(Copy, Clone, clap::ValueEnum)]
-enum Encoding {
-    Cbor,
-    Flat,
-    Text,
-}
-
 impl Args {
     pub async fn exec(self) -> miette::Result<()> {
         let program = if let Some(file_path) = self.input_file {
@@ -49,21 +42,7 @@ impl Args {
         };
 
         let riscv_input = if !program.is_empty() {
-            let program: Program<DeBruijn> = match self.encoding {
-                Encoding::Cbor => todo!(),
-                Encoding::Flat => todo!(),
-                Encoding::Text => {
-                    if self.hex {
-                        println!("warning: hex flag does nothing when encoding format is text")
-                    }
-
-                    let program = String::from_utf8(program).into_diagnostic()?;
-
-                    let program = uplc::parser::program(&program).into_diagnostic()?;
-
-                    program.try_into().into_diagnostic()?
-                }
-            };
+            let program = decode_program(program, self.encoding, self.hex)?;
 
             glyph::serialize(&program, 0xA0000000, false).into_diagnostic()?
         } else {
@@ -78,10 +57,16 @@ impl Args {
 
         let result_pointer = match v.0 {
             ExecutionResult::Halt(result, _step) => result,
-            _ => unreachable!("HOW?"),
+            other => {
+                return Err(miette::miette!("execution failed: {other}"));
+            }
         };
 
-        assert_ne!(result_pointer, u32::MAX);
+        if result_pointer == u32::MAX {
+            return Err(miette!(
+                "execution failed: validator returned failure (exit code 0xFFFFFFFF)"
+            ));
+        }
 
         Ok(())
     }

@@ -2,6 +2,7 @@ use clap::Parser;
 
 mod build;
 mod compile;
+mod input;
 mod run;
 
 pub const BANNER: &str = color_print::cstr! {
