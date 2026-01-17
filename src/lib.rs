@@ -1,4 +1,5 @@
 pub mod cek;
+pub mod bitvmx;
 mod emulator;
 mod serializer;
 

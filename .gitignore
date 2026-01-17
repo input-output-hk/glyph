@@ -38,3 +38,7 @@ examples/output/
 zig-out/
 
 sample.uplc
+
+# Allow tracked ELF fixtures for tests
+!tests/fixtures/
+!tests/fixtures/*.elf
