@@ -1,6 +1,7 @@
 use clap::Parser;
 
 mod build;
+mod bitvmx;
 mod compile;
 mod input;
 mod run;
@@ -42,6 +43,7 @@ impl Cli {
 #[derive(clap::Subcommand)]
 pub enum Cmd {
     Build(build::Args),
+    Bitvmx(bitvmx::Args),
     Compile(compile::Args),
     Run(run::Args),
 }
@@ -50,6 +52,7 @@ impl Cmd {
     pub async fn exec(self) -> miette::Result<()> {
         match self {
             Cmd::Build(args) => args.exec().await,
+            Cmd::Bitvmx(args) => args.exec().await,
             Cmd::Compile(args) => args.exec().await,
             Cmd::Run(args) => args.exec().await,
         }

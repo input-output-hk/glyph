@@ -24,6 +24,12 @@ tempfile = "3.20.0"
 blst = "0.3.11"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
+bitcoin-script-riscv = { git = "https://github.com/FairgateLabs/BitVMX-CPU", branch = "main", package = "bitcoin-script-riscv" }
+libc = "0.2"
+sha2 = "0.10.8"
+tracing = "0.1.43"
+tracing-subscriber = "0.3.22"
+riscv-decode = "0.2.3"
 
 [profile.release]
 opt-level = 3

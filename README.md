@@ -88,6 +88,34 @@ glyph build --file plutus.json --validator example.main.else --output program.el
 
 When the bundle only has a single validator, `--validator` can be omitted.
 
+#### BitVMX emulator (demo support)
+
+Glyph exposes BitVMX-CPU emulator capabilities for demo workflows. The mapping and ROM commitment
+outputs follow the emulator log line format, with instruction mapping sorted by key for
+deterministic output.
+
+Generate the opcode -> Bitcoin Script mapping:
+```bash
+glyph bitvmx instruction-mapping --out instruction_mapping.txt
+```
+
+Generate the ROM commitment for an ELF:
+```bash
+glyph bitvmx rom-commitment --elf program.elf --out rom_commitment.txt
+```
+
+Execute an ELF with input and print stdout + exit code:
+```bash
+glyph bitvmx execute --elf program.elf --stdout --input 11111111
+```
+
+Bundle mapping + commitment + manifest:
+```bash
+glyph bitvmx bundle --elf program.elf --out-dir ./bitvmx_artifacts
+```
+
+On macOS, a RISC-V toolchain is required (see the build section for `brew install riscv64-elf-gcc`).
+
 ## Features
 
 - Parsing and serialization of UPLC code
