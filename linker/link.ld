@@ -6,6 +6,7 @@ MEMORY
   TEXT  (rx)  : ORIGIN = 0x80000000, LENGTH = 0x1000000   /* 16MB */
   DATA  (r)  : ORIGIN = 0x90000000, LENGTH = 0x1000000   /* 16MB */
   BSS   (rw)  : ORIGIN = 0xA0000000, LENGTH = 0x1000000   /* 16MB */
+  INP   (rw)  : ORIGIN = 0xAA000000, LENGTH = 0x1000000   /* 16MB */
   HEAP  (rw)  : ORIGIN = 0xC0000000, LENGTH = 0x1000000   /* 16MB */
   FRAME (rw)  : ORIGIN = 0xD0000000, LENGTH = 0x1000000   /* 16MB */
   STACK (rw)  : ORIGIN = 0xE0000000, LENGTH = 0x1000000   /* 16MB */
@@ -33,6 +34,14 @@ SECTIONS
     *(COMMON)
     __bss_top = .;
   } > BSS
+
+  . = ORIGIN(INP);
+  .input ALIGN(4) (NOLOAD) :
+  {
+    __input_bottom = .;
+    . = . + 0x100000;  /* Allocate 1MB of input space */
+    __input_top = .;
+  } > INP
 
   . = ORIGIN(HEAP);
   .heap ALIGN(4) :

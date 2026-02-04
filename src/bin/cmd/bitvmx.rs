@@ -229,6 +229,7 @@ impl ExecuteArgs {
 
         let fail_config = FailConfiguration {
             fail_hash: self.fail_hash,
+            fail_resign_hash: None,
             fail_hash_until: self.fail_hash_until,
             fail_execute,
             fail_reads,
@@ -237,6 +238,10 @@ impl ExecuteArgs {
             fail_opcode,
             fail_memory_protection: false,
             fail_execute_only_protection: false,
+            fail_commitment_step: None,
+            fail_commitment_hash: false,
+            fail_selection_bits: None,
+            fail_prover_challenge_step: false,
         };
 
         let opts = ExecuteOptions {

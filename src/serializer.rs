@@ -148,8 +148,8 @@ pub fn serialize(
     if space_for_input {
         x.write_u32::<LittleEndian>(term_tag::APPLY)?;
 
-        // the input argument will be inserted by the emulator into .bss section aka 0xA0000000
-        x.write_u32::<LittleEndian>(0xA0000000)?;
+        // the input argument will be inserted by the emulator into .input section aka 0xAA000000
+        x.write_u32::<LittleEndian>(0xAA000000)?;
 
         preceeding_byte_size += 8;
     }

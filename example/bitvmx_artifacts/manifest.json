@@ -1,0 +1,15 @@
+{
+  "elf_path": "/Users/rileykilgore/git/bitvmx_demo/glyph/example/program.elf",
+  "elf_sha256": "65caeeef8f6228cb09d36215807a09371c78cf5789bc57cc587520791f076c03",
+  "mapping_file": "instruction_mapping.txt",
+  "mapping_sha256": "7a424eb7aa63b3a1021d521361cc6c4c445357c11773c5a50e0d9765c9b5178e",
+  "commitment_file": "rom_commitment.txt",
+  "commitment_sha256": "d5d32008351d35a3c447790039359d21875a23caae7f693500b76cd2a33f18b3",
+  "tool_versions": {
+    "glyph": "0.1.7",
+    "bitvmx_cpu": {
+      "version": "0.5.0",
+      "git_sha": "68c12e9543fcc405a6728f7530eeeb5fed9a8353"
+    }
+  }
+}

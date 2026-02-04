@@ -166,7 +166,7 @@ pub fn run_file(
     let (result, trace) = execute_program(
         &mut program,
         input,
-        ".bss",
+        ".input",
         false,
         &None,
         None,

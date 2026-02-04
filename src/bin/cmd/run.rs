@@ -44,7 +44,7 @@ impl Args {
         let riscv_input = if !program.is_empty() {
             let program = decode_program(program, self.encoding, self.hex)?;
 
-            glyph::serialize(&program, 0xA0000000, false).into_diagnostic()?
+            glyph::serialize(&program, 0xAA000000, false).into_diagnostic()?
         } else {
             Vec::new()
         };
