@@ -1,7 +1,7 @@
 use clap::Parser;
 
-mod build;
 mod bitvmx;
+mod build;
 mod compile;
 mod input;
 mod run;
@@ -43,7 +43,7 @@ impl Cli {
 #[derive(clap::Subcommand)]
 pub enum Cmd {
     Build(build::Args),
-    Bitvmx(bitvmx::Args),
+    Bitvmx(Box<bitvmx::Args>),
     Compile(compile::Args),
     Run(run::Args),
 }

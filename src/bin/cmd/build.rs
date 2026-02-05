@@ -52,9 +52,13 @@ impl Args {
             .join(", ");
 
         let validator = if let Some(name) = self.validator.as_deref() {
-            plutus.validators.iter().find(|v| v.title == name).ok_or_else(|| {
-                miette!("validator '{}' not found. Available: {}", name, available)
-            })?
+            plutus
+                .validators
+                .iter()
+                .find(|v| v.title == name)
+                .ok_or_else(|| {
+                    miette!("validator '{}' not found. Available: {}", name, available)
+                })?
         } else if plutus.validators.len() == 1 {
             &plutus.validators[0]
         } else {

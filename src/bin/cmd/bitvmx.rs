@@ -7,7 +7,7 @@ use miette::{IntoDiagnostic, miette};
 use tracing::Level;
 
 use glyph::bitvmx::{
-    self, BundleOptions, ExecuteOptions, DEFAULT_INPUT_SECTION, MANIFEST_FILE_NAME,
+    self, BundleOptions, DEFAULT_INPUT_SECTION, ExecuteOptions, MANIFEST_FILE_NAME,
     MAPPING_FILE_NAME, ROM_COMMITMENT_FILE_NAME,
 };
 
@@ -21,7 +21,7 @@ pub struct Args {
 #[derive(Subcommand)]
 enum Command {
     /// Execute a RISC-V ELF using the BitVMX emulator
-    Execute(ExecuteArgs),
+    Execute(Box<ExecuteArgs>),
     /// Generate the opcode -> Bitcoin Script mapping
     InstructionMapping(InstructionMappingArgs),
     /// Generate ROM commitment data for an ELF
@@ -284,7 +284,7 @@ impl ExecuteArgs {
             if !result.stdout.is_empty() {
                 print!("{}", result.stdout);
                 if !result.stdout.ends_with('\n') {
-                    print!("\n");
+                    println!();
                 }
             }
             if let Some(code) = result.exit_code {
@@ -391,13 +391,8 @@ mod tests {
 
     #[test]
     fn parse_execute_defaults() {
-        let cli = crate::cmd::Cli::parse_from([
-            "glyph",
-            "bitvmx",
-            "execute",
-            "--elf",
-            "program.elf",
-        ]);
+        let cli =
+            crate::cmd::Cli::parse_from(["glyph", "bitvmx", "execute", "--elf", "program.elf"]);
 
         let args = match cli.cmd {
             crate::cmd::Cmd::Bitvmx(args) => args,

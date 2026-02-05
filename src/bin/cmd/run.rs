@@ -1,4 +1,4 @@
-use super::input::{decode_program, Encoding};
+use super::input::{Encoding, decode_program};
 use emulator::ExecutionResult;
 use miette::{IntoDiagnostic, miette};
 use tokio::{

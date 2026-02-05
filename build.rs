@@ -1,5 +1,5 @@
-use std::{fs, path::Path};
 use std::process::Command;
+use std::{fs, path::Path};
 
 fn main() {
     // Get the project root directory (two levels up from crates/glyph/)

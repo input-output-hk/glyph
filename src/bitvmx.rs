@@ -11,13 +11,13 @@ use bitcoin_script_riscv::riscv::instruction_mapping::{
     get_required_microinstruction,
 };
 use bitvmx_emulator::{
+    EmulatorError, ExecutionResult,
     constants::REGISTERS_BASE_ADDRESS,
     executor::{
-        fetcher::{execute_program, FullTrace},
+        fetcher::{FullTrace, execute_program},
         utils::FailConfiguration,
     },
-    loader::program::{Code, load_elf, Program, RomCommitment},
-    EmulatorError, ExecutionResult,
+    loader::program::{Code, Program, RomCommitment, load_elf},
 };
 use riscv_decode::decode as decode_riscv;
 use serde::{Deserialize, Serialize};
@@ -182,10 +182,8 @@ pub fn execute_elf(opts: ExecuteOptions) -> Result<ExecuteResult> {
             let checkpoint_path = checkpoint_path
                 .as_ref()
                 .expect("checkpoint path is required");
-            let program = Program::deserialize_from_file(
-                checkpoint_path.to_string_lossy().as_ref(),
-                step,
-            )?;
+            let program =
+                Program::deserialize_from_file(checkpoint_path.to_string_lossy().as_ref(), step)?;
             (program, Vec::new())
         }
     };
@@ -320,15 +318,14 @@ pub fn parse_hex_input(input: &str) -> Result<Vec<u8>> {
         return Ok(Vec::new());
     }
 
-    if trimmed.len() % 2 != 0 {
+    if !trimmed.len().is_multiple_of(2) {
         return Err(BitvmxError::InvalidInput(
             "hex input must have an even number of digits".to_string(),
         ));
     }
 
-    hex::decode(trimmed).map_err(|err| {
-        BitvmxError::InvalidInput(format!("invalid hex input: {err}"))
-    })
+    hex::decode(trimmed)
+        .map_err(|err| BitvmxError::InvalidInput(format!("invalid hex input: {err}")))
 }
 
 pub fn parse_trace_list(list: &str) -> Result<Vec<u64>> {

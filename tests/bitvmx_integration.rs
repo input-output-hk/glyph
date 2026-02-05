@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use emulator::ExecutionResult;
-use glyph::bitvmx::{BundleManifest, BundleOptions, MANIFEST_FILE_NAME, MAPPING_FILE_NAME, ROM_COMMITMENT_FILE_NAME};
+use glyph::bitvmx::{
+    BundleManifest, BundleOptions, MANIFEST_FILE_NAME, MAPPING_FILE_NAME, ROM_COMMITMENT_FILE_NAME,
+};
 use std::fs;
 
 #[test]
@@ -20,9 +22,11 @@ fn rom_commitment_is_non_empty() {
 #[test]
 fn execute_simple_elf_halts() {
     let elf_path = PathBuf::from("tests/fixtures/simple.elf");
-    let mut opts = glyph::bitvmx::ExecuteOptions::default();
-    opts.elf_path = Some(elf_path);
-    opts.limit = Some(1000);
+    let opts = glyph::bitvmx::ExecuteOptions {
+        elf_path: Some(elf_path),
+        limit: Some(1000),
+        ..Default::default()
+    };
 
     let result = glyph::bitvmx::execute_elf(opts).unwrap();
     match result.execution {

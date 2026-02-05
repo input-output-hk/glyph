@@ -1,4 +1,4 @@
-use super::input::{decode_program, Encoding};
+use super::input::{Encoding, decode_program};
 use miette::{IntoDiagnostic, miette};
 use std::path::Path;
 use tokio::{
@@ -68,8 +68,13 @@ impl Args {
 
         let program = decode_program(program, self.encoding, self.hex)?;
 
-        compile_program_to_elf(&program, self.no_input, "program.elf", RuntimeFlavor::Function)
-            .await
+        compile_program_to_elf(
+            &program,
+            self.no_input,
+            "program.elf",
+            RuntimeFlavor::Function,
+        )
+        .await
     }
 }
 

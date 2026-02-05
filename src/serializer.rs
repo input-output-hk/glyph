@@ -573,7 +573,6 @@ fn serialize_protolist_constant(
         };
 
         payload.write_u32::<LittleEndian>(next_ptr)?;
-        current_payload_len += 8;
     }
 
     if !element_value_ptrs.is_empty() {

@@ -130,8 +130,7 @@ impl Cek {
         if let Some(size) = input_bss_bytes {
             self.generator
                 .add_instruction(Instruction::section("bss".to_string()));
-            self.generator
-                .add_instruction(Instruction::align(4));
+            self.generator.add_instruction(Instruction::align(4));
             self.generator
                 .add_instruction(Instruction::label("input_buffer".to_string()));
             self.generator.add_instruction(Instruction::Space(size));
